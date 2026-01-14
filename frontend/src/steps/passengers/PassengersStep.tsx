@@ -547,8 +547,15 @@ export function PassengersStep() {
       || bookingResult.orderId
       || bookingResult.OrderID
       || 'N/A';
-    const totalAmount = flightStore.offerPriceData?.totalAmount || flightStore.totalPrice || 0;
-    const currency = flightStore.offerPriceData?.currency || 'AUD';
+
+    // Get amount from OrderCreate response first, then fall back to store
+    const totalAmount = bookingResult.order?.totalPrice?.value
+      || flightStore.offerPriceData?.totalAmount
+      || flightStore.totalPrice
+      || 0;
+    const currency = bookingResult.order?.totalPrice?.currency
+      || flightStore.offerPriceData?.currency
+      || 'AUD';
     const paymentTimeLimit = bookingResult.order?.paymentTimeLimit;
 
     // Format payment deadline
