@@ -172,6 +172,13 @@ export function useFlightSearch(): UseFlightSearchResult {
       console.log('[FlightSearch] Raw API response:', response);
       console.log('[FlightSearch] response.data:', response.data);
 
+      // WORKAROUND: Backend not returning error correctly, check data.success
+      if (response.data && !response.data.success && response.data.errors && response.data.errors.length > 0) {
+        console.error('[FlightSearch] NDC response contained errors (detected in frontend):', response.data.errors);
+        const errorMessage = response.data.errors.map((e: any) => `${e.code}: ${e.message}`).join(' | ');
+        throw new Error(errorMessage);
+      }
+
       // Build descriptive operation name with route codes
       const routeLabel = params.returnDate
         ? `${params.origin}-${params.destination} / ${params.returnOrigin || params.destination}-${params.returnDestination || params.origin}`
@@ -460,6 +467,13 @@ export function useFlightSearch(): UseFlightSearchResult {
       console.log('[FlightSearch] COMBINED REQUEST XML:');
       console.log(response.requestXml || 'Not captured');
       console.log('='.repeat(60));
+
+      // WORKAROUND: Backend not returning error correctly, check data.success
+      if (response.data && !response.data.success && response.data.errors && response.data.errors.length > 0) {
+        console.error('[FlightSearch] NDC response contained errors (detected in frontend):', response.data.errors);
+        const errorMessage = response.data.errors.map((e: any) => `${e.code}: ${e.message}`).join(' | ');
+        throw new Error(errorMessage);
+      }
 
       // Build descriptive operation name with both routes
       const returnFrom = params.returnOrigin || params.destination;
