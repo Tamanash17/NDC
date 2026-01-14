@@ -93,7 +93,7 @@ function buildPayer(request: PaymentRequest): string {
   // Payer is REQUIRED for ALL payment types per Jetstar Postman examples
   let firstName = request.payer?.firstName || '';
   let lastName = request.payer?.lastName || '';
-  const email = request.payer?.email || '';
+  let email = request.payer?.email || '';
 
   // If no payer name but we have card holder name (for CC), parse it
   if (!firstName && !lastName && request.card?.holderName) {
@@ -106,6 +106,11 @@ function buildPayer(request: PaymentRequest): string {
   if (!firstName && !lastName) {
     firstName = 'AGENCY';
     lastName = 'PAYMENT';
+  }
+
+  // For AGT/CA payments without email, use a default email (Postman examples always include email)
+  if (!email && (request.paymentType === 'AGT' || request.paymentType === 'CA')) {
+    email = 'agency@payment.booking';
   }
 
   // Build Payer XML inline to avoid whitespace issues - match Postman format
