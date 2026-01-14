@@ -47,8 +47,10 @@ function buildDistributionChain(chain?: DistributionChain): string {
   }
 
   return `
+  <!-- Partner distribution chain configuration - Defines seller and optional distributor -->
   <DistributionChain>
     ${chain.links.map(link => `
+    <!-- Distribution chain participant ${link.ordinal} - ${link.orgRole} -->
     <DistributionChainLink xmlns="${COMMON_TYPES_NAMESPACE}">
       <Ordinal>${link.ordinal}</Ordinal>
       <OrgRole>${escapeXml(link.orgRole)}</OrgRole>
@@ -102,7 +104,22 @@ function buildPayer(request: PaymentRequest): string {
     lastName = nameParts.slice(1).join(' ') || nameParts[0] || '';
   }
 
-  // ALWAYS provide default payer name for ALL payment types - Jetstar requires it
+  // For CA (Cash Agency/IFG) payments ONLY, use Seller organization name from distribution chain
+  if (!firstName && !lastName && request.paymentType === 'CA') {
+    const sellerLink = request.distributionChain?.links?.find(link => link.ordinal === 1);
+    if (sellerLink?.orgName) {
+      // Parse organization name into first/last name
+      const orgNameParts = sellerLink.orgName.trim().split(/\s+/);
+      firstName = orgNameParts[0] || 'AGENCY';
+      lastName = orgNameParts.slice(1).join(' ') || 'PAYMENT';
+    } else {
+      // Fallback if no seller found
+      firstName = 'AGENCY';
+      lastName = 'PAYMENT';
+    }
+  }
+
+  // Final fallback for any payment type (AGT, etc.)
   if (!firstName && !lastName) {
     firstName = 'AGENCY';
     lastName = 'PAYMENT';
@@ -114,13 +131,13 @@ function buildPayer(request: PaymentRequest): string {
   }
 
   // Build Payer XML inline to avoid whitespace issues - match Postman format
-  let payerXml = '<Payer>';
+  let payerXml = '<!-- Payment responsible party information -->\n        <Payer>';
   payerXml += `<PayerName><IndividualName>`;
   payerXml += `<GivenName>${escapeXml(firstName)}</GivenName>`;
   payerXml += `<Surname>${escapeXml(lastName)}</Surname>`;
   payerXml += `</IndividualName></PayerName>`;
   if (email) {
-    payerXml += `<PayerEmailAddress><EmailAddressText>${escapeXml(email)}</EmailAddressText></PayerEmailAddress>`;
+    payerXml += `<!-- Payer contact information --><PayerEmailAddress><EmailAddressText>${escapeXml(email)}</EmailAddressText></PayerEmailAddress>`;
   }
   payerXml += '</Payer>';
 
@@ -135,22 +152,46 @@ export function buildPaymentXml(request: PaymentRequest): string {
   // Format amount to 2 decimal places (Jetstar requires decimal format)
   const formattedAmount = request.amount.toFixed(2);
 
+  // Get current timestamp for request tracking
+  const timestamp = new Date().toISOString();
+
+  // Build header comments with request details
+  const headerComments = `<!-- ================================================================ -->
+<!-- NDC OrderChange Request - Payment Processing for Hold Booking -->
+<!-- Generated: ${timestamp} -->
+<!-- Payment Type: ${request.paymentType} (${request.paymentType === 'CC' ? 'Credit Card' : request.paymentType === 'AGT' ? 'Agency Settlement' : 'Cash Agency/IFG'}) -->
+<!-- Amount: ${formattedAmount} ${request.currency} -->
+<!-- Order ID: ${request.orderId} -->
+<!-- Owner Code: ${request.ownerCode} (Jetstar) -->
+<!-- Distribution Chain: ${request.distributionChain?.links?.length || 0} participant(s) -->
+<!-- ================================================================ -->
+`;
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<IATA_OrderChangeRQ xmlns="${JETSTAR_NAMESPACE}">${buildDistributionChain(request.distributionChain)}
+${headerComments}<IATA_OrderChangeRQ xmlns="${JETSTAR_NAMESPACE}">${buildDistributionChain(request.distributionChain)}
+  <!-- NDC protocol version specification - IATA NDC 21.3 standard -->
   <PayloadAttributes>
     <VersionNumber xmlns="${COMMON_TYPES_NAMESPACE}">21.3</VersionNumber>
   </PayloadAttributes>
+  <!-- Order modification request for payment processing -->
   <Request>
+    <!-- Reference to existing booking created by OrderCreate -->
     <Order xmlns="${COMMON_TYPES_NAMESPACE}">
-      <OrderID>${escapeXml(request.orderId)}</OrderID>
-      <OwnerCode>${escapeXml(request.ownerCode)}</OwnerCode>
+      <OrderID>${escapeXml(request.orderId)}</OrderID> <!-- Booking reference from OrderCreate response -->
+      <OwnerCode>${escapeXml(request.ownerCode)}</OwnerCode> <!-- Airline code - JQ for Jetstar -->
     </Order>
+    <!-- Payment processing details for hold booking -->
     <PaymentFunctions xmlns="${COMMON_TYPES_NAMESPACE}">
+      <!-- Payment method specification -->
       <PaymentMethodCriteria>
-        <PaymentTypeCode>${escapeXml(request.paymentType)}</PaymentTypeCode>
+        <PaymentTypeCode>${escapeXml(request.paymentType)}</PaymentTypeCode> <!-- CC=Credit Card, AGT=Agency, CA=Cash Agency -->
       </PaymentMethodCriteria>
+      <!-- Payment transaction details -->
       <PaymentProcessingDetails>
-        <Amount CurCode="${escapeXml(request.currency)}">${formattedAmount}</Amount>${payerXml}${paymentMethodXml}
+        <Amount CurCode="${escapeXml(request.currency)}">${formattedAmount}</Amount> <!-- Total payment amount with 2 decimal places -->
+        ${payerXml}
+        <!-- Payment method specific details -->
+        ${paymentMethodXml}
       </PaymentProcessingDetails>
     </PaymentFunctions>
   </Request>
