@@ -972,6 +972,19 @@ export function PaymentPage() {
                       </div>
                     </div>
                   </div>
+
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <div className="flex gap-3">
+                      <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-amber-900">Account Configuration Required</p>
+                        <p className="text-sm text-amber-700">
+                          This payment method is subject to your agency account configuration with Jetstar.
+                          Ensure your IATA number and settlement account are properly configured before processing.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1000,6 +1013,19 @@ export function PaymentPage() {
                         <p className="font-semibold text-purple-900">BSP Settlement (Cash Agency)</p>
                         <p className="text-sm text-purple-700">
                           Payment will be processed through IATA BSP settlement. Settlement is automatically linked to the Seller's account from the distribution chain.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <div className="flex gap-3">
+                      <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-amber-900">Account Configuration Required</p>
+                        <p className="text-sm text-amber-700">
+                          This payment method is subject to your BSP/IFG account configuration with Jetstar.
+                          Ensure your seller account is properly configured with valid settlement details before processing.
                         </p>
                       </div>
                     </div>
