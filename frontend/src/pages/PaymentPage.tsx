@@ -86,7 +86,6 @@ interface CardPaymentForm {
 
 interface AgencyPaymentForm {
   selectedParticipant: 'seller' | 'distributor';  // Which participant to bill (IATA_Number 1 or 2)
-  accountNumber: string;
 }
 
 interface IFGPaymentForm {
@@ -130,7 +129,6 @@ export function PaymentPage() {
 
   const [agencyForm, setAgencyForm] = useState<AgencyPaymentForm>({
     selectedParticipant: 'seller',  // Default to seller (IATA_Number = 1)
-    accountNumber: '',
   });
 
   const [ifgForm, setIFGForm] = useState<IFGPaymentForm>({
@@ -319,9 +317,9 @@ export function PaymentPage() {
 
   const validateAgencyPayment = (): boolean => {
     // Need valid participant selected (distributor only for BOB bookings)
-    const validParticipant = agencyForm.selectedParticipant === 'seller' ||
+    // No account number required - uses IATA_Number from distribution chain
+    return agencyForm.selectedParticipant === 'seller' ||
       (agencyForm.selectedParticipant === 'distributor' && isBOBBooking);
-    return validParticipant && agencyForm.accountNumber.length > 0;
   };
 
   const validateIFGPayment = (): boolean => {
@@ -399,14 +397,12 @@ export function PaymentPage() {
         case 'AGT':
           // IATA_Number: 1 = Seller, 2 = Distributor (per Postman AG flow)
           // For direct bookings (non-BOB), always use 1 (Seller)
-          // For BOB bookings, use selected participant
-          const agtIataNumber = isBOBBooking && agencyForm.selectedParticipant === 'distributor' ? '2' : '1';
+          // For BOB bookings, use selected participant ordinal
           payment = {
             ...payment,
             type: 'AGT',
             agency: {
-              iataNumber: agtIataNumber,
-              accountNumber: agencyForm.accountNumber || undefined,
+              iataNumber: agencyForm.selectedParticipant === 'distributor' ? '2' : '1',
             },
           };
           break;
@@ -894,18 +890,50 @@ export function PaymentPage() {
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                     <Building2 className="w-5 h-5 text-blue-500" />
-                    Jetstar Agency Details
+                    Jetstar Agency Settlement
                   </h3>
 
-                  {/* Settlement Party Selection - Only for BOB bookings */}
-                  {isBOBBooking && (
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">Select Settlement Party</label>
-                      <div className="space-y-3">
-                        {/* Seller Option */}
+                  {/* Settlement Party Selection */}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Settlement Account</label>
+                    <div className="space-y-3">
+                      {/* Seller Option - Always available */}
+                      <label
+                        className={`flex items-center gap-3 p-4 border-2 rounded-xl transition-all ${
+                          isBOBBooking ? 'cursor-pointer' : 'cursor-default'
+                        } ${
+                          agencyForm.selectedParticipant === 'seller'
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="agtParticipant"
+                          value="seller"
+                          checked={agencyForm.selectedParticipant === 'seller'}
+                          onChange={() => setAgencyForm((prev) => ({ ...prev, selectedParticipant: 'seller' }))}
+                          disabled={!isBOBBooking}
+                          className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-slate-900">Seller</span>
+                            <span className="text-xs text-blue-600 font-mono bg-blue-100 px-2 py-0.5 rounded">IATA #1</span>
+                          </div>
+                          {sellerInfo && (
+                            <p className="text-sm text-slate-600 mt-1">
+                              {sellerInfo.orgName} ({sellerInfo.orgCode})
+                            </p>
+                          )}
+                        </div>
+                      </label>
+
+                      {/* Distributor Option - Only for BOB bookings */}
+                      {isBOBBooking && distributorInfo && (
                         <label
                           className={`flex items-center gap-3 p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                            agencyForm.selectedParticipant === 'seller'
+                            agencyForm.selectedParticipant === 'distributor'
                               ? 'border-blue-500 bg-blue-50'
                               : 'border-slate-200 hover:border-slate-300'
                           }`}
@@ -913,77 +941,33 @@ export function PaymentPage() {
                           <input
                             type="radio"
                             name="agtParticipant"
-                            value="seller"
-                            checked={agencyForm.selectedParticipant === 'seller'}
-                            onChange={() => setAgencyForm((prev) => ({ ...prev, selectedParticipant: 'seller' }))}
+                            value="distributor"
+                            checked={agencyForm.selectedParticipant === 'distributor'}
+                            onChange={() => setAgencyForm((prev) => ({ ...prev, selectedParticipant: 'distributor' }))}
                             className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
                           />
                           <div className="flex-1">
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-slate-900">Seller</span>
-                              <span className="text-xs text-blue-600 font-mono bg-blue-100 px-2 py-0.5 rounded">IATA #1</span>
+                              <span className="font-semibold text-slate-900">Distributor</span>
+                              <span className="text-xs text-blue-600 font-mono bg-blue-100 px-2 py-0.5 rounded">IATA #2</span>
                             </div>
-                            {sellerInfo && (
-                              <p className="text-sm text-slate-600 mt-1">
-                                {sellerInfo.orgName} ({sellerInfo.orgCode})
-                              </p>
-                            )}
+                            <p className="text-sm text-slate-600 mt-1">
+                              {distributorInfo.orgName} ({distributorInfo.orgCode})
+                            </p>
                           </div>
                         </label>
-
-                        {/* Distributor Option */}
-                        {distributorInfo && (
-                          <label
-                            className={`flex items-center gap-3 p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                              agencyForm.selectedParticipant === 'distributor'
-                                ? 'border-blue-500 bg-blue-50'
-                                : 'border-slate-200 hover:border-slate-300'
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="agtParticipant"
-                              value="distributor"
-                              checked={agencyForm.selectedParticipant === 'distributor'}
-                              onChange={() => setAgencyForm((prev) => ({ ...prev, selectedParticipant: 'distributor' }))}
-                              className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
-                            />
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between">
-                                <span className="font-semibold text-slate-900">Distributor</span>
-                                <span className="text-xs text-blue-600 font-mono bg-blue-100 px-2 py-0.5 rounded">IATA #2</span>
-                              </div>
-                              <p className="text-sm text-slate-600 mt-1">
-                                {distributorInfo.orgName} ({distributorInfo.orgCode})
-                              </p>
-                            </div>
-                          </label>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Agency Account Number</label>
-                    <input
-                      type="text"
-                      value={agencyForm.accountNumber}
-                      onChange={(e) => setAgencyForm((prev) => ({ ...prev, accountNumber: e.target.value }))}
-                      placeholder="Enter your Jetstar agency account number"
-                      className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono"
-                    />
                   </div>
 
                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                     <div className="flex gap-3">
                       <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                       <div>
-                        <p className="font-semibold text-blue-900">Jetstar Agency Settlement</p>
+                        <p className="font-semibold text-blue-900">Agency Account Settlement</p>
                         <p className="text-sm text-blue-700">
-                          Payment will be processed through Jetstar agency settlement.
-                          {isBOBBooking
-                            ? ` Settlement will be charged to ${agencyForm.selectedParticipant === 'seller' ? 'Seller' : 'Distributor'} (IATA #${agencyForm.selectedParticipant === 'seller' ? '1' : '2'}).`
-                            : ' Settlement will be charged to Seller (IATA #1).'}
+                          Payment will be charged to {agencyForm.selectedParticipant === 'seller' ? 'Seller' : 'Distributor'}'s
+                          agency account ({agencyForm.selectedParticipant === 'seller' ? sellerInfo?.orgName : distributorInfo?.orgName}).
                         </p>
                       </div>
                     </div>
