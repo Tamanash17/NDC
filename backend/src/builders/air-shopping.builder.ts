@@ -103,31 +103,35 @@ export function buildAirShoppingXml(input: AirShoppingInput): string {
   if (input.distributionChain?.links && input.distributionChain.links.length > 0) {
     // Use provided distribution chain links (supports both Direct and BOB)
     distributionChainXml = `
-<DistributionChain>
-  ${input.distributionChain.links.map(link => `<DistributionChainLink xmlns="${NS_COMMON}">
-    <Ordinal>${link.ordinal}</Ordinal>
-    <OrgRole>${escapeXml(link.orgRole)}</OrgRole>
-    <ParticipatingOrg>
-      <Name>${escapeXml(link.orgName)}</Name>
-      <OrgID>${escapeXml(link.orgId)}</OrgID>
-    </ParticipatingOrg>
-  </DistributionChainLink>`).join("\n  ")}
-</DistributionChain>`;
+  <!-- Partner distribution chain configuration -->
+  <DistributionChain>${input.distributionChain.links.map(link => `
+    <!-- Distribution chain participant ${link.ordinal} - ${link.orgRole} -->
+    <DistributionChainLink xmlns="${NS_COMMON}">
+      <Ordinal>${link.ordinal}</Ordinal>
+      <OrgRole>${escapeXml(link.orgRole)}</OrgRole>
+      <ParticipatingOrg>
+        <Name>${escapeXml(link.orgName)}</Name>
+        <OrgID>${escapeXml(link.orgId)}</OrgID>
+      </ParticipatingOrg>
+    </DistributionChainLink>`).join("")}
+  </DistributionChain>`;
   } else {
     // Fallback to config defaults (single seller)
     const orgCode = config.distributionChain.orgCode;
     const orgName = config.distributionChain.orgName;
     distributionChainXml = `
-<DistributionChain>
-  <DistributionChainLink xmlns="${NS_COMMON}">
-    <Ordinal>1</Ordinal>
-    <OrgRole>Seller</OrgRole>
-    <ParticipatingOrg>
-      <Name>${escapeXml(orgName)}</Name>
-      <OrgID>${escapeXml(orgCode)}</OrgID>
-    </ParticipatingOrg>
-  </DistributionChainLink>
-</DistributionChain>`;
+  <!-- Partner distribution chain configuration -->
+  <DistributionChain>
+    <!-- Distribution chain participant 1 - Seller -->
+    <DistributionChainLink xmlns="${NS_COMMON}">
+      <Ordinal>1</Ordinal>
+      <OrgRole>Seller</OrgRole>
+      <ParticipatingOrg>
+        <Name>${escapeXml(orgName)}</Name>
+        <OrgID>${escapeXml(orgCode)}</OrgID>
+      </ParticipatingOrg>
+    </DistributionChainLink>
+  </DistributionChain>`;
   }
 
   // Cabin type code mapping (from Jetstar NDC Postman collection):
@@ -140,19 +144,20 @@ export function buildAirShoppingXml(input: AirShoppingInput): string {
 
   // Build origin-dest criteria - matching Postman format exactly
   let originDestCriteria = `
-  <OriginDestCriteria>
-    <CabinType>
-      <PrefLevel>Required</PrefLevel>
-      <CabinTypeCode>${cabinTypeCode}</CabinTypeCode>
-    </CabinType>
-    <DestArrivalCriteria>
-      <IATA_LocationCode>${escapeXml(input.destination)}</IATA_LocationCode>
-    </DestArrivalCriteria>
-    <OriginDepCriteria>
-      <Date>${escapeXml(input.departureDate)}</Date>
-      <IATA_LocationCode>${escapeXml(input.origin)}</IATA_LocationCode>
-    </OriginDepCriteria>
-  </OriginDestCriteria>`;
+        <!-- Flight segment 1 - ${escapeXml(input.origin)} to ${escapeXml(input.destination)} -->
+        <OriginDestCriteria>
+          <CabinType>
+            <PrefLevel>Required</PrefLevel>
+            <CabinTypeCode>${cabinTypeCode}</CabinTypeCode>
+          </CabinType>
+          <DestArrivalCriteria>
+            <IATA_LocationCode>${escapeXml(input.destination)}</IATA_LocationCode>
+          </DestArrivalCriteria>
+          <OriginDepCriteria>
+            <Date>${escapeXml(input.departureDate)}</Date>
+            <IATA_LocationCode>${escapeXml(input.origin)}</IATA_LocationCode>
+          </OriginDepCriteria>
+        </OriginDestCriteria>`;
 
   // Add return journey if specified
   // Supports open jaw: returnOrigin (where return departs) and returnDestination (where return arrives)
@@ -161,19 +166,20 @@ export function buildAirShoppingXml(input: AirShoppingInput): string {
     const returnTo = input.returnDestination || input.origin;    // Default: return to outbound origin
 
     originDestCriteria += `
-  <OriginDestCriteria>
-    <CabinType>
-      <PrefLevel>Required</PrefLevel>
-      <CabinTypeCode>${cabinTypeCode}</CabinTypeCode>
-    </CabinType>
-    <DestArrivalCriteria>
-      <IATA_LocationCode>${escapeXml(returnTo)}</IATA_LocationCode>
-    </DestArrivalCriteria>
-    <OriginDepCriteria>
-      <Date>${escapeXml(input.returnDate)}</Date>
-      <IATA_LocationCode>${escapeXml(returnFrom)}</IATA_LocationCode>
-    </OriginDepCriteria>
-  </OriginDestCriteria>`;
+        <!-- Flight segment 2 - ${escapeXml(returnFrom)} to ${escapeXml(returnTo)} -->
+        <OriginDestCriteria>
+          <CabinType>
+            <PrefLevel>Required</PrefLevel>
+            <CabinTypeCode>${cabinTypeCode}</CabinTypeCode>
+          </CabinType>
+          <DestArrivalCriteria>
+            <IATA_LocationCode>${escapeXml(returnTo)}</IATA_LocationCode>
+          </DestArrivalCriteria>
+          <OriginDepCriteria>
+            <Date>${escapeXml(input.returnDate)}</Date>
+            <IATA_LocationCode>${escapeXml(returnFrom)}</IATA_LocationCode>
+          </OriginDepCriteria>
+        </OriginDestCriteria>`;
   }
 
   // Build passenger list - index per PTC type (ADT0, ADT1, CHD0, INF0, etc.)
@@ -192,24 +198,53 @@ export function buildAirShoppingXml(input: AirShoppingInput): string {
     }
   }
 
+  // Get current timestamp for request tracking
+  const timestamp = new Date().toISOString();
+
+  // Format passenger count breakdown for header
+  const passengerBreakdown = input.passengers
+    .map(p => `${p.count} ${p.ptc === 'ADT' ? 'Adult(s)' : p.ptc === 'CHD' ? 'Child(ren)' : 'Infant(s)'}`)
+    .join(', ');
+
+  // Format cabin preference display name
+  const cabinDisplay = input.cabinPreference === 'C' ? 'Business' :
+                      input.cabinPreference === 'F' ? 'First' : 'Economy';
+
+  // Format return info for header
+  const returnInfo = input.returnDate ? escapeXml(input.returnDate) : 'One-way';
+
+  // Build header comments with request details
+  const headerComments = `<!-- ================================================================ -->
+<!-- NDC AirShopping Request - Flight Search -->
+<!-- Generated: ${timestamp} -->
+<!-- Route: ${escapeXml(input.origin)} → ${escapeXml(input.destination)} -->
+<!-- Departure: ${escapeXml(input.departureDate)} -->
+<!-- Return: ${returnInfo} -->
+<!-- Cabin: ${cabinDisplay} -->
+<!-- Passengers: ${passengerBreakdown} -->
+<!-- ================================================================ -->
+`;
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<IATA_AirShoppingRQ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+${headerComments}<IATA_AirShoppingRQ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-   xmlns="${NS_MESSAGE}">
-  ${distributionChainXml}
+   xmlns="${NS_MESSAGE}">${distributionChainXml}
+  <!-- NDC protocol version specification - IATA NDC 21.3 standard -->
   <PayloadAttributes>
     <VersionNumber xmlns="${NS_COMMON}">21.3</VersionNumber>
   </PayloadAttributes>
   <Request>
+    <!-- Flight search criteria -->
     <FlightRequest xmlns="${NS_COMMON}">
-      <FlightRequestOriginDestinationsCriteria>
-        ${originDestCriteria}
+      <FlightRequestOriginDestinationsCriteria>${originDestCriteria}
       </FlightRequestOriginDestinationsCriteria>
     </FlightRequest>
 ${buildOfferCriteria(input.ndcConfig, input.promoCode)}
+    <!-- Passenger type and count -->
     <PaxList xmlns="${NS_COMMON}">${paxList.join('')}
     </PaxList>
     <ResponseParameters xmlns="${NS_COMMON}">
+      <!-- Currency for pricing - ${escapeXml(input.currency || 'AUD')} -->
       <CurParameter>
         <CurCode>${escapeXml(input.currency || 'AUD')}</CurCode>
       </CurParameter>

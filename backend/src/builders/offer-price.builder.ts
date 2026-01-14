@@ -22,8 +22,10 @@ function buildDistributionChain(chain?: DistributionChain): string {
   }
 
   return `
+  <!-- Partner distribution chain configuration - Defines seller and optional distributor -->
   <DistributionChain>
     ${chain.links.map(link => `
+    <!-- Distribution chain participant ${link.ordinal} - ${link.orgRole} -->
     <DistributionChainLink xmlns="${COMMON_TYPES_NAMESPACE}">
       <Ordinal>${link.ordinal}</Ordinal>
       <OrgRole>${escapeXml(link.orgRole)}</OrgRole>
@@ -75,23 +77,21 @@ function buildALaCarteOfferItemWithRefs(
   if (refType === 'journey') {
     const journeyRefElements = refIds.map(refId =>
       `<PaxJourneyRefID>${escapeXml(refId)}</PaxJourneyRefID>`
-    ).join('\n                        ');
+    ).join('');
 
     flightAssociations = `
                 <OfferFlightAssociations>
-                    <PaxJourneyRef>
-                        ${journeyRefElements}
+                    <PaxJourneyRef>${journeyRefElements}
                     </PaxJourneyRef>
                 </OfferFlightAssociations>`;
   } else if (refType === 'leg') {
     const legRefElements = refIds.map(refId =>
       `<DatedOperatingLegRefID>${escapeXml(refId)}</DatedOperatingLegRefID>`
-    ).join('\n                        ');
+    ).join('');
 
     flightAssociations = `
                 <OfferFlightAssociations>
-                    <DatedOperatingLegRef>
-                        ${legRefElements}
+                    <DatedOperatingLegRef>${legRefElements}
                     </DatedOperatingLegRef>
                 </OfferFlightAssociations>`;
   } else {
@@ -101,12 +101,11 @@ function buildALaCarteOfferItemWithRefs(
     const segmentRefElements = refIds.map(refId => {
       const cleanRefId = refId.replace(/^Mkt-/, '');
       return `<PaxSegmentRefID>${escapeXml(cleanRefId)}</PaxSegmentRefID>`;
-    }).join('\n                        ');
+    }).join('');
 
     flightAssociations = `
                 <OfferFlightAssociations>
-                    <PaxSegmentReferences>
-                        ${segmentRefElements}
+                    <PaxSegmentReferences>${segmentRefElements}
                     </PaxSegmentReferences>
                 </OfferFlightAssociations>`;
   }
@@ -132,8 +131,7 @@ function expandALaCarteItems(items: any[]): string {
 
   for (const item of items) {
     const paxRefIdsXml = item.paxRefIds.map((paxId: string) =>
-      `
-            <PaxRefID>${escapeXml(paxId)}</PaxRefID>`
+      `<PaxRefID>${escapeXml(paxId)}</PaxRefID>`
     ).join("");
 
     // Determine which refs to use based on association type
@@ -219,9 +217,36 @@ export function buildOfferPriceXml(
     }
   });
 
+  // Get current timestamp for request tracking
+  const timestamp = new Date().toISOString();
+
+  // Count total offer items and passengers
+  const totalOfferItems = input.selectedOffers.reduce((sum, offer) => {
+    if (offer.offerItems && offer.offerItems.length > 0) {
+      return sum + offer.offerItems.length;
+    }
+    return sum + (offer.offerItemIds?.length || 0);
+  }, 0);
+
+  // Get passenger breakdown
+  const pax = input.passengers || { adults: 1, children: 0, infants: 0 };
+  const passengerBreakdown = `${pax.adults} adult(s), ${pax.children} child(ren), ${pax.infants} infant(s)`;
+
+  // Build header comments with request details
+  const headerComments = `<!-- ================================================================ -->
+<!-- NDC OfferPrice Request - Price Calculation -->
+<!-- Generated: ${timestamp} -->
+<!-- Offers: ${input.selectedOffers.length} offer(s) -->
+<!-- Offer Items: ${totalOfferItems} item(s) -->
+<!-- Passengers: ${passengerBreakdown} -->
+<!-- Owner Code: ${input.selectedOffers[0]?.ownerCode || 'N/A'} (Jetstar) -->
+<!-- Distribution Chain: ${chain?.links?.length || 0} participant(s) -->
+<!-- ================================================================ -->
+`;
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<IATA_OfferPriceRQ xmlns="${JETSTAR_NAMESPACE}">
-  ${buildDistributionChain(chain)}
+${headerComments}<IATA_OfferPriceRQ xmlns="${JETSTAR_NAMESPACE}">${buildDistributionChain(chain)}
+  <!-- Offer pricing request with selected items -->
   <Request>
     <PricedOffer xmlns="${COMMON_TYPES_NAMESPACE}">
       <SelectedOfferList>
@@ -251,13 +276,13 @@ export function buildOfferPriceXml(
             }
 
             return `
+        <!-- Selected offer for pricing -->
         <SelectedOffer>
           <OfferRefID>${escapeXml(offer.offerId)}</OfferRefID>
-          <OwnerCode>${escapeXml(offer.ownerCode)}</OwnerCode>
-          ${fareItems.map(item => `
+          <OwnerCode>${escapeXml(offer.ownerCode)}</OwnerCode>${fareItems.map((item, idx) => `
+          <!-- Offer item ${idx + 1} - Flight fare -->
           <SelectedOfferItem>
-            <OfferItemRefID>${escapeXml(item.offerItemId)}</OfferItemRefID>
-            ${item.paxRefIds.map(paxId => `<PaxRefID>${escapeXml(paxId)}</PaxRefID>`).join("")}
+            <OfferItemRefID>${escapeXml(item.offerItemId)}</OfferItemRefID>${item.paxRefIds.map(paxId => `<PaxRefID>${escapeXml(paxId)}</PaxRefID>`).join("")}
           </SelectedOfferItem>`).join("")}${expandALaCarteItems(aLaCarteItems)}
         </SelectedOffer>`;
           }
@@ -269,13 +294,13 @@ export function buildOfferPriceXml(
           console.log(`[OfferPriceBuilder] Offer ${offer.offerId} using legacy paxRefIds:`, paxRefIds);
           const itemIds = offer.offerItemIds || [];
           return `
+        <!-- Selected offer for pricing -->
         <SelectedOffer>
           <OfferRefID>${escapeXml(offer.offerId)}</OfferRefID>
-          <OwnerCode>${escapeXml(offer.ownerCode)}</OwnerCode>
-          ${itemIds.map(itemId => `
+          <OwnerCode>${escapeXml(offer.ownerCode)}</OwnerCode>${itemIds.map((itemId, idx) => `
+          <!-- Offer item ${idx + 1} -->
           <SelectedOfferItem>
-            <OfferItemRefID>${escapeXml(itemId)}</OfferItemRefID>
-            ${paxRefIds.map(paxId => `<PaxRefID>${escapeXml(paxId)}</PaxRefID>`).join("")}
+            <OfferItemRefID>${escapeXml(itemId)}</OfferItemRefID>${paxRefIds.map(paxId => `<PaxRefID>${escapeXml(paxId)}</PaxRefID>`).join("")}
           </SelectedOfferItem>`).join("")}
         </SelectedOffer>`;
         }).join("")}

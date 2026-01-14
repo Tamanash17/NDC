@@ -30,28 +30,29 @@ function escapeXml(value: string | undefined | null): string {
     .replace(/'/g, "&apos;");
 }
 
-/**
- * Build AirlineProfile XML to fetch route network from airline
- */
-export function buildAirlineProfileXml(input: AirlineProfileInput): string {
-  // Build distribution chain - iterate through ALL links (supports BOB with Seller + Distributor)
-  let distributionChainXml: string;
-
+function buildDistributionChain(input: AirlineProfileInput): string {
   if (input.distributionChain?.links && input.distributionChain.links.length > 0) {
     // Use provided distribution chain links (supports both Direct and BOB)
-    distributionChainXml = `<DistributionChain>
-    ${input.distributionChain.links.map(link => `<DistributionChainLink xmlns="${NS_COMMON}">
+    return `
+  <!-- Partner distribution chain configuration - Defines seller and optional distributor -->
+  <DistributionChain>
+    ${input.distributionChain.links.map(link => `
+    <!-- Distribution chain participant ${link.ordinal} - ${link.orgRole} -->
+    <DistributionChainLink xmlns="${NS_COMMON}">
       <Ordinal>${link.ordinal}</Ordinal>
       <ParticipatingOrg>
         <OrgID>${escapeXml(link.orgId)}</OrgID>
         <OrgRole>${escapeXml(link.orgRole)}</OrgRole>
       </ParticipatingOrg>
-    </DistributionChainLink>`).join("\n    ")}
+    </DistributionChainLink>`).join("")}
   </DistributionChain>`;
   } else {
     // Fallback to config defaults (single seller)
     const orgId = config.distributionChain.orgCode;
-    distributionChainXml = `<DistributionChain>
+    return `
+  <!-- Partner distribution chain configuration - Defines seller and optional distributor -->
+  <DistributionChain>
+    <!-- Distribution chain participant 1 - Seller -->
     <DistributionChainLink xmlns="${NS_COMMON}">
       <Ordinal>1</Ordinal>
       <ParticipatingOrg>
@@ -61,17 +62,35 @@ export function buildAirlineProfileXml(input: AirlineProfileInput): string {
     </DistributionChainLink>
   </DistributionChain>`;
   }
+}
+
+/**
+ * Build AirlineProfile XML to fetch route network from airline
+ */
+export function buildAirlineProfileXml(input: AirlineProfileInput): string {
+  // Get current timestamp for request tracking
+  const timestamp = new Date().toISOString();
+
+  // Build header comments with request details
+  const headerComments = `<!-- ================================================================ -->
+<!-- NDC AirlineProfile Request - Fetch Route Network -->
+<!-- Generated: ${timestamp} -->
+<!-- Airline Code: ${input.ownerCode} -->
+<!-- Distribution Chain: ${input.distributionChain?.links?.length || 1} participant(s) -->
+<!-- ================================================================ -->
+`;
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<IATA_AirlineProfileRQ xmlns="${NS_MESSAGE}">
-  ${distributionChainXml}
+${headerComments}<IATA_AirlineProfileRQ xmlns="${NS_MESSAGE}">${buildDistributionChain(input)}
+  <!-- NDC protocol version specification - IATA NDC 21.3 standard -->
   <PayloadAttributes>
     <VersionNumber xmlns="${NS_COMMON}">21.3</VersionNumber>
   </PayloadAttributes>
+  <!-- Airline profile query request for route network -->
   <Request>
     <AirlineProfileFilterCriteria xmlns="${NS_COMMON}">
       <AirlineProfileCriteria>
-        <OwnerCode>${escapeXml(input.ownerCode)}</OwnerCode>
+        <OwnerCode>${escapeXml(input.ownerCode)}</OwnerCode> <!-- Airline code for route network query -->
       </AirlineProfileCriteria>
     </AirlineProfileFilterCriteria>
   </Request>

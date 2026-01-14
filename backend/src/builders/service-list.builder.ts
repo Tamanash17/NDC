@@ -29,6 +29,7 @@ function buildDistributionChainLink(
   if (!orgRole || !orgName || !orgCode) return "";
 
   return `
+    <!-- Distribution chain participant ${ordinal} - ${orgRole} -->
     <DistributionChainLink xmlns="${IATA_COMMON_NAMESPACE}">
       <Ordinal>${ordinal}</Ordinal>
       <OrgRole>${escapeXml(orgRole)}</OrgRole>
@@ -58,9 +59,9 @@ function buildDistributionChain(chain?: DistributionChain): string {
     .join("");
 
   return `
-<DistributionChain>
-  ${chainLinks}
-</DistributionChain>`;
+  <!-- Partner distribution chain configuration - Defines seller and optional distributor -->
+  <DistributionChain>${chainLinks}
+  </DistributionChain>`;
 }
 
 /**
@@ -124,16 +125,32 @@ export function buildServiceListXml(
     offersXml = buildOffer(input.offerId, ownerCode, offerItems);
   }
 
+  // Get current timestamp for request tracking
+  const timestamp = new Date().toISOString();
+
+  // Extract order ID from first offer for header comments
+  const firstOfferId = input.selectedOffers?.[0]?.offerId || input.offerId || 'N/A';
+
+  // Build header comments with request details
+  const headerComments = `<!-- ================================================================ -->
+<!-- NDC ServiceList Request - Available Ancillary Services Query -->
+<!-- Generated: ${timestamp} -->
+<!-- Offer ID: ${firstOfferId} -->
+<!-- Owner Code: ${ownerCode} (Jetstar) -->
+<!-- Distribution Chain: ${chain?.links?.length || 0} participant(s) -->
+<!-- ================================================================ -->
+`;
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<IATA_ServiceListRQ xmlns="${IATA_NAMESPACE}">
-  ${buildDistributionChain(chain)}
+${headerComments}<IATA_ServiceListRQ xmlns="${IATA_NAMESPACE}">${buildDistributionChain(chain)}
+  <!-- NDC protocol version specification - IATA NDC 21.3 standard -->
   <PayloadAttributes>
     <VersionNumber xmlns="${IATA_COMMON_NAMESPACE}">21.3</VersionNumber>
   </PayloadAttributes>
+  <!-- Service list query request for available ancillary services -->
   <Request>
     <ServiceListCoreRequest xmlns="${IATA_COMMON_NAMESPACE}">
-      <OfferRequest>
-        ${offersXml}
+      <OfferRequest>${offersXml}
       </OfferRequest>
     </ServiceListCoreRequest>
   </Request>

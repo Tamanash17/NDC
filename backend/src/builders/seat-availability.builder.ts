@@ -25,15 +25,19 @@ function buildDistributionChain(chain?: DistributionChain): string {
     throw new Error('Distribution chain is required - please configure seller/distributor in the wizard');
   }
 
-  return `<DistributionChain>
-    ${chain.links.map(link => `<DistributionChainLink xmlns="${NDC_V21_3_COMMON_NS}">
+  return `
+  <!-- Partner distribution chain configuration - Defines seller and optional distributor -->
+  <DistributionChain>
+    ${chain.links.map(link => `
+    <!-- Distribution chain participant ${link.ordinal} - ${link.orgRole} -->
+    <DistributionChainLink xmlns="${NDC_V21_3_COMMON_NS}">
       <Ordinal>${link.ordinal}</Ordinal>
       <OrgRole>${escapeXml(link.orgRole)}</OrgRole>
       <ParticipatingOrg>
         <Name>${escapeXml(link.orgName)}</Name>
         <OrgID>${escapeXml(link.orgId)}</OrgID>
       </ParticipatingOrg>
-    </DistributionChainLink>`).join("\n    ")}
+    </DistributionChainLink>`).join("")}
   </DistributionChain>`;
 }
 
@@ -56,18 +60,17 @@ export function buildSeatAvailabilityXml(
     // This is the CORRECT format for round-trip flights as per Postman example
     // IMPORTANT: Segment refs go on the OFFER level, NOT on individual OfferItems
     offerXml = input.offers.map(offer => {
-      const offerItems = offer.offerItemIds.map(itemId => {
-        return `<OfferItem>
-                       <OfferItemID>${escapeXml(itemId)}</OfferItemID>
-                   </OfferItem>`;
-      }).join('\n                   ');
+      const offerItems = offer.offerItemIds.map(itemId => `
+                  <OfferItem>
+                    <OfferItemID>${escapeXml(itemId)}</OfferItemID>
+                  </OfferItem>`).join("");
 
-      return `<Offer>
-                       <OfferID>${escapeXml(offer.offerId)}</OfferID>
-                       <OwnerCode>${escapeXml(offer.ownerCode)}</OwnerCode>
-                   ${offerItems}
-                   </Offer>`;
-    }).join('\n               ');
+      return `
+                  <Offer>
+                    <OfferID>${escapeXml(offer.offerId)}</OfferID>
+                    <OwnerCode>${escapeXml(offer.ownerCode)}</OwnerCode>${offerItems}
+                  </Offer>`;
+    }).join("");
   } else if (input.offerId && input.offerItemIds) {
     // LEGACY SINGLE-OFFER FORMAT - Build single <Offer> element
     // Each offerItem gets ALL segment refs (if provided)
@@ -75,43 +78,63 @@ export function buildSeatAvailabilityXml(
       // Only include PaxSegmentRefID if segments are provided and not empty
       let segmentRefs = '';
       if (input.segmentRefIds && input.segmentRefIds.length > 0) {
-        segmentRefs = input.segmentRefIds.map(segId =>
-          `<PaxSegmentRefID>${escapeXml(segId)}</PaxSegmentRefID>`
-        ).join('\n                    ');
-        // Add newline before first segment ref if we have segments
-        if (segmentRefs) {
-          segmentRefs = '\n                    ' + segmentRefs;
-        }
+        segmentRefs = input.segmentRefIds.map(segId => `
+                    <PaxSegmentRefID>${escapeXml(segId)}</PaxSegmentRefID>`).join("");
       }
 
-      return `<OfferItem>
-                       <OfferItemID>${escapeXml(itemId)}</OfferItemID>${segmentRefs}
-                   </OfferItem>`;
-    }).join('\n                   ');
+      return `
+                  <OfferItem>
+                    <OfferItemID>${escapeXml(itemId)}</OfferItemID>${segmentRefs}
+                  </OfferItem>`;
+    }).join("");
 
-    offerXml = `<Offer>
-                       <OfferID>${escapeXml(input.offerId)}</OfferID>
-                       <OwnerCode>${escapeXml(input.ownerCode)}</OwnerCode>
-                   ${offerItems}
-                   </Offer>`;
+    offerXml = `
+                  <Offer>
+                    <OfferID>${escapeXml(input.offerId)}</OfferID>
+                    <OwnerCode>${escapeXml(input.ownerCode)}</OwnerCode>${offerItems}
+                  </Offer>`;
   }
 
   // NOTE: Postman reference implementation does NOT include ShoppingResponseID
   // Jetstar maintains session context through other means (likely auth token/session)
   // Including ShoppingResponseID causes Jetstar to IGNORE it and create new contexts anyway
 
+  // Get current timestamp for request tracking
+  const timestamp = new Date().toISOString();
+
+  // Collect offer details for header comments
+  const offerCount = input.offers?.length || (input.offerId ? 1 : 0);
+  const offerIds = input.offers?.map(o => o.offerId).join(', ') || input.offerId || 'N/A';
+  const segmentCount = input.segmentRefIds?.length || 0;
+  const segmentIds = input.segmentRefIds?.join(', ') || 'N/A';
+
+  // Build header comments with request details
+  const headerComments = `<!-- ================================================================ -->
+<!-- NDC SeatAvailability Request - Seat Map and Availability Query -->
+<!-- Generated: ${timestamp} -->
+<!-- Offer Count: ${offerCount} -->
+<!-- Offer ID(s): ${offerIds} -->
+<!-- Segment Count: ${segmentCount} -->
+<!-- Segment ID(s): ${segmentIds} -->
+<!-- Distribution Chain: ${chain?.links?.length || 0} participant(s) -->
+<!-- ================================================================ -->
+`;
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<IATA_SeatAvailabilityRQ xmlns="${NDC_V21_3_MESSAGE_NS}">
-${distributionChainXml}       <PayloadAttributes>
-           <VersionNumber xmlns="${NDC_V21_3_COMMON_NS}">21.3</VersionNumber>
-       </PayloadAttributes>
-       <Request>
-           <SeatAvailCoreRequest xmlns="${NDC_V21_3_COMMON_NS}">
-               <OfferRequest>
-               ${offerXml}
-               </OfferRequest>
-           </SeatAvailCoreRequest>
-       </Request>
+${headerComments}<IATA_SeatAvailabilityRQ xmlns="${NDC_V21_3_MESSAGE_NS}">${distributionChainXml}
+  <!-- NDC protocol version specification - IATA NDC 21.3 standard -->
+  <PayloadAttributes>
+    <VersionNumber xmlns="${NDC_V21_3_COMMON_NS}">21.3</VersionNumber>
+  </PayloadAttributes>
+  <!-- Seat availability request for selected offers -->
+  <Request>
+    <!-- Core seat availability query parameters -->
+    <SeatAvailCoreRequest xmlns="${NDC_V21_3_COMMON_NS}">
+      <!-- Offer selection for seat map retrieval -->
+      <OfferRequest>${offerXml}
+      </OfferRequest>
+    </SeatAvailCoreRequest>
+  </Request>
 </IATA_SeatAvailabilityRQ>`;
 
   const trimmedXml = xml.trim();
