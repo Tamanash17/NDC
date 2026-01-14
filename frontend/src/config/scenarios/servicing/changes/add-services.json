@@ -1,0 +1,66 @@
+{
+  "id": "add-services",
+  "name": "Add Services",
+  "description": "Add baggage, meals, seats or other services to an existing booking",
+  "category": "servicing",
+  "subcategory": "changes",
+  "tags": ["services", "ancillaries", "baggage", "meals", "seats", "add"],
+  "enabled": true,
+  "steps": [
+    {
+      "id": "lookup",
+      "operation": "OrderRetrieve",
+      "label": "Find Order",
+      "description": "Enter PNR or Order ID",
+      "component": "OrderLookup",
+      "required": true,
+      "provides": ["orderId", "orderDetails"]
+    },
+    {
+      "id": "services",
+      "operation": "ServiceList",
+      "label": "Add Services",
+      "description": "Select services to add",
+      "component": "ServiceSelection",
+      "required": true,
+      "requires": ["orderDetails"],
+      "config": {
+        "serviceTypes": ["baggage", "meals", "seats", "other"]
+      }
+    },
+    {
+      "id": "review",
+      "operation": "OrderQuote",
+      "label": "Review",
+      "description": "Review services and pricing",
+      "component": "ServiceReview",
+      "required": true,
+      "showsPricing": true
+    },
+    {
+      "id": "payment",
+      "operation": "Payment",
+      "label": "Payment",
+      "description": "Pay for services",
+      "component": "Payment",
+      "required": true
+    },
+    {
+      "id": "confirm",
+      "operation": "OrderChange",
+      "label": "Confirm",
+      "description": "Services added",
+      "component": "ServiceConfirmation",
+      "required": true
+    }
+  ],
+  "defaults": {},
+  "constraints": {},
+  "ui": {
+    "icon": "Plus",
+    "color": "blue",
+    "badge": null,
+    "estimatedDuration": "5 min",
+    "complexity": "simple"
+  }
+}

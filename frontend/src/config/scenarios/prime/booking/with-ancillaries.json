@@ -1,0 +1,103 @@
+{
+  "id": "with-ancillaries",
+  "name": "Booking with Ancillaries",
+  "description": "Full booking flow including seat selection, baggage, and meal services",
+  "category": "prime",
+  "subcategory": "booking",
+  "tags": ["ancillaries", "seats", "baggage", "meals", "services"],
+  "enabled": true,
+  "steps": [
+    {
+      "id": "search",
+      "operation": "AirShopping",
+      "label": "Search",
+      "description": "Search for available flights",
+      "component": "FlightSearch",
+      "required": true,
+      "provides": ["offers", "shoppingResponseId"]
+    },
+    {
+      "id": "select",
+      "operation": "OfferPrice",
+      "label": "Select",
+      "description": "Choose your preferred offer",
+      "component": "FlightSelection",
+      "required": true,
+      "requires": ["offers"],
+      "provides": ["selectedOffer", "pricedOffer"]
+    },
+    {
+      "id": "passengers",
+      "operation": "Passengers",
+      "label": "Passengers",
+      "description": "Enter passenger details",
+      "component": "PassengerDetails",
+      "required": true
+    },
+    {
+      "id": "seats",
+      "operation": "SeatAvailability",
+      "label": "Seats",
+      "description": "Select your seats",
+      "component": "SeatSelection",
+      "required": false,
+      "optional": true,
+      "canSkip": true
+    },
+    {
+      "id": "services",
+      "operation": "ServiceList",
+      "label": "Services",
+      "description": "Add baggage, meals, and other services",
+      "component": "ServiceSelection",
+      "required": false,
+      "optional": true,
+      "canSkip": true
+    },
+    {
+      "id": "review",
+      "operation": "OfferPrice",
+      "label": "Review",
+      "description": "Review booking details and pricing",
+      "component": "BookingReview",
+      "required": true
+    },
+    {
+      "id": "payment",
+      "operation": "OrderCreate",
+      "label": "Payment",
+      "description": "Enter payment information",
+      "component": "Payment",
+      "required": true
+    },
+    {
+      "id": "confirm",
+      "operation": "OrderCreate",
+      "label": "Done",
+      "description": "Booking confirmed",
+      "component": "Confirmation",
+      "required": true
+    }
+  ],
+  "ndcConfig": {
+    "offerCriteria": {
+      "serviceCriteria": [
+        {
+          "includeInd": true,
+          "RFIC": "G",
+          "RFISC": "0L8"
+        }
+      ]
+    }
+  },
+  "constraints": {
+    "maxPassengers": 9,
+    "allowedCurrencies": ["AUD", "NZD", "USD", "SGD", "JPY"]
+  },
+  "ui": {
+    "icon": "Briefcase",
+    "color": "purple",
+    "badge": "Complete",
+    "complexity": "complex"
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "id": "full-cancel",
+  "name": "Cancel Booking",
+  "description": "Cancel an entire booking and process refund",
+  "category": "servicing",
+  "subcategory": "cancellation",
+  "tags": ["cancel", "refund", "void"],
+  "enabled": true,
+  "steps": [
+    {
+      "id": "lookup",
+      "operation": "OrderRetrieve",
+      "label": "Find Order",
+      "description": "Enter PNR or Order ID",
+      "component": "OrderLookup",
+      "required": true,
+      "provides": ["orderId", "orderDetails"]
+    },
+    {
+      "id": "confirm-cancel",
+      "operation": "OrderQuote",
+      "label": "Review",
+      "description": "Review cancellation fees and refund amount",
+      "component": "CancellationReview",
+      "required": true,
+      "requires": ["orderDetails"],
+      "showsPricing": true
+    },
+    {
+      "id": "process",
+      "operation": "OrderChange",
+      "label": "Process",
+      "description": "Process the cancellation",
+      "component": "CancellationProcess",
+      "required": true
+    },
+    {
+      "id": "confirm",
+      "operation": "Confirmation",
+      "label": "Complete",
+      "description": "Cancellation complete",
+      "component": "CancellationConfirmation",
+      "required": true
+    }
+  ],
+  "defaults": {},
+  "constraints": {},
+  "ui": {
+    "icon": "XCircle",
+    "color": "red",
+    "badge": null,
+    "estimatedDuration": "3 min",
+    "complexity": "simple"
+  }
+}

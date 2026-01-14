@@ -1,0 +1,75 @@
+{
+  "id": "request-bundles",
+  "name": "Request with Bundles",
+  "description": "AirShopping request that includes bundle offers (RFIC=G, RFISC=0L8)",
+  "category": "prime",
+  "subcategory": "booking",
+  "tags": ["bundles", "offers", "RFIC", "RFISC"],
+  "enabled": true,
+  "steps": [
+    {
+      "id": "search",
+      "operation": "AirShopping",
+      "label": "Search Flights",
+      "description": "Search for flights with bundle offers",
+      "component": "FlightSearch",
+      "required": true,
+      "provides": ["offers", "shoppingResponseId"]
+    },
+    {
+      "id": "select",
+      "operation": "OfferPrice",
+      "label": "Select Offer",
+      "description": "Choose your preferred offer",
+      "component": "FlightSelection",
+      "required": true,
+      "requires": ["offers"],
+      "provides": ["selectedOffer", "pricedOffer"]
+    },
+    {
+      "id": "passengers",
+      "operation": "Passengers",
+      "label": "Passengers",
+      "description": "Enter passenger details",
+      "component": "PassengerDetails",
+      "required": true
+    },
+    {
+      "id": "payment",
+      "operation": "OrderCreate",
+      "label": "Payment",
+      "description": "Enter payment information",
+      "component": "Payment",
+      "required": true
+    },
+    {
+      "id": "confirm",
+      "operation": "OrderCreate",
+      "label": "Confirmation",
+      "description": "Review and confirm your booking",
+      "component": "Confirmation",
+      "required": true
+    }
+  ],
+  "ndcConfig": {
+    "offerCriteria": {
+      "serviceCriteria": [
+        {
+          "includeInd": true,
+          "RFIC": "G",
+          "RFISC": "0L8"
+        }
+      ]
+    }
+  },
+  "constraints": {
+    "maxPassengers": 9,
+    "allowedCurrencies": ["AUD", "NZD", "USD", "SGD", "JPY"]
+  },
+  "ui": {
+    "icon": "Package",
+    "color": "emerald",
+    "badge": "Recommended",
+    "complexity": "simple"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "version": "1.0.0",
+  "scenarios": [
+    "prime/booking/request-bundles",
+    "prime/booking/basic-booking",
+    "prime/booking/with-ancillaries",
+    "servicing/retrieve/order-retrieve",
+    "servicing/changes/date-change",
+    "servicing/changes/add-services",
+    "servicing/cancellation/full-cancel"
+  ],
+  "categories": [
+    {
+      "id": "prime",
+      "name": "Prime Booking",
+      "description": "Create new bookings",
+      "icon": "PlaneTakeoff",
+      "color": "emerald",
+      "subcategories": [
+        {
+          "id": "booking",
+          "name": "New Booking",
+          "description": "Book new flights"
+        }
+      ]
+    },
+    {
+      "id": "servicing",
+      "name": "Servicing",
+      "description": "Manage existing bookings",
+      "icon": "Wrench",
+      "color": "amber",
+      "subcategories": [
+        {
+          "id": "retrieve",
+          "name": "Retrieve",
+          "description": "Look up existing orders"
+        },
+        {
+          "id": "changes",
+          "name": "Changes",
+          "description": "Modify booking details"
+        },
+        {
+          "id": "cancellation",
+          "name": "Cancellation",
+          "description": "Cancel bookings"
+        }
+      ]
+    }
+  ]
+}

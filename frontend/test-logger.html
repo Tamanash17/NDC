@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Logger</title>
+</head>
+<body>
+    <h1>Test Logger</h1>
+    <button onclick="testLog()">Send Test Log</button>
+    <pre id="result"></pre>
+
+    <script>
+        async function testLog() {
+            try {
+                const response = await fetch('http://localhost:3001/api/debug/log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        component: 'TestLogger',
+                        message: 'This is a test log message',
+                        data: { test: true, timestamp: new Date().toISOString() }
+                    })
+                });
+                const result = await response.json();
+                document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+            } catch (error) {
+                document.getElementById('result').textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

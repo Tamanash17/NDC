@@ -1,0 +1,69 @@
+{
+  "bundleInclusions": {
+    "description": "Bundle inclusion codes - components of bundles, not standalone purchasable services",
+    "codes": [
+      "OOCP",
+      "MORE",
+      "FPLS",
+      "FLXN",
+      "FLEX",
+      "PLUS",
+      "BMAX",
+      "EMAX",
+      "STRT",
+      "SPLS"
+    ]
+  },
+  "serviceTypes": {
+    "baggage": {
+      "description": "Checked baggage services (BG/OB codes)",
+      "prefixes": ["BG", "OB"],
+      "keywords": ["BAG", "LUG", "KG"]
+    },
+    "meal": {
+      "description": "Meal and food services",
+      "prefixes": ["SPML"],
+      "keywords": ["MEAL", "FOOD", "SNACK"]
+    },
+    "insurance": {
+      "description": "Travel insurance services",
+      "prefixes": [],
+      "keywords": ["INSURANCE", "INS"]
+    },
+    "flexibility": {
+      "description": "Flexibility and change options",
+      "prefixes": ["FLX", "FL"],
+      "keywords": ["FLEX", "FLEXIBILITY"]
+    },
+    "bundle": {
+      "description": "Fare bundle/family detection",
+      "prefixes": [],
+      "keywords": ["BUNDLE", "PLUS", "MAX", "STARTER"]
+    },
+    "ssr": {
+      "description": "Special Service Requests - wheelchair, medical, carry-on, sports equipment, etc.",
+      "prefixes": ["WCH", "CB", "OSI"],
+      "exactCodes": [
+        "WHCR", "WCBD", "WCBW",
+        "BLND", "DEAF", "DPNA",
+        "MAAS", "MEDA", "OXYG", "STCR", "EXST",
+        "UMNR", "UMAD",
+        "PETC", "AVIH",
+        "SPEQ", "BIKE", "GOLF", "SKI", "SURF",
+        "OTHS"
+      ],
+      "keywords": [
+        "WHEELCHAIR", "BLIND", "DEAF", "ASSISTANCE",
+        "OVERSIZED", "CARRY-ON", "CARRY ON", "CABIN BAG"
+      ]
+    }
+  },
+  "bundleCodePattern": "^[SPMFB]\\d{2,3}$",
+  "bundleTiers": {
+    "S": { "tier": 1, "name": "Starter" },
+    "P": { "tier": 2, "name": "Plus" },
+    "M": { "tier": 3, "name": "Max" },
+    "F": { "tier": 4, "name": "Flex" },
+    "B": { "tier": 4, "name": "Business" }
+  }
+}

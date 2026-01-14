@@ -1,0 +1,10 @@
+﻿node_modules
+dist
+.git
+.gitignore
+*.md
+.env*.local
+.vscode
+coverage
+.nyc_output
+*.log

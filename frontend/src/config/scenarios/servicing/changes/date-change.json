@@ -1,0 +1,85 @@
+{
+  "id": "date-change",
+  "name": "Change Flight Date",
+  "description": "Change the date or time of an existing flight booking",
+  "category": "servicing",
+  "subcategory": "changes",
+  "tags": ["change", "date", "reschedule", "modify"],
+  "enabled": true,
+  "steps": [
+    {
+      "id": "lookup",
+      "operation": "OrderRetrieve",
+      "label": "Find Order",
+      "description": "Enter PNR or Order ID",
+      "component": "OrderLookup",
+      "required": true,
+      "provides": ["orderId", "orderDetails"]
+    },
+    {
+      "id": "select-segment",
+      "operation": "OrderReshop",
+      "label": "Select Flight",
+      "description": "Choose which flight to change",
+      "component": "SegmentSelector",
+      "required": true,
+      "requires": ["orderDetails"]
+    },
+    {
+      "id": "new-date",
+      "operation": "OrderReshop",
+      "label": "New Date",
+      "description": "Select new travel date",
+      "component": "DateSelector",
+      "required": true
+    },
+    {
+      "id": "new-flight",
+      "operation": "OrderReshop",
+      "label": "New Flight",
+      "description": "Select from available flights",
+      "component": "FlightSelection",
+      "required": true,
+      "provides": ["newOffer"]
+    },
+    {
+      "id": "review",
+      "operation": "OrderQuote",
+      "label": "Review",
+      "description": "Review changes and price difference",
+      "component": "ChangeReview",
+      "required": true,
+      "showsPricing": true
+    },
+    {
+      "id": "payment",
+      "operation": "Payment",
+      "label": "Payment",
+      "description": "Pay any fare difference",
+      "component": "Payment",
+      "required": true,
+      "condition": {
+        "field": "priceDifference",
+        "operator": "greaterThan",
+        "value": 0
+      }
+    },
+    {
+      "id": "confirm",
+      "operation": "OrderChange",
+      "label": "Confirm",
+      "description": "Confirm the change",
+      "component": "ChangeConfirmation",
+      "required": true
+    }
+  ],
+  "defaults": {},
+  "constraints": {},
+  "ui": {
+    "icon": "Calendar",
+    "color": "amber",
+    "badge": null,
+    "estimatedDuration": "5 min",
+    "complexity": "standard"
+  }
+}

@@ -1,0 +1,6 @@
+backend/nul
+frontend/nul
+node_modules
+dist
+.env
+logs

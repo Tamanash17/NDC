@@ -1,0 +1,38 @@
+{
+  "id": "order-retrieve",
+  "name": "Retrieve Order",
+  "description": "Look up an existing booking by PNR or Order ID",
+  "category": "servicing",
+  "subcategory": "retrieve",
+  "tags": ["retrieve", "lookup", "pnr", "order"],
+  "enabled": true,
+  "steps": [
+    {
+      "id": "lookup",
+      "operation": "OrderRetrieve",
+      "label": "Find Order",
+      "description": "Enter PNR or Order ID to retrieve",
+      "component": "OrderLookup",
+      "required": true,
+      "provides": ["orderId", "orderDetails"]
+    },
+    {
+      "id": "view",
+      "operation": "OrderRetrieve",
+      "label": "Order Details",
+      "description": "View booking details",
+      "component": "OrderView",
+      "required": true,
+      "requires": ["orderDetails"]
+    }
+  ],
+  "defaults": {},
+  "constraints": {},
+  "ui": {
+    "icon": "Search",
+    "color": "slate",
+    "badge": null,
+    "estimatedDuration": "1 min",
+    "complexity": "simple"
+  }
+}

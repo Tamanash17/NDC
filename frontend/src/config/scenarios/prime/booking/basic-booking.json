@@ -1,0 +1,64 @@
+{
+  "id": "basic-booking",
+  "name": "Basic Booking",
+  "description": "Standard AirShopping request without additional service criteria",
+  "category": "prime",
+  "subcategory": "booking",
+  "tags": ["basic", "simple", "standard"],
+  "enabled": true,
+  "steps": [
+    {
+      "id": "search",
+      "operation": "AirShopping",
+      "label": "Search Flights",
+      "description": "Search for available flights",
+      "component": "FlightSearch",
+      "required": true,
+      "provides": ["offers", "shoppingResponseId"]
+    },
+    {
+      "id": "select",
+      "operation": "OfferPrice",
+      "label": "Select Offer",
+      "description": "Choose your preferred offer",
+      "component": "FlightSelection",
+      "required": true,
+      "requires": ["offers"],
+      "provides": ["selectedOffer", "pricedOffer"]
+    },
+    {
+      "id": "passengers",
+      "operation": "Passengers",
+      "label": "Passengers",
+      "description": "Enter passenger details",
+      "component": "PassengerDetails",
+      "required": true
+    },
+    {
+      "id": "payment",
+      "operation": "OrderCreate",
+      "label": "Payment",
+      "description": "Enter payment information",
+      "component": "Payment",
+      "required": true
+    },
+    {
+      "id": "confirm",
+      "operation": "OrderCreate",
+      "label": "Confirmation",
+      "description": "Review and confirm your booking",
+      "component": "Confirmation",
+      "required": true
+    }
+  ],
+  "ndcConfig": {},
+  "constraints": {
+    "maxPassengers": 9,
+    "allowedCurrencies": ["AUD", "NZD", "USD", "SGD", "JPY"]
+  },
+  "ui": {
+    "icon": "Plane",
+    "color": "blue",
+    "complexity": "simple"
+  }
+}

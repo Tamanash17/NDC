@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "noImplicitReturns": false,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": false,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@/config/*": ["src/config/*"],
+      "@/middleware/*": ["src/middleware/*"],
+      "@/services/*": ["src/services/*"],
+      "@/routes/*": ["src/routes/*"],
+      "@/types/*": ["src/types/*"],
+      "@/utils/*": ["src/utils/*"],
+      "@/builders/*": ["src/builders/*"],
+      "@/parsers/*": ["src/parsers/*"],
+      "@/errors/*": ["src/errors/*"],
+      "@/validation/*": ["src/validation/*"],
+      "@/controllers/*": ["src/controllers/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}
