@@ -127,6 +127,9 @@ export function buildPaymentXml(request: PaymentRequest): string {
   const payerXml = buildPayer(request);
   const paymentMethodXml = buildPaymentMethod(request);
 
+  // Format amount to 2 decimal places (Jetstar requires decimal format)
+  const formattedAmount = request.amount.toFixed(2);
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <IATA_OrderChangeRQ xmlns="${JETSTAR_NAMESPACE}">${buildDistributionChain(request.distributionChain)}
   <PayloadAttributes>
@@ -142,7 +145,7 @@ export function buildPaymentXml(request: PaymentRequest): string {
         <PaymentTypeCode>${escapeXml(request.paymentType)}</PaymentTypeCode>
       </PaymentMethodCriteria>
       <PaymentProcessingDetails>
-        <Amount CurCode="${escapeXml(request.currency)}">${request.amount}</Amount>${payerXml}${paymentMethodXml}
+        <Amount CurCode="${escapeXml(request.currency)}">${formattedAmount}</Amount>${payerXml}${paymentMethodXml}
       </PaymentProcessingDetails>
     </PaymentFunctions>
   </Request>
