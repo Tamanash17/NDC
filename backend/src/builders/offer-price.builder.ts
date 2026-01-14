@@ -81,8 +81,7 @@ function buildALaCarteOfferItemWithRefs(
 
     flightAssociations = `
                 <OfferFlightAssociations>
-                    <PaxJourneyRef>${journeyRefElements}
-                    </PaxJourneyRef>
+                    <PaxJourneyRef>${journeyRefElements}</PaxJourneyRef>
                 </OfferFlightAssociations>`;
   } else if (refType === 'leg') {
     const legRefElements = refIds.map(refId =>
@@ -91,8 +90,7 @@ function buildALaCarteOfferItemWithRefs(
 
     flightAssociations = `
                 <OfferFlightAssociations>
-                    <DatedOperatingLegRef>${legRefElements}
-                    </DatedOperatingLegRef>
+                    <DatedOperatingLegRef>${legRefElements}</DatedOperatingLegRef>
                 </OfferFlightAssociations>`;
   } else {
     // segment
@@ -105,8 +103,7 @@ function buildALaCarteOfferItemWithRefs(
 
     flightAssociations = `
                 <OfferFlightAssociations>
-                    <PaxSegmentReferences>${segmentRefElements}
-                    </PaxSegmentReferences>
+                    <PaxSegmentReferences>${segmentRefElements}</PaxSegmentReferences>
                 </OfferFlightAssociations>`;
   }
 
@@ -149,15 +146,27 @@ function expandALaCarteItems(items: any[]): string {
       refType = 'segment';
     }
 
+    // Determine item type for comments
+    const itemType = item.serviceType || 'ancillary';
+    const itemTypeDisplay = itemType === 'seat' ? 'Seat' :
+                           itemType === 'baggage' ? 'Baggage' :
+                           itemType === 'meal' ? 'Meal' :
+                           itemType === 'bundle' ? 'Bundle' : 'Ancillary';
+
     // CRITICAL EXPANSION LOGIC:
     // - SEGMENT-based items: Create separate SelectedOfferItem per segment
     // - JOURNEY/LEG-based items: Create ONE SelectedOfferItem with all refs
     if (refType === 'segment' && refs.length > 0) {
       // SEGMENT-based: Expand into separate items (one per segment)
       console.log(`[OfferPriceBuilder] Expanding segment-based item ${item.offerItemId} into ${refs.length} separate items`);
-      for (const segmentRef of refs) {
+      for (let i = 0; i < refs.length; i++) {
+        const segmentRef = refs[i];
+        const segmentNum = i + 1;
+        const totalSegs = refs.length;
+
         // Build base SelectedOfferItem with SelectedALaCarteOfferItem
         let itemXml = `
+          <!-- ${itemTypeDisplay} item ${segmentNum}/${totalSegs} - Segment ${segmentRef}, Passengers: ${item.paxRefIds.join(', ')} -->
           <SelectedOfferItem>
             <OfferItemRefID>${escapeXml(item.offerItemId)}</OfferItemRefID>${paxRefIdsXml}${buildALaCarteOfferItemWithRefs(refType, [segmentRef])}`;
 
@@ -172,18 +181,18 @@ function expandALaCarteItems(items: any[]): string {
             </SelectedSeat>`;
         }
 
-        itemXml += `
-          </SelectedOfferItem>`;
+        itemXml += `</SelectedOfferItem>`;
 
         expandedItems.push(itemXml);
       }
     } else {
       // JOURNEY/LEG-based: Create ONE item with all refs
       console.log(`[OfferPriceBuilder] Creating single ${refType}-based item ${item.offerItemId} with ${refs.length} refs`);
+      const refsList = refs.length > 0 ? refs.join(', ') : 'all flights';
       expandedItems.push(`
+          <!-- ${itemTypeDisplay} item - ${refType} refs: ${refsList}, Passengers: ${item.paxRefIds.join(', ')} -->
           <SelectedOfferItem>
-            <OfferItemRefID>${escapeXml(item.offerItemId)}</OfferItemRefID>${paxRefIdsXml}${buildALaCarteOfferItemWithRefs(refType, refs)}
-          </SelectedOfferItem>`);
+            <OfferItemRefID>${escapeXml(item.offerItemId)}</OfferItemRefID>${paxRefIdsXml}${buildALaCarteOfferItemWithRefs(refType, refs)}</SelectedOfferItem>`);
     }
   }
 
@@ -232,13 +241,86 @@ export function buildOfferPriceXml(
   const pax = input.passengers || { adults: 1, children: 0, infants: 0 };
   const passengerBreakdown = `${pax.adults} adult(s), ${pax.children} child(ren), ${pax.infants} infant(s)`;
 
+  // Analyze what's included in this request for dynamic header comments
+  let hasFareItems = false;
+  let hasBundleItems = false;
+  let hasBaggageItems = false;
+  let hasMealItems = false;
+  let hasSeatItems = false;
+  let hasOtherAncillaries = false;
+
+  for (const offer of input.selectedOffers) {
+    if (offer.offerItems && offer.offerItems.length > 0) {
+      for (const item of offer.offerItems) {
+        if (!item.isALaCarte) {
+          hasFareItems = true;
+        } else if (item.isALaCarte) {
+          // Determine ancillary type based on service type or offer item ID patterns
+          const itemIdLower = item.offerItemId.toLowerCase();
+          const serviceType = item.serviceType?.toLowerCase() || '';
+
+          if (serviceType === 'seat' || itemIdLower.includes('seat')) {
+            hasSeatItems = true;
+          } else if (serviceType === 'baggage' || itemIdLower.includes('bag') || itemIdLower.includes('luggage')) {
+            hasBaggageItems = true;
+          } else if (serviceType === 'meal' || itemIdLower.includes('meal') || itemIdLower.includes('food')) {
+            hasMealItems = true;
+          } else if (serviceType === 'bundle' || itemIdLower.includes('bundle') || itemIdLower.includes('max') || itemIdLower.includes('flex')) {
+            hasBundleItems = true;
+          } else {
+            hasOtherAncillaries = true;
+          }
+        }
+      }
+    } else {
+      // Legacy format - assume fare items
+      hasFareItems = true;
+    }
+  }
+
+  // Build dynamic "What's Included" description
+  const includedItems: string[] = [];
+  if (hasFareItems) includedItems.push('Flights');
+  if (hasBundleItems) includedItems.push('Bundles (Flex/Max)');
+  if (hasBaggageItems) includedItems.push('Baggage');
+  if (hasMealItems) includedItems.push('Meals');
+  if (hasSeatItems) includedItems.push('Seats');
+  if (hasOtherAncillaries) includedItems.push('Other Ancillaries');
+
+  const includedDescription = includedItems.length > 0
+    ? includedItems.join(' + ')
+    : 'Flights only';
+
+  // Build workflow step description
+  let workflowStep = 'Step 2: Price Calculation';
+  if (hasSeatItems) {
+    workflowStep += ' (Final step - includes seats)';
+  } else if (hasBaggageItems || hasMealItems || hasOtherAncillaries) {
+    workflowStep += ' (includes ancillaries)';
+  } else if (hasBundleItems) {
+    workflowStep += ' (includes bundles)';
+  } else {
+    workflowStep += ' (flights only)';
+  }
+
   // Build header comments with request details
   const headerComments = `<!-- ================================================================ -->
 <!-- NDC OfferPrice Request - Price Calculation -->
 <!-- Generated: ${timestamp} -->
-<!-- Offers: ${input.selectedOffers.length} offer(s) -->
-<!-- Offer Items: ${totalOfferItems} item(s) -->
-<!-- Passengers: ${passengerBreakdown} -->
+<!-- Workflow: ${workflowStep} -->
+<!-- ================================================================ -->
+<!--  -->
+<!-- PRICING REQUEST CONTENTS: -->
+<!--   What's Included: ${includedDescription} -->
+<!--   Offers: ${input.selectedOffers.length} offer(s) -->
+<!--   Offer Items: ${totalOfferItems} item(s) -->
+<!--   Passengers: ${passengerBreakdown} -->
+<!--  -->
+<!-- NOTE: Steps can be skipped in the booking flow: -->
+<!--   - Step 2a: Flights + Bundles (optional) -->
+<!--   - Step 2b: Flights + Bundles + Ancillaries/Baggage/Meals (optional) -->
+<!--   - Step 2c: Flights + All selections + Seats (final price) -->
+<!--  -->
 <!-- Owner Code: ${input.selectedOffers[0]?.ownerCode || 'N/A'} (Jetstar) -->
 <!-- Distribution Chain: ${chain?.links?.length || 0} participant(s) -->
 <!-- ================================================================ -->
@@ -275,16 +357,19 @@ ${headerComments}<IATA_OfferPriceRQ xmlns="${JETSTAR_NAMESPACE}">${buildDistribu
               });
             }
 
+            // Build description of what's in this offer
+            const offerDescription: string[] = [];
+            if (fareItems.length > 0) offerDescription.push(`${fareItems.length} flight fare(s)`);
+            if (aLaCarteItems.length > 0) offerDescription.push(`${aLaCarteItems.length} ancillary/ssr item(s)`);
+
             return `
-        <!-- Selected offer for pricing -->
+        <!-- Selected offer ${offer.offerId} - Contains: ${offerDescription.join(', ')} -->
         <SelectedOffer>
           <OfferRefID>${escapeXml(offer.offerId)}</OfferRefID>
           <OwnerCode>${escapeXml(offer.ownerCode)}</OwnerCode>${fareItems.map((item, idx) => `
-          <!-- Offer item ${idx + 1} - Flight fare -->
+          <!-- Offer item ${idx + 1} - Flight fare for passengers: ${item.paxRefIds.join(', ')} -->
           <SelectedOfferItem>
-            <OfferItemRefID>${escapeXml(item.offerItemId)}</OfferItemRefID>${item.paxRefIds.map(paxId => `<PaxRefID>${escapeXml(paxId)}</PaxRefID>`).join("")}
-          </SelectedOfferItem>`).join("")}${expandALaCarteItems(aLaCarteItems)}
-        </SelectedOffer>`;
+            <OfferItemRefID>${escapeXml(item.offerItemId)}</OfferItemRefID>${item.paxRefIds.map(paxId => `<PaxRefID>${escapeXml(paxId)}</PaxRefID>`).join("")}</SelectedOfferItem>`).join("")}${expandALaCarteItems(aLaCarteItems)}</SelectedOffer>`;
           }
 
           // Legacy fallback: use offerItemIds with shared paxRefIds
