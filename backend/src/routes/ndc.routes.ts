@@ -206,6 +206,22 @@ router.post("/air-shopping", async (req: any, res: any) => {
     // Show all segment IDs
     console.log("[NDC] All segment IDs:", parsed.dataLists?.paxSegmentList?.map(s => s.paxSegmentId));
 
+    // CRITICAL: Check if parsing found errors in the NDC response
+    if (!parsed.success && parsed.errors && parsed.errors.length > 0) {
+      console.error("[NDC] AirShopping response contained errors:", parsed.errors);
+
+      // Return error response with parsed NDC errors
+      return res.status(400).json({
+        success: false,
+        error: parsed.errors.map(e => `${e.code}: ${e.message}`).join(' | '),
+        parsed: {
+          errors: parsed.errors
+        },
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+      });
+    }
+
     res.json({
       success: true,
       data: parsed,
