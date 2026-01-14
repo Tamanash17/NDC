@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '@/core/context/ToastContext';
 import { orderRetrieve } from '@/lib/ndc-api';
 import { Card, Button, Input, Alert } from '@/components/ui';
@@ -10,12 +10,23 @@ import { Search, RefreshCw, XCircle, Luggage, Armchair } from 'lucide-react';
 export function ManageBookingPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const [searchParams] = useSearchParams();
 
-  const [pnr, setPnr] = useState('');
+  // Auto-populate PNR from query parameters (e.g., /manage?pnr=UWYYNG)
+  const pnrFromUrl = searchParams.get('pnr') || '';
+  const [pnr, setPnr] = useState(pnrFromUrl);
   const [lastName, setLastName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [booking, setBooking] = useState<any>(null);
+
+  // Update PNR when URL changes
+  useEffect(() => {
+    const urlPnr = searchParams.get('pnr');
+    if (urlPnr) {
+      setPnr(urlPnr.toUpperCase());
+    }
+  }, [searchParams]);
 
   const handleSearch = async () => {
     if (!pnr) {

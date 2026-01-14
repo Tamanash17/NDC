@@ -693,10 +693,18 @@ export function PassengersStep() {
         {/* Action Buttons */}
         <div className="flex justify-center gap-4 pt-2">
           <button
-            onClick={() => window.location.href = '/dashboard'}
-            className="px-6 py-3 border-2 border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 hover:border-slate-400 transition-all"
+            onClick={() => navigate('/booking')}
+            className="px-6 py-3 border-2 border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 hover:border-slate-400 transition-all flex items-center gap-2"
           >
-            Pay Later
+            <Search className="w-5 h-5" />
+            New Search
+          </button>
+          <button
+            onClick={() => navigate(`/manage?pnr=${encodeURIComponent(pnr)}`)}
+            className="px-6 py-3 border-2 border-blue-300 text-blue-700 font-semibold rounded-xl hover:bg-blue-50 hover:border-blue-400 transition-all flex items-center gap-2"
+          >
+            <Search className="w-5 h-5" />
+            Retrieve PNR
           </button>
           <button
             onClick={handleProceedToPayment}
