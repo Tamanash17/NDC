@@ -73,19 +73,47 @@ function buildPaymentMethod(request: PaymentRequest): string {
     const expirationDate = `${expiryMonth}${expiryYear}`;
 
     // Build CVV element only if provided
-    const cvvElement = request.card.cvv ? `<CardSecurityCode>${escapeXml(request.card.cvv)}</CardSecurityCode>` : '';
+    const cvvElement = request.card.cvv
+      ? `
+            <CardSecurityCode>${escapeXml(request.card.cvv)}</CardSecurityCode>`
+      : '';
 
-    // Match Postman format EXACTLY: CardBrandCode, CardNumber, CardSecurityCode, EffectiveDate, ExpirationDate
-    // NO CardHolderName element
-    return `<PaymentMethod><PaymentCard><CardBrandCode>${escapeXml(request.card.brand)}</CardBrandCode><CardNumber>${escapeXml(request.card.number)}</CardNumber>${cvvElement}<EffectiveDate>${effectiveDate}</EffectiveDate><ExpirationDate>${expirationDate}</ExpirationDate></PaymentCard></PaymentMethod>`;
+    return `
+        <PaymentMethod>
+          <PaymentCard>
+            <CardBrandCode>${escapeXml(request.card.brand)}</CardBrandCode>
+            <CardNumber>${escapeXml(request.card.number)}</CardNumber>${cvvElement}
+            <EffectiveDate>${effectiveDate}</EffectiveDate>
+            <ExpirationDate>${expirationDate}</ExpirationDate>
+          </PaymentCard>
+        </PaymentMethod>`;
   } else if (request.paymentType === 'AGT' && request.agency) {
     // Agency/BSP Settlement Payment
-    const iataElement = request.agency.iataNumber ? `<IATA_Number>${escapeXml(request.agency.iataNumber)}</IATA_Number>` : '';
-    const accountElement = request.agency.accountNumber ? `<AccountNumber>${escapeXml(request.agency.accountNumber)}</AccountNumber>` : '';
-    return `<PaymentMethod><SettlementPlan>${iataElement}<PaymentTypeCode>AGT</PaymentTypeCode>${accountElement}</SettlementPlan></PaymentMethod>`;
+    const iataElement = request.agency.iataNumber
+      ? `
+            <IATA_Number>${escapeXml(request.agency.iataNumber)}</IATA_Number>`
+      : '';
+    const accountElement = request.agency.accountNumber
+      ? `
+            <AccountNumber>${escapeXml(request.agency.accountNumber)}</AccountNumber>`
+      : '';
+
+    return `
+        <PaymentMethod>
+          <!-- Agent settlement payment -->
+          <SettlementPlan>${iataElement}
+            <PaymentTypeCode>AGT</PaymentTypeCode>${accountElement}
+          </SettlementPlan>
+        </PaymentMethod>`;
   } else if (request.paymentType === 'CA') {
     // Cash Agency Payment (for BSP settlement without IATA number)
-    return `<PaymentMethod><SettlementPlan><PaymentTypeCode>CA</PaymentTypeCode></SettlementPlan></PaymentMethod>`;
+    return `
+        <PaymentMethod>
+          <!-- Cash Agency/BSP settlement payment -->
+          <SettlementPlan>
+            <PaymentTypeCode>CA</PaymentTypeCode>
+          </SettlementPlan>
+        </PaymentMethod>`;
   }
 
   return '';
@@ -130,12 +158,25 @@ function buildPayer(request: PaymentRequest): string {
     email = 'agency@payment.booking';
   }
 
-  // Build Payer XML inline - completely inline to avoid any whitespace/newline issues
+  // Build Payer XML with proper formatting and indentation
   const emailXml = email
-    ? `<PayerEmailAddress><EmailAddressText>${escapeXml(email)}</EmailAddressText></PayerEmailAddress>`
+    ? `
+            <!-- Payer contact information -->
+            <PayerEmailAddress>
+              <EmailAddressText>${escapeXml(email)}</EmailAddressText>
+            </PayerEmailAddress>`
     : '';
 
-  const payerXml = `<!-- Payment responsible party information --><Payer><PayerName><IndividualName><GivenName>${escapeXml(firstName)}</GivenName><Surname>${escapeXml(lastName)}</Surname></IndividualName></PayerName>${emailXml}</Payer>`;
+  const payerXml = `
+        <!-- Payment responsible party information -->
+        <Payer>
+          <PayerName>
+            <IndividualName>
+              <GivenName>${escapeXml(firstName)}</GivenName>
+              <Surname>${escapeXml(lastName)}</Surname>
+            </IndividualName>
+          </PayerName>${emailXml}
+        </Payer>`;
 
   return payerXml;
 }
@@ -184,7 +225,8 @@ ${headerComments}<IATA_OrderChangeRQ xmlns="${JETSTAR_NAMESPACE}">${buildDistrib
       </PaymentMethodCriteria>
       <!-- Payment transaction details -->
       <PaymentProcessingDetails>
-        <Amount CurCode="${escapeXml(request.currency)}">${formattedAmount}</Amount>${payerXml}${paymentMethodXml}
+        <Amount CurCode="${escapeXml(request.currency)}">${formattedAmount}</Amount>${payerXml}
+        <!-- Payment method specific details -->${paymentMethodXml}
       </PaymentProcessingDetails>
     </PaymentFunctions>
   </Request>
