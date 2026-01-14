@@ -57,6 +57,11 @@ function escapeXml(value: string | undefined | null): string {
 /**
  * Build OfferCriteria XML from NDC config and promo code
  * Returns empty string if no criteria configured
+ *
+ * IMPORTANT: Postman script creates TWO SEPARATE <OfferCriteria> blocks when both are present:
+ * - First <OfferCriteria> with <PromotionCriteria> (if promo code provided)
+ * - Second <OfferCriteria> with <ServiceCriteria> (if bundles requested)
+ * This matches the exact Postman implementation.
  */
 function buildOfferCriteria(ndcConfig?: NdcConfig, promoCode?: string): string {
   const hasServiceCriteria = ndcConfig?.offerCriteria?.serviceCriteria?.length;
@@ -67,16 +72,20 @@ function buildOfferCriteria(ndcConfig?: NdcConfig, promoCode?: string): string {
     return '';
   }
 
-  let innerXml = '';
+  let offerCriteriaBlocks = '';
 
-  // Add PromotionCriteria if promo code provided
+  // FIRST block: PromotionCriteria (if promo code provided)
+  // Postman creates separate <OfferCriteria> for promo code
   if (hasPromoCode) {
-    innerXml += `      <PromotionCriteria>
+    offerCriteriaBlocks += `    <OfferCriteria xmlns="${NS_COMMON}">
+      <PromotionCriteria>
         <PromotionID>${escapeXml(promoCode.trim())}</PromotionID>
-      </PromotionCriteria>\n`;
+      </PromotionCriteria>
+    </OfferCriteria>\n`;
   }
 
-  // Add ServiceCriteria if configured
+  // SECOND block: ServiceCriteria (if configured)
+  // Postman creates separate <OfferCriteria> for bundles/services
   if (hasServiceCriteria) {
     const serviceCriteriaXml = ndcConfig!.offerCriteria!.serviceCriteria!
       .map(sc => `      <ServiceCriteria>
@@ -85,12 +94,13 @@ function buildOfferCriteria(ndcConfig?: NdcConfig, promoCode?: string): string {
         <RFISC>${escapeXml(sc.RFISC)}</RFISC>
       </ServiceCriteria>`)
       .join('\n');
-    innerXml += serviceCriteriaXml;
+
+    offerCriteriaBlocks += `    <OfferCriteria xmlns="${NS_COMMON}">
+${serviceCriteriaXml}
+    </OfferCriteria>`;
   }
 
-  return `    <OfferCriteria xmlns="${NS_COMMON}">
-${innerXml}
-    </OfferCriteria>`;
+  return offerCriteriaBlocks;
 }
 
 /**
@@ -110,7 +120,7 @@ export function buildAirShoppingXml(input: AirShoppingInput): string {
       <Ordinal>${link.ordinal}</Ordinal>
       <OrgRole>${escapeXml(link.orgRole)}</OrgRole>
       <ParticipatingOrg>
-        <Name>${escapeXml(link.orgName)}</Name>
+        <Name>${escapeXml(link.orgName || '')}</Name>
         <OrgID>${escapeXml(link.orgId)}</OrgID>
       </ParticipatingOrg>
     </DistributionChainLink>`).join("")}
@@ -236,13 +246,11 @@ ${headerComments}<IATA_AirShoppingRQ xmlns:xsi="http://www.w3.org/2001/XMLSchema
   <Request>
     <!-- Flight search criteria -->
     <FlightRequest xmlns="${NS_COMMON}">
-      <FlightRequestOriginDestinationsCriteria>${originDestCriteria}
-      </FlightRequestOriginDestinationsCriteria>
+      <FlightRequestOriginDestinationsCriteria>${originDestCriteria}</FlightRequestOriginDestinationsCriteria>
     </FlightRequest>
 ${buildOfferCriteria(input.ndcConfig, input.promoCode)}
     <!-- Passenger type and count -->
-    <PaxList xmlns="${NS_COMMON}">${paxList.join('')}
-    </PaxList>
+    <PaxList xmlns="${NS_COMMON}">${paxList.join('')}</PaxList>
     <ResponseParameters xmlns="${NS_COMMON}">
       <!-- Currency for pricing - ${escapeXml(input.currency || 'AUD')} -->
       <CurParameter>
