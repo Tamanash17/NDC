@@ -1312,7 +1312,7 @@ export function AirShoppingStep({ workflowOptions, onComplete }: AirShoppingStep
               date={departureDate}
               passengers={{ adults, children, infants }}
             />
-          ) : searchPerformed && !isLoading ? (
+          ) : searchPerformed && !isLoading && !error ? (
             <Card className="p-12">
               <div className="flex flex-col items-center justify-center text-center space-y-4">
                 <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
@@ -1372,7 +1372,7 @@ export function AirShoppingStep({ workflowOptions, onComplete }: AirShoppingStep
               date={returnDate}
               passengers={{ adults, children, infants }}
             />
-          ) : searchPerformed && !isLoading ? (
+          ) : searchPerformed && !isLoading && !error ? (
             <Card className="p-12">
               <div className="flex flex-col items-center justify-center text-center space-y-4">
                 <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
