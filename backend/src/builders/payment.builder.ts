@@ -130,16 +130,12 @@ function buildPayer(request: PaymentRequest): string {
     email = 'agency@payment.booking';
   }
 
-  // Build Payer XML inline to avoid whitespace issues - match Postman format
-  let payerXml = '<!-- Payment responsible party information -->\n        <Payer>';
-  payerXml += `<PayerName><IndividualName>`;
-  payerXml += `<GivenName>${escapeXml(firstName)}</GivenName>`;
-  payerXml += `<Surname>${escapeXml(lastName)}</Surname>`;
-  payerXml += `</IndividualName></PayerName>`;
-  if (email) {
-    payerXml += `<!-- Payer contact information --><PayerEmailAddress><EmailAddressText>${escapeXml(email)}</EmailAddressText></PayerEmailAddress>`;
-  }
-  payerXml += '</Payer>';
+  // Build Payer XML inline - completely inline to avoid any whitespace/newline issues
+  const emailXml = email
+    ? `<PayerEmailAddress><EmailAddressText>${escapeXml(email)}</EmailAddressText></PayerEmailAddress>`
+    : '';
+
+  const payerXml = `<!-- Payment responsible party information --><Payer><PayerName><IndividualName><GivenName>${escapeXml(firstName)}</GivenName><Surname>${escapeXml(lastName)}</Surname></IndividualName></PayerName>${emailXml}</Payer>`;
 
   return payerXml;
 }
@@ -188,10 +184,7 @@ ${headerComments}<IATA_OrderChangeRQ xmlns="${JETSTAR_NAMESPACE}">${buildDistrib
       </PaymentMethodCriteria>
       <!-- Payment transaction details -->
       <PaymentProcessingDetails>
-        <Amount CurCode="${escapeXml(request.currency)}">${formattedAmount}</Amount> <!-- Total payment amount with 2 decimal places -->
-        ${payerXml}
-        <!-- Payment method specific details -->
-        ${paymentMethodXml}
+        <Amount CurCode="${escapeXml(request.currency)}">${formattedAmount}</Amount>${payerXml}${paymentMethodXml}
       </PaymentProcessingDetails>
     </PaymentFunctions>
   </Request>
