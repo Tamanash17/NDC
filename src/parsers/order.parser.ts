@@ -82,10 +82,27 @@ export class OrderParser extends BaseXmlParser {
       }
     }
 
-    const totalEl = this.getElement(orderEl, "TotalPrice") || 
-                    this.getElement(orderEl, "TotalOrderPrice") ||
-                    this.getElement(orderEl, "TotalAmount");
-    const totalPrice = this.parseAmount(totalEl) || { value: 0, currency: "AUD" };
+    // Parse total price - Jetstar structure: <TotalPrice><TotalAmount CurCode="AUD">123.45</TotalAmount></TotalPrice>
+    // Or it might be directly: <TotalAmount CurCode="AUD">123.45</TotalAmount>
+    const totalPriceEl = this.getElement(orderEl, "TotalPrice") ||
+                         this.getElement(orderEl, "TotalOrderPrice");
+
+    let totalPrice: { value: number; currency: string };
+    if (totalPriceEl) {
+      // Look for nested TotalAmount inside TotalPrice
+      const nestedAmountEl = this.getElement(totalPriceEl, "TotalAmount") ||
+                             this.getElement(totalPriceEl, "Amount");
+      if (nestedAmountEl) {
+        totalPrice = this.parseAmount(nestedAmountEl) || { value: 0, currency: "AUD" };
+      } else {
+        // TotalPrice might directly contain the amount
+        totalPrice = this.parseAmount(totalPriceEl) || { value: 0, currency: "AUD" };
+      }
+    } else {
+      // Fallback to direct TotalAmount element
+      const directAmountEl = this.getElement(orderEl, "TotalAmount");
+      totalPrice = this.parseAmount(directAmountEl) || { value: 0, currency: "AUD" };
+    }
 
     const orderItems: OrderItem[] = this.getElements(orderEl, "OrderItem").map(itemEl => ({
       orderItemId: this.getAttribute(itemEl, "OrderItemID") || 
