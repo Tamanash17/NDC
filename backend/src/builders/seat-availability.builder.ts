@@ -68,8 +68,7 @@ export function buildSeatAvailabilityXml(
       return `
                   <Offer>
                     <OfferID>${escapeXml(offer.offerId)}</OfferID>
-                    <OwnerCode>${escapeXml(offer.ownerCode)}</OwnerCode>${offerItems}
-                  </Offer>`;
+                    <OwnerCode>${escapeXml(offer.ownerCode)}</OwnerCode>${offerItems}</Offer>`;
     }).join("");
   } else if (input.offerId && input.offerItemIds) {
     // LEGACY SINGLE-OFFER FORMAT - Build single <Offer> element
@@ -84,15 +83,13 @@ export function buildSeatAvailabilityXml(
 
       return `
                   <OfferItem>
-                    <OfferItemID>${escapeXml(itemId)}</OfferItemID>${segmentRefs}
-                  </OfferItem>`;
+                    <OfferItemID>${escapeXml(itemId)}</OfferItemID>${segmentRefs}</OfferItem>`;
     }).join("");
 
     offerXml = `
                   <Offer>
                     <OfferID>${escapeXml(input.offerId)}</OfferID>
-                    <OwnerCode>${escapeXml(input.ownerCode)}</OwnerCode>${offerItems}
-                  </Offer>`;
+                    <OwnerCode>${escapeXml(input.ownerCode)}</OwnerCode>${offerItems}</Offer>`;
   }
 
   // NOTE: Postman reference implementation does NOT include ShoppingResponseID
@@ -102,20 +99,63 @@ export function buildSeatAvailabilityXml(
   // Get current timestamp for request tracking
   const timestamp = new Date().toISOString();
 
-  // Collect offer details for header comments
+  // Collect offer details for comprehensive header comments
   const offerCount = input.offers?.length || (input.offerId ? 1 : 0);
-  const offerIds = input.offers?.map(o => o.offerId).join(', ') || input.offerId || 'N/A';
   const segmentCount = input.segmentRefIds?.length || 0;
-  const segmentIds = input.segmentRefIds?.join(', ') || 'N/A';
 
-  // Build header comments with request details
+  // Build detailed offer information for each offer/direction
+  let offerDetailsComments = '';
+  if (input.offers && input.offers.length > 0) {
+    // Multi-offer format (typically round-trip)
+    input.offers.forEach((offer, idx) => {
+      const direction = idx === 0 ? 'Outbound' : idx === 1 ? 'Return' : `Segment ${idx + 1}`;
+      offerDetailsComments += `<!--   ${direction} Flight: -->\n`;
+      offerDetailsComments += `<!--     - Offer ID: ${offer.offerId} -->\n`;
+      offerDetailsComments += `<!--     - Owner: ${offer.ownerCode} -->\n`;
+      offerDetailsComments += `<!--     - Offer Items: ${offer.offerItemIds.length} item(s) -->\n`;
+      offerDetailsComments += `<!--     - Item IDs: ${offer.offerItemIds.join(', ')} -->\n`;
+    });
+  } else if (input.offerId) {
+    // Single offer format (typically one-way)
+    offerDetailsComments += `<!--   Flight: -->\n`;
+    offerDetailsComments += `<!--     - Offer ID: ${input.offerId} -->\n`;
+    offerDetailsComments += `<!--     - Owner: ${input.ownerCode} -->\n`;
+    offerDetailsComments += `<!--     - Offer Items: ${input.offerItemIds?.length || 0} item(s) -->\n`;
+    if (input.offerItemIds) {
+      offerDetailsComments += `<!--     - Item IDs: ${input.offerItemIds.join(', ')} -->\n`;
+    }
+    if (input.segmentRefIds && input.segmentRefIds.length > 0) {
+      offerDetailsComments += `<!--     - Segment Refs: ${input.segmentRefIds.join(', ')} -->\n`;
+    }
+  }
+
+  // Build comprehensive header comments
   const headerComments = `<!-- ================================================================ -->
 <!-- NDC SeatAvailability Request - Seat Map and Availability Query -->
 <!-- Generated: ${timestamp} -->
-<!-- Offer Count: ${offerCount} -->
-<!-- Offer ID(s): ${offerIds} -->
-<!-- Segment Count: ${segmentCount} -->
-<!-- Segment ID(s): ${segmentIds} -->
+<!-- Workflow: Step 5 - Seat Selection -->
+<!-- ================================================================ -->
+<!--  -->
+<!-- REQUEST PURPOSE: -->
+<!--   Query available seats for selected flight(s) to display seat map -->
+<!--   User will select specific seats which will be added to OfferPrice -->
+<!--  -->
+<!-- FLIGHT INFORMATION: -->
+<!--   Total Offers: ${offerCount} (${offerCount === 1 ? 'One-way' : offerCount === 2 ? 'Round-trip' : 'Multi-segment'}) -->
+${offerDetailsComments}<!--  -->
+<!-- CONTEXT FROM PREVIOUS STEPS: -->
+<!--   - Step 1: AirShopping returned available flights -->
+<!--   - Step 2: OfferPrice calculated price for selected flight + bundle -->
+<!--   - Step 3-4: User may have selected ancillaries (baggage/meals) -->
+<!--   - Step 5: NOW requesting seat maps for seat selection -->
+<!--   - Next Step: Selected seats will be included in final OfferPrice -->
+<!--  -->
+<!-- IMPORTANT NOTES: -->
+<!--   - Seat selection is optional but recommended for preferred seating -->
+<!--   - Seat charges vary by location (extra legroom, window, aisle, etc.) -->
+<!--   - Selected seats are added to booking via OfferPrice then OrderCreate -->
+<!--   - ShoppingResponseID is NOT included (Jetstar maintains session via auth) -->
+<!--  -->
 <!-- Distribution Chain: ${chain?.links?.length || 0} participant(s) -->
 <!-- ================================================================ -->
 `;
@@ -131,8 +171,7 @@ ${headerComments}<IATA_SeatAvailabilityRQ xmlns="${NDC_V21_3_MESSAGE_NS}">${dist
     <!-- Core seat availability query parameters -->
     <SeatAvailCoreRequest xmlns="${NDC_V21_3_COMMON_NS}">
       <!-- Offer selection for seat map retrieval -->
-      <OfferRequest>${offerXml}
-      </OfferRequest>
+      <OfferRequest>${offerXml}</OfferRequest>
     </SeatAvailCoreRequest>
   </Request>
 </IATA_SeatAvailabilityRQ>`;
