@@ -284,7 +284,7 @@ export function useFlightSearch(): UseFlightSearchResult {
         return;
       }
 
-      // Extract the most useful error message
+      // Extract the most useful error message and include XML error details
       let errorMessage = 'Search failed';
       const responseData = err.response?.data;
 
@@ -305,6 +305,24 @@ export function useFlightSearch(): UseFlightSearchResult {
         } else {
           // Show raw response for debugging
           errorMessage = `API Error (${statusCode}): ${JSON.stringify(responseData).substring(0, 500)}`;
+        }
+
+        // ENHANCED: If parsed NDC errors exist, append them for better debugging
+        if (responseData.parsed?.errors && Array.isArray(responseData.parsed.errors)) {
+          const ndcErrors = responseData.parsed.errors
+            .map((e: any) => {
+              if (typeof e === 'string') return e;
+              if (e.TypeCode && e.DescText) return `${e.TypeCode}: ${e.DescText}`;
+              if (e.DescText) return e.DescText;
+              if (e.ShortText) return e.ShortText;
+              return JSON.stringify(e);
+            })
+            .filter(Boolean)
+            .join(' | ');
+
+          if (ndcErrors && !errorMessage.includes(ndcErrors)) {
+            errorMessage = `${errorMessage}\n\nNDC Error Details:\n${ndcErrors}`;
+          }
         }
       } else if (err.message) {
         errorMessage = err.message;
@@ -535,6 +553,24 @@ export function useFlightSearch(): UseFlightSearchResult {
           : responseData.error.message || JSON.stringify(responseData.error);
       } else if (responseData?.message) {
         errorMessage = responseData.message;
+      }
+
+      // ENHANCED: If parsed NDC errors exist, append them for better debugging
+      if (responseData?.parsed?.errors && Array.isArray(responseData.parsed.errors)) {
+        const ndcErrors = responseData.parsed.errors
+          .map((e: any) => {
+            if (typeof e === 'string') return e;
+            if (e.TypeCode && e.DescText) return `${e.TypeCode}: ${e.DescText}`;
+            if (e.DescText) return e.DescText;
+            if (e.ShortText) return e.ShortText;
+            return JSON.stringify(e);
+          })
+          .filter(Boolean)
+          .join(' | ');
+
+        if (ndcErrors && !errorMessage.includes(ndcErrors)) {
+          errorMessage = `${errorMessage}\n\nNDC Error Details:\n${ndcErrors}`;
+        }
       }
 
       setError(errorMessage);
