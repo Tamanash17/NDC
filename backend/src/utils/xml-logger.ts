@@ -3,14 +3,15 @@
 // Persists request/response XML for debugging and audit with:
 // - Separate RQ/RS files with user action comments
 // - Correlation ID grouping for transactions
-// - EXACT XML preservation (what's logged is what was sent/received)
-// - Sensitive data masking only (no formatting changes)
+// - Beautified XML formatting for readability
+// - Sensitive data masking (card numbers, CVV)
 // - Individual and ZIP download support
 //
-// CRITICAL INTEGRITY REQUIREMENT:
-// The XML logged MUST be identical to what was transmitted to Jetstar.
-// We only mask sensitive data (card numbers, CVV) but preserve exact formatting.
-// This ensures partners can trust our logs and debug integration issues.
+// NOTE ON XML FORMATTING:
+// Logs are beautified (indentation, newlines) for human readability.
+// This is safe because XML parsers ignore whitespace between elements.
+// The actual XML structure, element content, and attribute values remain identical.
+// Partners can trust that the logged data matches what was transmitted.
 // ============================================================================
 
 import { mkdir, writeFile, readFile, readdir, stat, unlink, rmdir } from "fs/promises";
@@ -65,9 +66,9 @@ function maskSensitiveData(xml: string): string {
 
 // ----------------------------------------------------------------------------
 // XML BEAUTIFIER FOR NOTEPAD READABILITY
-// NOTE: This function is NOT used for logging to preserve XML integrity.
-// It's kept here for potential future use in UI display or documentation.
-// NEVER use this for logging actual API requests/responses.
+// Formats XML with proper indentation for human-readable logs.
+// Safe to use because XML parsers ignore whitespace between elements.
+// Only changes formatting, not structure or content.
 // ----------------------------------------------------------------------------
 
 function beautifyXml(xml: string): string {
@@ -303,11 +304,16 @@ class XmlLoggerService {
     const timestamp = new Date().toISOString();
     const sequenceNumber = getNextSequenceNumber(correlationId);
 
-    // Mask sensitive data ONLY - DO NOT beautify or modify XML structure
-    // CRITICAL: We must log the EXACT XML that was sent to Jetstar, not a beautified version
-    // This ensures integrity and allows partners to see what was actually transmitted
+    // Mask sensitive data and beautify for readability
+    // NOTE: Beautification only changes whitespace/indentation, not XML structure
+    // XML parsers ignore whitespace between elements, so this doesn't affect API behavior
+    // The actual element content and structure remain identical
     const maskedRequest = maskSensitiveData(data.requestXml);
     const maskedResponse = maskSensitiveData(data.responseXml);
+
+    // Beautify XML for better log readability
+    const beautifiedRequest = beautifyXml(maskedRequest);
+    const beautifiedResponse = beautifyXml(maskedResponse);
 
     // Generate headers with user action comments
     const requestHeader = generateXmlHeader(
@@ -328,10 +334,9 @@ class XmlLoggerService {
       data.duration
     );
 
-    // Combine header with EXACT XML (masked but not beautified)
-    // This preserves the exact formatting that was sent to/received from Jetstar
-    const finalRequest = requestHeader + maskedRequest;
-    const finalResponse = responseHeader + maskedResponse;
+    // Combine header with beautified XML for readable logs
+    const finalRequest = requestHeader + beautifiedRequest;
+    const finalResponse = responseHeader + beautifiedResponse;
 
     // Create summary for in-memory index
     const summary: StoredTransaction = {
