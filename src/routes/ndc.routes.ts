@@ -863,11 +863,21 @@ router.post("/process-payment", async (req: any, res: any) => {
 
     // Build XML using the Payment builder
     try {
+      // Handle both formats: payment.amount (direct number) or payment.amount.value (object)
+      const paymentAmount = typeof payment.amount === 'number'
+        ? payment.amount
+        : (payment.amount?.value || 0);
+      const paymentCurrency = typeof payment.amount === 'number'
+        ? (payment.currency || 'AUD')
+        : (payment.amount?.currency || payment.currency || 'AUD');
+
+      console.log("[NDC] Payment amount extracted:", paymentAmount, paymentCurrency);
+
       xmlRequest = buildPaymentXml({
       orderId,
       ownerCode,
-      amount: payment.amount?.value || 0,
-      currency: payment.amount?.currency || 'AUD',
+      amount: paymentAmount,
+      currency: paymentCurrency,
       paymentType,
       distributionChain: chain,
       card: payment.card ? {
