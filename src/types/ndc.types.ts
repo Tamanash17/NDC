@@ -408,7 +408,7 @@ export interface Contact {
 // ----------------------------------------------------------------------------
 
 export type OrderStatus =
-  | "PENDING" | "CONFIRMED" | "TICKETED"
+  | "PENDING" | "CONFIRMED" | "TICKETED" | "OPENED"
   | "CANCELLED" | "REFUNDED" | "PARTIALLY_CANCELLED";
 
 export interface BookingReference {
