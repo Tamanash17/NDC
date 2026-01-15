@@ -306,9 +306,16 @@ export function useFlightSearch(): UseFlightSearchResult {
         if (typeof responseData === 'string') {
           errorMessage = responseData;
         } else if (responseData.error) {
-          errorMessage = typeof responseData.error === 'string'
+          const rawError = typeof responseData.error === 'string'
             ? responseData.error
             : responseData.error.message || JSON.stringify(responseData.error);
+
+          // Add helpful context if it looks like an NDC error (has error codes)
+          if (rawError.match(/^[A-Z]{2}\d{4}:/)) {
+            errorMessage = `No flights available for the selected search criteria.\n\nError Details:\n${rawError}`;
+          } else {
+            errorMessage = rawError;
+          }
         } else if (responseData.message) {
           errorMessage = responseData.message;
         } else if (responseData.errors && Array.isArray(responseData.errors)) {
