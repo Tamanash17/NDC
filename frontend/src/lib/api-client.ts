@@ -1,6 +1,7 @@
 ﻿import axios, { type AxiosInstance, type AxiosError } from 'axios';
 import { useSessionStore } from '@/core/context/SessionStore';
 
+// v1.1.1 - Multiple payments, CC fee breakdown, order warnings
 const API_BASE_URL = 'https://ndc-production.up.railway.app/api';
 
 const api: AxiosInstance = axios.create({
