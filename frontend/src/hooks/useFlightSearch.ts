@@ -312,11 +312,15 @@ export function useFlightSearch(): UseFlightSearchResult {
         } else if (responseData.message) {
           errorMessage = responseData.message;
         } else if (responseData.errors && Array.isArray(responseData.errors)) {
-          errorMessage = responseData.errors.map((e: any) => {
+          // Format NDC errors with helpful context
+          const ndcErrorDetails = responseData.errors.map((e: any) => {
             if (typeof e === 'string') return e;
             if (e.code && e.message) return `${e.code}: ${e.message}`;
             return e.message || e;
           }).join('; ');
+
+          // Add helpful message before NDC error details
+          errorMessage = `No flights available for the selected search criteria.\n\nError Details:\n${ndcErrorDetails}`;
         } else if (responseData.parsed?.errors) {
           errorMessage = responseData.parsed.errors.map((e: any) => e.message || e).join('; ');
         } else {
