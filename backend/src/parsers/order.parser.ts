@@ -59,12 +59,25 @@ export interface DatedMarketingSegmentParsed {
   classOfService?: string;
 }
 
+// Parsed DataLists structure for frontend consumption
+export interface ParsedDataLists {
+  PaxList?: { Pax: any[] };
+  PaxJourneyList?: { PaxJourney: any[] };
+  PaxSegmentList?: { PaxSegment: any[] };
+  DatedMarketingSegmentList?: { DatedMarketingSegment: any[] };
+  DatedOperatingSegmentList?: { DatedOperatingSegment: any[] };
+  ServiceDefinitionList?: { ServiceDefinition: any[] };
+  SeatProfileList?: { SeatProfile: any[] };
+}
+
 // Extended Order with full DataLists
 export interface OrderExtended extends Order {
   serviceDefinitions?: ServiceDefinitionParsed[];
   serviceItems?: ServiceItemParsed[];
   marketingSegments?: DatedMarketingSegmentParsed[];
   seatAssignments?: SeatAssignmentParsed[];
+  // Raw DataLists for frontend to use directly
+  DataLists?: ParsedDataLists;
 }
 
 export interface OrderWarning {
@@ -255,7 +268,122 @@ export class OrderParser extends BaseXmlParser {
       serviceItems: serviceItems.length > 0 ? serviceItems : undefined,
       marketingSegments: marketingSegments.length > 0 ? marketingSegments : undefined,
       seatAssignments: seatAssignments.length > 0 ? seatAssignments : undefined,
+      // Raw DataLists for frontend to use directly
+      DataLists: this.parseDataLists(doc),
     };
+  }
+
+  /**
+   * Parse DataLists section and return raw structure for frontend
+   */
+  private parseDataLists(doc: Document): ParsedDataLists {
+    const dataLists: ParsedDataLists = {};
+
+    // Parse PaxList
+    const paxElements = this.getElements(doc, "Pax");
+    if (paxElements.length > 0) {
+      dataLists.PaxList = {
+        Pax: paxElements.map(pax => this.elementToObject(pax))
+      };
+    }
+
+    // Parse PaxJourneyList
+    const journeyElements = this.getElements(doc, "PaxJourney");
+    if (journeyElements.length > 0) {
+      dataLists.PaxJourneyList = {
+        PaxJourney: journeyElements.map(j => this.elementToObject(j))
+      };
+    }
+
+    // Parse PaxSegmentList
+    const paxSegElements = this.getElements(doc, "PaxSegment");
+    if (paxSegElements.length > 0) {
+      dataLists.PaxSegmentList = {
+        PaxSegment: paxSegElements.map(s => this.elementToObject(s))
+      };
+    }
+
+    // Parse DatedMarketingSegmentList
+    const mktSegElements = this.getElements(doc, "DatedMarketingSegment");
+    if (mktSegElements.length > 0) {
+      dataLists.DatedMarketingSegmentList = {
+        DatedMarketingSegment: mktSegElements.map(s => this.elementToObject(s))
+      };
+    }
+
+    // Parse DatedOperatingSegmentList
+    const oprSegElements = this.getElements(doc, "DatedOperatingSegment");
+    if (oprSegElements.length > 0) {
+      dataLists.DatedOperatingSegmentList = {
+        DatedOperatingSegment: oprSegElements.map(s => this.elementToObject(s))
+      };
+    }
+
+    // Parse ServiceDefinitionList
+    const svcDefElements = this.getElements(doc, "ServiceDefinition");
+    if (svcDefElements.length > 0) {
+      dataLists.ServiceDefinitionList = {
+        ServiceDefinition: svcDefElements.map(s => this.elementToObject(s))
+      };
+    }
+
+    // Parse SeatProfileList
+    const seatProfileElements = this.getElements(doc, "SeatProfile");
+    if (seatProfileElements.length > 0) {
+      dataLists.SeatProfileList = {
+        SeatProfile: seatProfileElements.map(s => this.elementToObject(s))
+      };
+    }
+
+    return dataLists;
+  }
+
+  /**
+   * Convert XML element to plain object (recursive)
+   */
+  private elementToObject(element: Element): any {
+    const obj: any = {};
+
+    // Add attributes
+    if (element.attributes.length > 0) {
+      for (let i = 0; i < element.attributes.length; i++) {
+        const attr = element.attributes[i];
+        obj[attr.name] = attr.value;
+      }
+    }
+
+    // Add child elements
+    const children = element.childNodes;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      if (child.nodeType === 1) { // Element node
+        const childEl = child as Element;
+        const tagName = childEl.localName;
+        const childValue = this.elementToObject(childEl);
+
+        // Check if this tag already exists (convert to array)
+        if (obj[tagName]) {
+          if (!Array.isArray(obj[tagName])) {
+            obj[tagName] = [obj[tagName]];
+          }
+          obj[tagName].push(childValue);
+        } else {
+          obj[tagName] = childValue;
+        }
+      } else if (child.nodeType === 3) { // Text node
+        const text = child.textContent?.trim();
+        if (text) {
+          // If element has no child elements, just return text
+          if (Object.keys(obj).length === 0) {
+            return text;
+          }
+          // Otherwise add as #text property
+          obj['#text'] = text;
+        }
+      }
+    }
+
+    return Object.keys(obj).length > 0 ? obj : '';
   }
 
   /**

@@ -1118,8 +1118,75 @@ function transformPassengersForServices(rawData: any): PassengerInfoData[] {
 function transformSegmentsForServices(rawData: any): SegmentInfoData[] {
   const segments: SegmentInfoData[] = [];
 
-  // Check for backend-parsed marketingSegments first
+  // Always parse from DataLists to ensure we have PaxSegmentID as the key
+  // (journeys reference PaxSegmentID, not DatedMarketingSegmentId)
+  const dataLists = rawData?.DataLists || rawData?.Response?.DataLists || {};
+  const paxSegments = normalizeToArray(dataLists?.PaxSegmentList?.PaxSegment);
+  const marketingSegments = normalizeToArray(dataLists?.DatedMarketingSegmentList?.DatedMarketingSegment);
+  const operatingSegments = normalizeToArray(dataLists?.DatedOperatingSegmentList?.DatedOperatingSegment);
+
+  // Build marketing segment lookup by ID
+  const mktSegMap = new Map<string, any>();
+  for (const ms of marketingSegments) {
+    mktSegMap.set(ms.DatedMarketingSegmentId, ms);
+  }
+
+  // Build operating segment lookup for duration
+  const oprSegMap = new Map<string, any>();
+  for (const os of operatingSegments) {
+    oprSegMap.set(os.DatedOperatingSegmentId, os);
+  }
+
+  // If we have PaxSegments, use them (keyed by PaxSegmentID which journeys reference)
+  if (paxSegments.length > 0) {
+    for (const paxSeg of paxSegments) {
+      const paxSegId = paxSeg.PaxSegmentID || '';
+      const mktRef = paxSeg.DatedMarketingSegmentRefId;
+      const mktSeg = mktSegMap.get(mktRef);
+
+      if (mktSeg) {
+        const oprRef = mktSeg.DatedOperatingSegmentRefId;
+        const oprSeg = oprSegMap.get(oprRef);
+
+        segments.push({
+          segmentId: paxSegId, // Use PaxSegmentID - this is what journeys reference
+          origin: mktSeg.Dep?.IATA_LocationCode || '',
+          destination: mktSeg.Arrival?.IATA_LocationCode || '',
+          flightNumber: mktSeg.MarketingCarrierFlightNumberText || '',
+          carrierCode: mktSeg.CarrierDesigCode || '',
+          departureDateTime: mktSeg.Dep?.AircraftScheduledDateTime || '',
+          arrivalDateTime: mktSeg.Arrival?.AircraftScheduledDateTime,
+          duration: oprSeg?.Duration,
+          cabinCode: paxSeg.CabinTypeAssociationChoice?.SegmentCabinType?.CabinTypeCode,
+        });
+      }
+    }
+    return segments;
+  }
+
+  // Fallback: Check for backend-parsed marketingSegments
+  // But we need to map them to PaxSegmentIDs
   const backendSegments = normalizeToArray(rawData?.marketingSegments);
+  const backendPaxSegments = normalizeToArray(rawData?.segments);
+
+  // If backend provides segments (from parseSegments), use those - they have PaxSegmentID
+  if (backendPaxSegments.length > 0) {
+    for (const seg of backendPaxSegments) {
+      segments.push({
+        segmentId: seg.paxSegmentId || '',
+        origin: seg.origin || '',
+        destination: seg.destination || '',
+        flightNumber: seg.marketingCarrier?.flightNumber || '',
+        carrierCode: seg.marketingCarrier?.airlineCode || '',
+        departureDateTime: seg.departureDate || '',
+        arrivalDateTime: seg.arrivalDate,
+        duration: seg.duration,
+      });
+    }
+    return segments;
+  }
+
+  // Last fallback: use marketingSegments directly (may not match journey refs)
   if (backendSegments.length > 0) {
     for (const seg of backendSegments) {
       segments.push({
@@ -1132,48 +1199,6 @@ function transformSegmentsForServices(rawData: any): SegmentInfoData[] {
         arrivalDateTime: seg.arrivalDateTime,
         duration: seg.duration,
         cabinCode: seg.cabinCode,
-      });
-    }
-    return segments;
-  }
-
-  // Fallback: Parse from DataLists
-  const dataLists = rawData?.DataLists || rawData?.Response?.DataLists || {};
-  const paxSegments = normalizeToArray(dataLists?.PaxSegmentList?.PaxSegment);
-  const marketingSegments = normalizeToArray(dataLists?.DatedMarketingSegmentList?.DatedMarketingSegment);
-  const operatingSegments = normalizeToArray(dataLists?.DatedOperatingSegmentList?.DatedOperatingSegment);
-
-  // Build marketing segment lookup
-  const mktSegMap = new Map<string, any>();
-  for (const ms of marketingSegments) {
-    mktSegMap.set(ms.DatedMarketingSegmentId, ms);
-  }
-
-  // Build operating segment lookup for duration
-  const oprSegMap = new Map<string, any>();
-  for (const os of operatingSegments) {
-    oprSegMap.set(os.DatedOperatingSegmentId, os);
-  }
-
-  for (const paxSeg of paxSegments) {
-    const paxSegId = paxSeg.PaxSegmentID || '';
-    const mktRef = paxSeg.DatedMarketingSegmentRefId;
-    const mktSeg = mktSegMap.get(mktRef);
-
-    if (mktSeg) {
-      const oprRef = mktSeg.DatedOperatingSegmentRefId;
-      const oprSeg = oprSegMap.get(oprRef);
-
-      segments.push({
-        segmentId: paxSegId,
-        origin: mktSeg.Dep?.IATA_LocationCode || '',
-        destination: mktSeg.Arrival?.IATA_LocationCode || '',
-        flightNumber: mktSeg.MarketingCarrierFlightNumberText || '',
-        carrierCode: mktSeg.CarrierDesigCode || '',
-        departureDateTime: mktSeg.Dep?.AircraftScheduledDateTime || '',
-        arrivalDateTime: mktSeg.Arrival?.AircraftScheduledDateTime,
-        duration: oprSeg?.Duration,
-        cabinCode: paxSeg.CabinTypeAssociationChoice?.SegmentCabinType?.CabinTypeCode,
       });
     }
   }
