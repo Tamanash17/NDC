@@ -229,8 +229,8 @@ export function PassengersStep() {
 
   /**
    * Build passive segments that are DIFFERENT from the sold flights but realistic
-   * Creates companion/connecting flights that make sense with the travel context
-   * Uses actual booking dates and logical routes based on the selected journey
+   * Creates companion flights on DIFFERENT dates/times with different routes
+   * Passive segments represent separate bookings that need to be added to the PNR
    */
   const buildPassiveSegments = () => {
     const segments: Array<{
@@ -243,14 +243,15 @@ export function PassengersStep() {
       operatingCarrier: string;
       marketingCarrier: string;
       journeyId: string;
-      rbd: string; // Booking class code for the passive segment
+      rbd: string;
+      direction: 'outbound' | 'inbound'; // For display purposes
     }> = [];
 
     // Common Australian domestic airports for realistic passive segments
     const domesticHubs = ['MEL', 'SYD', 'BNE', 'PER', 'ADL', 'OOL', 'CNS', 'HBA'];
 
-    // Generate a realistic companion flight based on the sold flight context
-    const createCompanionSegment = (
+    // Generate a realistic passive segment - completely different from sold flight
+    const createPassiveSegment = (
       selection: FlightSelectionItem | null,
       direction: 'outbound' | 'inbound',
       segmentIndex: number
@@ -258,27 +259,34 @@ export function PassengersStep() {
       if (!selection?.journey?.segments?.[0]) return null;
 
       const soldSegment = selection.journey.segments[0];
-      const soldDate = new Date(`${soldSegment.departureDate}T${soldSegment.departureTime}:00`);
+      const soldDate = new Date(`${soldSegment.departureDate}T00:00:00`);
 
-      // Find a different destination that's not in the sold route
+      // Find airports NOT in the sold route for a completely different trip
       const usedAirports = [soldSegment.origin, soldSegment.destination];
       const availableHubs = domesticHubs.filter(h => !usedAirports.includes(h));
-      const companionDest = availableHubs[segmentIndex % availableHubs.length] || 'MEL';
 
-      // Create a flight on the same day, different time (earlier in the day as a "connecting" concept)
-      const companionDate = new Date(soldDate);
-      // Set departure 3-4 hours before the sold flight (realistic connection)
-      companionDate.setHours(soldDate.getHours() - 3 - segmentIndex);
-      if (companionDate.getHours() < 6) {
-        companionDate.setHours(6 + segmentIndex); // Don't go too early
-      }
+      // Pick two different airports for the passive segment route
+      const passiveOrigin = availableHubs[segmentIndex % availableHubs.length] || 'MEL';
+      const passiveDestIdx = (segmentIndex + 2) % availableHubs.length;
+      const passiveDest = availableHubs[passiveDestIdx] !== passiveOrigin
+        ? availableHubs[passiveDestIdx]
+        : availableHubs[(passiveDestIdx + 1) % availableHubs.length] || 'SYD';
 
-      // Arrival is ~1.5 hours after departure (typical domestic flight)
-      const arrivalDate = new Date(companionDate);
-      arrivalDate.setMinutes(arrivalDate.getMinutes() + 90);
+      // Passive segment is 1-2 days BEFORE the sold flight (realistic pre-trip positioning)
+      const passiveDate = new Date(soldDate);
+      passiveDate.setDate(soldDate.getDate() - (direction === 'outbound' ? 2 : 1));
 
-      // Generate realistic flight number (different from sold)
-      const flightNum = String(100 + (segmentIndex + 1) * 11 + Math.floor(Math.random() * 50));
+      // Set a completely different time (morning flight for passive)
+      const departureHour = 7 + segmentIndex * 2; // 07:00 or 09:00
+      passiveDate.setHours(departureHour, 30, 0, 0);
+
+      // Arrival is ~2 hours after departure (typical domestic flight)
+      const arrivalDate = new Date(passiveDate);
+      arrivalDate.setHours(passiveDate.getHours() + 2);
+      arrivalDate.setMinutes(15);
+
+      // Generate realistic QF flight number (100-999 range)
+      const flightNum = String(400 + (segmentIndex + 1) * 23);
 
       const formatDT = (d: Date) => {
         const pad = (n: number) => n.toString().padStart(2, '0');
@@ -287,28 +295,28 @@ export function PassengersStep() {
 
       return {
         segmentId: `passive-${direction}-${segmentIndex + 1}`,
-        // Passive segment: from companion hub TO the sold flight's origin (feeding into the journey)
-        origin: companionDest,
-        destination: soldSegment.origin,
-        departureDateTime: formatDT(companionDate),
+        origin: passiveOrigin,
+        destination: passiveDest,
+        departureDateTime: formatDT(passiveDate),
         arrivalDateTime: formatDT(arrivalDate),
         flightNumber: flightNum,
         operatingCarrier: 'QF',
         marketingCarrier: 'QF',
         journeyId: `passive-journey-${direction}`,
-        rbd: 'O', // Default economy class booking code
+        rbd: 'Y', // Economy class
+        direction,
       };
     };
 
-    // Add a passive segment related to outbound (a "connecting" flight feeding into it)
-    const outboundPassive = createCompanionSegment(flightStore.selection.outbound, 'outbound', 0);
+    // Add passive segment for outbound journey
+    const outboundPassive = createPassiveSegment(flightStore.selection.outbound, 'outbound', 0);
     if (outboundPassive) {
       segments.push(outboundPassive);
     }
 
-    // Add a passive segment for inbound if round-trip
+    // Add passive segment for inbound journey if round-trip
     if (flightStore.isRoundTrip && flightStore.selection.inbound) {
-      const inboundPassive = createCompanionSegment(flightStore.selection.inbound, 'inbound', 1);
+      const inboundPassive = createPassiveSegment(flightStore.selection.inbound, 'inbound', 1);
       if (inboundPassive) {
         segments.push(inboundPassive);
       }
@@ -530,7 +538,10 @@ export function PassengersStep() {
       } : undefined;
 
       // Build passive segments if enabled (auto-synced with flight selection)
-      const passiveSegments = includePassiveSegments ? buildPassiveSegments() : undefined;
+      // Strip 'direction' field as it's only for UI display, not needed by API
+      const passiveSegments = includePassiveSegments
+        ? buildPassiveSegments().map(({ direction, ...seg }) => seg)
+        : undefined;
 
       // Build OrderCreate request - no payment (HOLD booking)
       const orderCreateRequest = {
@@ -856,21 +867,73 @@ export function PassengersStep() {
 
         {/* Passive Segment Preview */}
         {includePassiveSegments && (
-          <div className="mt-2 p-3 bg-amber-100 rounded-lg border border-amber-300">
-            <p className="text-xs font-semibold text-amber-700 mb-2 flex items-center gap-1">
-              <Plane className="w-3 h-3" />
-              Passive Segments Preview:
-            </p>
+          <div className="mt-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center">
+                <Plane className="w-3.5 h-3.5 text-purple-600" />
+              </div>
+              <span className="font-semibold text-purple-800">Passive Segments to Add</span>
+              <span className="text-xs text-purple-500 ml-auto">(QF - Qantas)</span>
+            </div>
             {buildPassiveSegments().length > 0 ? (
-              <div className="space-y-1.5">
-                {buildPassiveSegments().map((seg) => (
-                  <div key={seg.segmentId} className="text-xs text-amber-800 font-mono bg-amber-50 px-2 py-1 rounded">
-                    {seg.marketingCarrier} {seg.flightNumber}: {seg.origin} → {seg.destination} | {seg.departureDateTime.split('T')[0]} {seg.departureDateTime.split('T')[1].slice(0,5)}
-                  </div>
-                ))}
+              <div className="space-y-2">
+                {buildPassiveSegments().map((seg) => {
+                  const isOutbound = seg.direction === 'outbound';
+                  const date = seg.departureDateTime.split('T')[0];
+                  const depTime = seg.departureDateTime.split('T')[1].slice(0, 5);
+                  const arrTime = seg.arrivalDateTime.split('T')[1].slice(0, 5);
+                  const formattedDate = new Date(date).toLocaleDateString('en-AU', {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                  });
+
+                  return (
+                    <div
+                      key={seg.segmentId}
+                      className={`flex items-center gap-3 p-3 rounded-lg border ${
+                        isOutbound
+                          ? 'bg-blue-50 border-blue-200'
+                          : 'bg-green-50 border-green-200'
+                      }`}
+                    >
+                      {/* Direction Badge */}
+                      <div
+                        className={`px-2 py-1 rounded-md text-xs font-bold uppercase ${
+                          isOutbound
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-green-100 text-green-700'
+                        }`}
+                      >
+                        {isOutbound ? 'Outbound' : 'Return'}
+                      </div>
+
+                      {/* Flight Info */}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-bold ${isOutbound ? 'text-blue-800' : 'text-green-800'}`}>
+                            {seg.marketingCarrier}{seg.flightNumber}
+                          </span>
+                          <span className={`text-sm ${isOutbound ? 'text-blue-600' : 'text-green-600'}`}>
+                            {seg.origin}
+                          </span>
+                          <span className={`${isOutbound ? 'text-blue-400' : 'text-green-400'}`}>→</span>
+                          <span className={`text-sm ${isOutbound ? 'text-blue-600' : 'text-green-600'}`}>
+                            {seg.destination}
+                          </span>
+                        </div>
+                        <div className={`text-xs mt-1 ${isOutbound ? 'text-blue-500' : 'text-green-500'}`}>
+                          {formattedDate} • {depTime} - {arrTime} • Class: {seg.rbd}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              <p className="text-xs text-amber-600 italic">No flights selected yet</p>
+              <div className="text-center py-3 text-purple-500 text-sm italic">
+                Select flights first to generate passive segments
+              </div>
             )}
           </div>
         )}
