@@ -29,7 +29,9 @@ export interface BookingStatusData {
 
 export function transformBookingStatus(rawData: any): BookingStatusData {
   // Extract raw status codes - check multiple possible paths
-  const orderStatusRaw = rawData?.Response?.Order?.StatusCode ||
+  // Backend parsed format uses order.status (not StatusCode)
+  const orderStatusRaw = rawData?.order?.status ||
+                         rawData?.Response?.Order?.StatusCode ||
                          rawData?.Order?.StatusCode ||
                          rawData?.order?.StatusCode || 'OK';
   const paymentStatusRaw = extractPaymentStatus(rawData);
@@ -70,14 +72,19 @@ export function transformBookingStatus(rawData: any): BookingStatusData {
 
 function extractPaymentStatus(data: any): string {
   // Check for warnings first - "Order is underpaid" is critical
-  const warnings = normalizeToArray(data?.Response?.Warning || data?.Warning);
+  // Backend parsed format uses lowercase 'warnings' array with { code, message }
+  const warnings = normalizeToArray(data?.warnings || data?.Response?.Warning || data?.Warning);
   const hasUnderpaidWarning = warnings.some((w: any) =>
+    w?.message?.toLowerCase().includes('underpaid') ||
     w?.DescText?.toLowerCase().includes('underpaid') ||
+    w?.code === 'OF2003' ||
     w?.TypeCode === 'OF2003'
   );
 
   // Get order status - OPENED means hold booking (not paid)
-  const orderStatus = data?.Response?.Order?.StatusCode ||
+  // Backend parsed format uses order.status (not StatusCode)
+  const orderStatus = data?.order?.status ||
+                      data?.Response?.Order?.StatusCode ||
                       data?.Order?.StatusCode ||
                       data?.order?.StatusCode || '';
 
@@ -165,13 +172,22 @@ function generateHeadlines(payment: string, order: string, _delivery: string, da
 
   // OPENED = Hold booking, PENDING payment
   if (order === 'OPENED' || payment === 'PENDING') {
-    const orderItems = normalizeToArray(data?.Response?.Order?.OrderItem || data?.Order?.OrderItem || data?.order?.OrderItem);
-    const timeLimit = orderItems[0]?.PaymentTimeLimitDateTime;
+    // Backend parsed format uses order.paymentTimeLimit
+    const timeLimit = data?.order?.paymentTimeLimit ||
+                      data?.Response?.Order?.OrderItem?.[0]?.PaymentTimeLimitDateTime ||
+                      data?.Order?.OrderItem?.[0]?.PaymentTimeLimitDateTime;
     const deadline = timeLimit ? formatDeadline(timeLimit) : 'soon';
-    const totalPrice = data?.Response?.Order?.TotalPrice?.TotalAmount ||
-                       data?.Order?.TotalPrice?.TotalAmount ||
-                       data?.order?.TotalPrice?.TotalAmount;
-    const amount = totalPrice ? ` (${getCurrencySymbol(totalPrice['@CurCode'] || totalPrice?.CurCode || 'AUD')}${parseFloat(totalPrice['#text'] || totalPrice || 0).toFixed(2)})` : '';
+
+    // Backend parsed format uses order.totalPrice { value, currency }
+    const totalPrice = data?.order?.totalPrice ||
+                       data?.Response?.Order?.TotalPrice?.TotalAmount ||
+                       data?.Order?.TotalPrice?.TotalAmount;
+    let amount = '';
+    if (totalPrice?.value !== undefined) {
+      amount = ` (${getCurrencySymbol(totalPrice.currency || 'AUD')}${totalPrice.value.toFixed(2)})`;
+    } else if (totalPrice) {
+      amount = ` (${getCurrencySymbol(totalPrice['@CurCode'] || totalPrice?.CurCode || 'AUD')}${parseFloat(totalPrice['#text'] || totalPrice || 0).toFixed(2)})`;
+    }
 
     return {
       headline: 'Payment Required',
@@ -207,7 +223,9 @@ function determineActionRequired(payment: string, order: string, _data: any): st
 }
 
 function checkUrgentDeadlines(data: any): BookingStatusData['urgentDeadline'] {
-  const timeLimit = data?.Response?.Order?.OrderItem?.[0]?.PaymentTimeLimitDateTime ||
+  // Backend parsed format uses order.paymentTimeLimit
+  const timeLimit = data?.order?.paymentTimeLimit ||
+                    data?.Response?.Order?.OrderItem?.[0]?.PaymentTimeLimitDateTime ||
                     data?.Order?.OrderItem?.[0]?.PaymentTimeLimitDateTime ||
                     data?.order?.OrderItem?.[0]?.PaymentTimeLimitDateTime;
 
@@ -450,16 +468,20 @@ export interface PaymentData {
 }
 
 export function transformPaymentData(rawData: any): PaymentData {
-  const order = rawData?.Response?.Order || rawData?.Order || rawData?.order;
-  const orderItems = normalizeToArray(order?.OrderItem);
+  const order = rawData?.order || rawData?.Response?.Order || rawData?.Order;
+  const orderItems = normalizeToArray(order?.orderItems || order?.OrderItem);
   const paymentInfo = rawData?.Response?.PaymentInfo || rawData?.PaymentInfo;
 
-  // Get total from Order.TotalPrice first (most accurate)
-  const orderTotal = order?.TotalPrice?.TotalAmount;
+  // Get total from order.totalPrice (backend parsed format) or Order.TotalPrice
+  const orderTotal = order?.totalPrice || order?.TotalPrice?.TotalAmount;
   let totalValue = 0;
   let currency = 'AUD';
 
-  if (orderTotal) {
+  // Handle backend parsed format: { value, currency }
+  if (orderTotal?.value !== undefined) {
+    totalValue = orderTotal.value;
+    currency = orderTotal.currency || 'AUD';
+  } else if (orderTotal) {
     // Handle both {#text, @CurCode} and plain value formats
     totalValue = parseFloat(orderTotal['#text'] || orderTotal || 0);
     currency = orderTotal['@CurCode'] || orderTotal?.CurCode || 'AUD';

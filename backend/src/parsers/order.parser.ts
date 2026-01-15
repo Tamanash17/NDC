@@ -9,9 +9,15 @@ import type {
   FlightSegment, PaxJourney, OrderStatus 
 } from "../types/ndc.types.js";
 
+export interface OrderWarning {
+  code?: string;
+  message: string;
+}
+
 export interface OrderParseResult {
   success: boolean;
   errors?: Array<{ code: string; message: string }>;
+  warnings?: OrderWarning[];
   order?: Order;
 }
 
@@ -34,10 +40,33 @@ export class OrderParser extends BaseXmlParser {
       };
     }
 
+    // Parse warnings (e.g., "Order is underpaid")
+    const warnings = this.parseWarnings(doc);
+
     return {
       success: true,
+      warnings: warnings.length > 0 ? warnings : undefined,
       order: this.parseOrder(orderEl, doc),
     };
+  }
+
+  private parseWarnings(doc: Document): OrderWarning[] {
+    const warnings: OrderWarning[] = [];
+    const warningElements = this.getElements(doc, "Warning");
+
+    for (const warnEl of warningElements) {
+      const message = this.getText(warnEl, "DescText") ||
+                      this.getText(warnEl, "Message") ||
+                      warnEl.textContent?.trim() || "";
+      if (message) {
+        warnings.push({
+          code: this.getText(warnEl, "TypeCode") || this.getText(warnEl, "Code") || undefined,
+          message,
+        });
+      }
+    }
+
+    return warnings;
   }
 
   private parseOrder(orderEl: Element, doc: Document): Order {
@@ -128,6 +157,8 @@ export class OrderParser extends BaseXmlParser {
       "TICKETED": "TICKETED",
       "CANCELLED": "CANCELLED",
       "REFUNDED": "REFUNDED",
+      "OPENED": "OPENED",  // Hold booking - payment required
+      "ACTIVE": "CONFIRMED",  // OrderItem status
       "OK": "CONFIRMED",
       "HK": "CONFIRMED",
       "TK": "TICKETED",
