@@ -24,11 +24,11 @@ const router = Router();
 // Version endpoint (no auth required) - to verify deployment
 router.get("/version", (req: any, res: any) => {
   res.json({
-    version: "1.1.0",
-    buildDate: "2026-01-16T06:20:00Z",
-    commit: "76ea984",
-    feature: "multiple-payments-warnings",
-    message: "Multiple payments display, CC fee breakdown, order warnings (underpaid/overpaid)"
+    version: "1.1.1",
+    buildDate: "2026-01-16T06:45:00Z",
+    commit: "0e8c758",
+    feature: "multiple-payments-warnings-synced",
+    message: "Multiple payments display, CC fee breakdown, order warnings - root src synced"
   });
 });
 
