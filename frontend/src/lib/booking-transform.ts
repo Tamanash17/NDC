@@ -1049,18 +1049,39 @@ function determineServiceTypeFromDef(def: any): ServiceItemData['serviceType'] {
   const name = (def.Name || '').toUpperCase();
   const rfic = (def.RFIC || '').toUpperCase();
 
+  // RFIC codes: C=Baggage, G=Meal, A=Air Transportation, F=SSR
   if (rfic === 'C') return 'BAGGAGE';
   if (rfic === 'G') return 'MEAL';
+  if (rfic === 'F') return 'SSR';
 
+  // Common SSR codes (IATA standard)
+  const ssrCodes = [
+    'WCHR', 'WCHS', 'WCHC', 'WCBD', 'WCBW', 'WCMP', 'WCOB', // Wheelchair
+    'BLND', 'DEAF', 'DPNA', 'MAAS', 'MEDA', // Disability/Medical
+    'UMNR', 'AVIH', 'PETC', 'SPEQ', // Unaccompanied minor, pets, sports equipment
+    'LANG', 'OXYG', 'STCR', 'EXST', // Language, oxygen, stretcher, extra seat
+    'NSST', 'NSSA', 'NSSB', 'NSSW', // No smoking seats
+    'CBBG', 'BIKE', 'BULK', 'FRAG', // Special baggage
+    'INFT', 'CHLD', // Infant, child
+    'VGML', 'VLML', 'AVML', 'HNML', 'KSML', 'MOML', 'DBML', 'FPML', 'GFML', 'LFML', 'NLML', 'SFML', // Special meals (also check MEAL)
+    'SPML', 'BBML', 'BLML', 'CHML', 'PRML', // More special meals
+  ];
+  if (ssrCodes.includes(code)) return 'SSR';
+
+  // Code-based detection
   if (code.includes('BAG') || code.startsWith('BG') || code.includes('0GO')) return 'BAGGAGE';
   if (code.includes('SEAT') || code.includes('ST') || code === 'UPFX' || code === 'FXS1') return 'SEAT';
   if (code.includes('MEAL') || code.startsWith('ML')) return 'MEAL';
   if (code.includes('BNDL') || code === 'P200' || code === 'STPL') return 'BUNDLE';
+  if (code.includes('SSR') || code.startsWith('WCH') || code.startsWith('PET')) return 'SSR';
 
+  // Name-based detection
   if (name.includes('BAGGAGE') || name.includes('KG')) return 'BAGGAGE';
   if (name.includes('SEAT') || name.includes('UPFRONT') || name.includes('LEGROOM')) return 'SEAT';
   if (name.includes('MEAL') || name.includes('FOOD')) return 'MEAL';
   if (name.includes('BUNDLE') || name.includes('STARTER') || name.includes('PLUS') || name.includes('MAX')) return 'BUNDLE';
+  if (name.includes('WHEELCHAIR') || name.includes('ASSISTANCE') || name.includes('SPECIAL') ||
+      name.includes('PET') || name.includes('UNACCOMPANIED') || name.includes('MEDICAL')) return 'SSR';
 
   return 'OTHER';
 }
