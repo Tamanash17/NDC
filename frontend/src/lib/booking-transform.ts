@@ -28,9 +28,9 @@ export interface BookingStatusData {
 }
 
 export function transformBookingStatus(rawData: any): BookingStatusData {
-  // Extract raw status codes
-  const orderStatusRaw = rawData?.order?.StatusCode ||
-                         rawData?.Response?.Order?.StatusCode || 'OK';
+  // Extract raw status codes - Response.Order is the correct path
+  const orderStatusRaw = rawData?.Response?.Order?.StatusCode ||
+                         rawData?.order?.StatusCode || 'OK';
   const paymentStatusRaw = extractPaymentStatus(rawData);
   const deliveryStatusRaw = extractDeliveryStatus(rawData);
 
@@ -68,7 +68,23 @@ export function transformBookingStatus(rawData: any): BookingStatusData {
 }
 
 function extractPaymentStatus(data: any): string {
-  // Check multiple possible locations for payment status
+  // Check for warnings first - "Order is underpaid" is critical
+  const warnings = normalizeToArray(data?.Response?.Warning);
+  const hasUnderpaidWarning = warnings.some((w: any) =>
+    w?.DescText?.toLowerCase().includes('underpaid') ||
+    w?.TypeCode === 'OF2003'
+  );
+
+  // Get order status - OPENED means hold booking (not paid)
+  const orderStatus = data?.Response?.Order?.StatusCode ||
+                      data?.order?.StatusCode || '';
+
+  // OPENED status = hold booking, payment required
+  if (orderStatus === 'OPENED' || hasUnderpaidWarning) {
+    return 'PENDING';
+  }
+
+  // Check for explicit payment info
   const paymentInfo = data?.Response?.PaymentInfo ||
                       data?.PaymentInfo ||
                       data?.order?.PaymentInfo;
@@ -81,19 +97,19 @@ function extractPaymentStatus(data: any): string {
   }
 
   // Check if order has payment time limit (hold booking)
-  const timeLimit = data?.order?.OrderItem?.[0]?.PaymentTimeLimitDateTime ||
-                    data?.Response?.Order?.OrderItem?.[0]?.PaymentTimeLimitDateTime;
+  const orderItems = normalizeToArray(data?.Response?.Order?.OrderItem || data?.order?.OrderItem);
+  const timeLimit = orderItems[0]?.PaymentTimeLimitDateTime;
   if (timeLimit) {
     const deadline = new Date(timeLimit);
     if (deadline > new Date()) return 'PENDING';
   }
 
-  // Default based on order status
-  const orderStatus = data?.order?.StatusCode || 'OK';
+  // Check order status for paid states
   if (orderStatus === 'TICKETED' || orderStatus === 'TK') return 'SUCCESSFUL';
   if (orderStatus === 'CANCELLED' || orderStatus === 'XX') return 'UNKNOWN';
+  if (orderStatus === 'CONFIRMED' || orderStatus === 'OK' || orderStatus === 'HK') return 'SUCCESSFUL';
 
-  return 'SUCCESSFUL'; // Default to successful for confirmed orders
+  return 'UNKNOWN';
 }
 
 function extractDeliveryStatus(data: any): string {
@@ -112,13 +128,19 @@ function extractDeliveryStatus(data: any): string {
   return 'READY_TO_PROCEED';
 }
 
-function determineHealth(payment: string, order: string, delivery: string): OverallHealth {
+function determineHealth(payment: string, order: string, _delivery: string): OverallHealth {
+  // Error states
   if (payment === 'FAILED' || order === 'CANCELLED' || order === 'XX') return 'error';
+
+  // Warning states - OPENED = hold booking, PENDING = awaiting payment
   if (payment === 'PENDING' || payment === 'PARTIAL' || order === 'OPENED') return 'warning';
-  if (payment === 'SUCCESSFUL' &&
-      (order === 'CONFIRMED' || order === 'TICKETED' || order === 'OK' || order === 'TK')) {
+
+  // Success states
+  if ((payment === 'SUCCESSFUL' || payment === 'UNKNOWN') &&
+      (order === 'CONFIRMED' || order === 'TICKETED' || order === 'OK' || order === 'TK' || order === 'HK')) {
     return 'success';
   }
+
   return 'info';
 }
 
@@ -139,12 +161,18 @@ function generateHeadlines(payment: string, order: string, _delivery: string, da
     };
   }
 
-  if (payment === 'PENDING') {
-    const timeLimit = data?.order?.OrderItem?.[0]?.PaymentTimeLimitDateTime;
+  // OPENED = Hold booking, PENDING payment
+  if (order === 'OPENED' || payment === 'PENDING') {
+    const orderItems = normalizeToArray(data?.Response?.Order?.OrderItem || data?.order?.OrderItem);
+    const timeLimit = orderItems[0]?.PaymentTimeLimitDateTime;
     const deadline = timeLimit ? formatDeadline(timeLimit) : 'soon';
+    const totalPrice = data?.Response?.Order?.TotalPrice?.TotalAmount ||
+                       data?.order?.TotalPrice?.TotalAmount;
+    const amount = totalPrice ? ` (${getCurrencySymbol(totalPrice['@CurCode'] || totalPrice?.CurCode || 'AUD')}${parseFloat(totalPrice['#text'] || totalPrice || 0).toFixed(2)})` : '';
+
     return {
       headline: 'Payment Required',
-      subheadline: `Complete payment by ${deadline} to secure your booking.`,
+      subheadline: `Complete payment${amount} by ${deadline} to secure your booking.`,
     };
   }
 
@@ -217,7 +245,7 @@ function formatStatusLabel(code: string, type: 'payment' | 'order' | 'delivery')
       SUCCESSFUL: 'Paid',
       SUCCESS: 'Paid',
       COMPLETED: 'Paid',
-      PENDING: 'Pending',
+      PENDING: 'Awaiting Payment',
       FAILED: 'Failed',
       REFUNDED: 'Refunded',
       PARTIAL: 'Partial',
@@ -231,7 +259,7 @@ function formatStatusLabel(code: string, type: 'payment' | 'order' | 'delivery')
       TK: 'Ticketed',
       CANCELLED: 'Cancelled',
       XX: 'Cancelled',
-      OPENED: 'Hold',
+      OPENED: 'On Hold',
       PENDING: 'Pending',
     },
     delivery: {
@@ -418,49 +446,79 @@ export interface PaymentData {
 }
 
 export function transformPaymentData(rawData: any): PaymentData {
-  const orderItems = normalizeToArray(rawData?.order?.OrderItem || rawData?.Response?.Order?.OrderItem);
+  const order = rawData?.Response?.Order || rawData?.order;
+  const orderItems = normalizeToArray(order?.OrderItem);
   const paymentInfo = rawData?.Response?.PaymentInfo || rawData?.PaymentInfo;
 
-  // Calculate total from order items
+  // Get total from Order.TotalPrice first (most accurate)
+  const orderTotal = order?.TotalPrice?.TotalAmount;
   let totalValue = 0;
+  let currency = 'AUD';
+
+  if (orderTotal) {
+    // Handle both {#text, @CurCode} and plain value formats
+    totalValue = parseFloat(orderTotal['#text'] || orderTotal || 0);
+    currency = orderTotal['@CurCode'] || orderTotal?.CurCode || 'AUD';
+  }
+
+  // Build breakdown from order items
   const breakdown: PriceBreakdownItem[] = [];
 
   orderItems.forEach((item: any) => {
     const price = item.Price || {};
     const baseAmount = parseFloat(price.BaseAmount?.['#text'] || price.BaseAmount || 0);
-    const totalAmount = parseFloat(price.TotalAmount?.['#text'] || price.TotalAmount || 0);
-    const currency = price.TotalAmount?.['@CurCode'] || price.CurCode || 'AUD';
+    const itemTotal = parseFloat(price.TotalAmount?.['#text'] || price.TotalAmount || 0);
+    const itemCurrency = price.TotalAmount?.['@CurCode'] || price.BaseAmount?.['@CurCode'] || currency;
 
-    totalValue += totalAmount;
+    // If no order total, sum from items
+    if (!orderTotal) {
+      totalValue += itemTotal;
+    }
 
-    // Add to breakdown
+    // Add base fare or service to breakdown
     if (baseAmount > 0) {
+      const itemId = item.OrderItemID || '';
+      const isFlight = itemId.includes('FLIGHT');
       breakdown.push({
-        label: item.OrderItemID?.includes('FLIGHT') ? 'Base Fare' : item.OrderItemID || 'Service',
-        type: item.OrderItemID?.includes('FLIGHT') ? 'base' : 'service',
+        label: isFlight ? 'Base Fare' : (itemId.split('-').pop() || 'Service'),
+        type: isFlight ? 'base' : 'service',
         amount: baseAmount,
-        currency,
+        currency: itemCurrency,
       });
     }
 
-    // Extract taxes
+    // Add fees
+    const fees = normalizeToArray(price.Fee);
+    fees.forEach((fee: any) => {
+      breakdown.push({
+        label: fee.DescText || 'Fee',
+        type: 'fee',
+        amount: parseFloat(fee.Amount?.['#text'] || fee.Amount || 0),
+        currency: fee.Amount?.['@CurCode'] || itemCurrency,
+      });
+    });
+
+    // Add taxes
     const taxes = normalizeToArray(price.TaxSummary?.Tax);
     taxes.forEach((tax: any) => {
       breakdown.push({
         label: tax.TaxName || tax.DescText || 'Tax',
         type: 'tax',
         amount: parseFloat(tax.Amount?.['#text'] || tax.Amount || 0),
-        currency,
+        currency: tax.Amount?.['@CurCode'] || itemCurrency,
         code: tax.TaxCode,
       });
     });
   });
 
-  const currency = orderItems[0]?.Price?.TotalAmount?.['@CurCode'] ||
-                   orderItems[0]?.Price?.CurCode || 'AUD';
+  // Determine payment status
+  const paymentStatus = extractPaymentStatus(rawData) as PaymentStatus;
+
+  // Calculate amount due for hold bookings
+  const amountDue = paymentStatus === 'PENDING' ? { value: totalValue, currency } : undefined;
 
   return {
-    status: (extractPaymentStatus(rawData) as PaymentStatus) || 'UNKNOWN',
+    status: paymentStatus || 'UNKNOWN',
     method: paymentInfo?.PaymentMethod ? {
       type: paymentInfo.PaymentMethod.PaymentTypeCode || 'CC',
       cardBrand: paymentInfo.PaymentMethod.PaymentCard?.CardBrandCode,
@@ -470,7 +528,8 @@ export function transformPaymentData(rawData: any): PaymentData {
     amountPaid: paymentInfo?.Amount ? {
       value: parseFloat(paymentInfo.Amount['#text'] || paymentInfo.Amount || 0),
       currency,
-    } : undefined,
+    } : (paymentStatus === 'PENDING' ? { value: 0, currency } : undefined),
+    amountDue,
     breakdown: breakdown.length > 0 ? breakdown : undefined,
   };
 }
@@ -482,6 +541,13 @@ export function transformPaymentData(rawData: any): PaymentData {
 function normalizeToArray<T>(value: T | T[] | undefined): T[] {
   if (!value) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+function getCurrencySymbol(currency: string): string {
+  const symbols: Record<string, string> = {
+    AUD: 'A$', USD: '$', EUR: '€', GBP: '£', NZD: 'NZ$', SGD: 'S$', JPY: '¥',
+  };
+  return symbols[currency] || currency + ' ';
 }
 
 // Combine all transformers
