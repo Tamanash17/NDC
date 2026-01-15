@@ -578,13 +578,6 @@ function getCurrencySymbol(currency: string): string {
 
 // Combine all transformers
 export function transformBookingData(rawData: any) {
-  // Debug logging to understand data structure
-  console.log('[BookingTransform] Raw data keys:', Object.keys(rawData || {}));
-  console.log('[BookingTransform] order:', rawData?.order);
-  console.log('[BookingTransform] order.status:', rawData?.order?.status);
-  console.log('[BookingTransform] order.totalPrice:', rawData?.order?.totalPrice);
-  console.log('[BookingTransform] warnings:', rawData?.warnings);
-
   return {
     status: transformBookingStatus(rawData),
     journeys: transformFlightJourneys(rawData),
