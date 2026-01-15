@@ -20,6 +20,14 @@ This document serves as a knowledge base for the Navitaire NDC Gateway (IATA NDC
 10. [Passenger Types (PTC)](#passenger-types-ptc)
 11. [Document Type Codes](#document-type-codes)
 12. [XML Namespaces](#xml-namespaces)
+13. [OfferPrice Request (Long Sell)](#offerprice-request-long-sell)
+14. [FareComponent Structure](#farecomponent-structure)
+15. [Baggage Associations](#baggage-associations)
+16. [A La Carte Offers](#a-la-carte-offers)
+17. [Non-Flight Service Fees](#non-flight-service-fees)
+18. [OfferPrice Response Structure](#offerprice-response-structure)
+19. [RBD Codes (Booking Classes)](#rbd-codes-booking-classes)
+20. [Cabin Type Codes](#cabin-type-codes)
 
 ---
 
@@ -598,6 +606,436 @@ function formatNDCAmount(value: number, currency: string): string {
 
 ---
 
+## OfferPrice Request (Long Sell)
+
+OfferPrice can be used in two modes:
+1. **By Reference** - Pricing a shopping offer using OfferRefID from AirShopping
+2. **By Value (Long Sell)** - Creating a priced offer for specific flights without prior shopping
+
+### Long Sell Mode
+
+Long Sell creates offers for specific flights without using shopping offer IDs. This is useful for:
+- Manual bookings with known flight details
+- CC surcharge calculation
+- Agency-specific pricing scenarios
+
+### Required Elements for Long Sell
+
+```xml
+<IATA_OfferPriceRQ xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersMessage">
+  <DistributionChain>...</DistributionChain>
+  <PayloadAttributes>
+    <VersionNumber xmlns="...">21.3</VersionNumber>
+  </PayloadAttributes>
+  <Request>
+    <DataLists xmlns="...">
+      <DatedMarketingSegmentList>...</DatedMarketingSegmentList>
+      <OriginDestList>...</OriginDestList>
+      <PaxJourneyList>...</PaxJourneyList>
+      <PaxList>...</PaxList>
+      <ShoppingRequestPaxSegmentList>...</ShoppingRequestPaxSegmentList>
+    </DataLists>
+    <PricedOffer xmlns="...">
+      <AcceptOrderItemList>
+        <CreateOrderItem>
+          <OfferItemType>
+            <FlightItem>
+              <OriginDestRefID>OriginDestID1</OriginDestRefID>
+            </FlightItem>
+          </OfferItemType>
+          <OwnerCode>JQ</OwnerCode>
+        </CreateOrderItem>
+      </AcceptOrderItemList>
+    </PricedOffer>
+    <PaymentFunctions xmlns="...">
+      <PaymentMethodCriteria>
+        <PaymentTypeCode>CC</PaymentTypeCode>
+        <PaymentBrandCode>VI</PaymentBrandCode>
+      </PaymentMethodCriteria>
+    </PaymentFunctions>
+    <ResponseParameters xmlns="...">
+      <CurParameter>
+        <CurCode>AUD</CurCode>
+      </CurParameter>
+    </ResponseParameters>
+  </Request>
+</IATA_OfferPriceRQ>
+```
+
+### ShoppingRequestPaxSegmentList
+
+Required for Long Sell - links passengers to segments:
+
+```xml
+<ShoppingRequestPaxSegmentList>
+  <PaxSegment>
+    <CabinTypeAssociationChoice>
+      <SegmentCabinType>
+        <CabinTypeCode>5</CabinTypeCode>  <!-- Economy -->
+      </SegmentCabinType>
+    </CabinTypeAssociationChoice>
+    <DatedMarketingSegmentRefId>Mkt-seg000000001</DatedMarketingSegmentRefId>
+    <PaxSegmentID>seg000000001</PaxSegmentID>
+  </PaxSegment>
+</ShoppingRequestPaxSegmentList>
+```
+
+### Payment Method Criteria (CC Surcharge)
+
+To calculate credit card surcharges, include PaymentFunctions:
+
+```xml
+<PaymentFunctions xmlns="...">
+  <PaymentMethodCriteria>
+    <PaymentTypeCode>CC</PaymentTypeCode>
+    <PaymentBrandCode>VI</PaymentBrandCode>  <!-- Card brand code -->
+  </PaymentMethodCriteria>
+</PaymentFunctions>
+```
+
+### IIN/BIN Code Support
+
+For more accurate surcharge calculation, the BIN code can be provided:
+
+```xml
+<PaymentFunctions>
+  <PaymentMethodCriteria>
+    <PaymentTypeCode>CC</PaymentTypeCode>
+    <PaymentCriteriaAddlInfo>
+      <PaymentCardCriteriaAddlInfo>
+        <IIN_IINNumber>411111</IIN_IINNumber>  <!-- First 6 digits of card -->
+      </PaymentCardCriteriaAddlInfo>
+    </PaymentCriteriaAddlInfo>
+  </PaymentMethodCriteria>
+</PaymentFunctions>
+```
+
+---
+
+## FareComponent Structure
+
+FareComponent contains detailed fare information for each segment.
+
+### Key Fields
+
+| Field | Description |
+|-------|-------------|
+| `CabinType/CabinTypeCode` | Cabin type code (e.g., 5 = Economy) |
+| `CabinType/CabinTypeName` | Cabin type name (e.g., "Economy") |
+| `FareBasisCode` | Fare basis code for pricing |
+| `PaxSegmentRefID` | Reference to the segment this fare applies to |
+| `PriceClassRefID` | Reference to the price class |
+| `RBD/RBD_Code` | Reservation Booking Designator (booking class) |
+
+### FareComponent XML Example
+
+```xml
+<FareComponent>
+  <CabinType>
+    <CabinTypeCode>5</CabinTypeCode>
+    <CabinTypeName>Economy</CabinTypeName>
+  </CabinType>
+  <FareBasisCode>YOWAU</FareBasisCode>
+  <FareRule>
+    <Remark>
+      <RemarkText>Non-refundable fare</RemarkText>
+    </Remark>
+  </FareRule>
+  <PaxSegmentRefID>seg000000001</PaxSegmentRefID>
+  <PriceClassRefID>PC1</PriceClassRefID>
+  <RBD>
+    <RBD_Code>Y</RBD_Code>
+  </RBD>
+</FareComponent>
+```
+
+### Price Breakdown
+
+The Price element contains:
+
+| Element | Description |
+|---------|-------------|
+| `BaseAmount` | Base fare minus discounts |
+| `Discount/DiscountAmount` | Promotional discount amount |
+| `Discount/PreDiscountedAmount` | Amount before discount |
+| `Surcharge/Breakdown/Amount` | Surcharge amounts (e.g., fuel) |
+| `TaxSummary/Tax/Amount` | Individual tax amounts |
+| `TaxSummary/TotalTaxAmount` | Total of all taxes |
+| `TotalAmount` | Final total including all components |
+
+---
+
+## Baggage Associations
+
+Baggage allowances are associated per journey per passenger type.
+
+### Structure
+
+```xml
+<BaggageAssociations>
+  <BaggageAllowanceRefID>BA1</BaggageAllowanceRefID>
+  <OfferFlightAssociations>
+    <PaxJourneyRef>
+      <PaxJourneyRefID>fl000000001</PaxJourneyRefID>
+    </PaxJourneyRef>
+  </OfferFlightAssociations>
+  <PaxRefID>PaxID1</PaxRefID>
+  <PaxRefID>PaxID2</PaxRefID>
+</BaggageAssociations>
+```
+
+### Key Points
+
+- Baggage allowances are **journey eligible** (apply to all segments in a journey)
+- Segment-level baggage is currently out of scope
+- Only non-infant passengers (ADT, CHD) get baggage allowances
+- Infants automatically have no baggage allowance
+
+### BaggageAllowanceList Example
+
+```xml
+<BaggageAllowanceList>
+  <BaggageAllowance>
+    <BaggageAllowanceID>BA1</BaggageAllowanceID>
+    <PieceAllowance>
+      <TotalQty>1</TotalQty>
+    </PieceAllowance>
+    <WeightAllowance>
+      <MaximumWeightMeasure>23</MaximumWeightMeasure>
+      <WeightUOM>KG</WeightUOM>
+    </WeightAllowance>
+    <TypeCode>Checked</TypeCode>
+  </BaggageAllowance>
+</BaggageAllowanceList>
+```
+
+---
+
+## A La Carte Offers
+
+A La Carte offers are used for ancillary services (seats, bags, meals) separate from flight offers.
+
+### Adding A La Carte to OfferPrice
+
+```xml
+<SelectedOffer>
+  <OfferRefID>ALC-OFFER-123</OfferRefID>
+  <OwnerCode>JQ</OwnerCode>
+  <SelectedOfferItem>
+    <OfferItemRefID>ALC-ITEM-001</OfferItemRefID>
+    <PaxRefID>PaxID1</PaxRefID>
+    <SelectedALaCarteOfferItem>
+      <Qty>1</Qty>  <!-- Always processed as 1 -->
+      <OfferFlightAssociations>
+        <PaxSegmentRef>
+          <PaxSegmentRefID>seg000000001</PaxSegmentRefID>
+        </PaxSegmentRef>
+      </OfferFlightAssociations>
+    </SelectedALaCarteOfferItem>
+  </SelectedOfferItem>
+</SelectedOffer>
+```
+
+### Seat Selection
+
+For seat selection, include seat details:
+
+```xml
+<SelectedOfferItem>
+  <OfferItemRefID>SEAT-ITEM-001</OfferItemRefID>
+  <PaxRefID>PaxID1</PaxRefID>
+  <SelectedSeat>
+    <SeatRowNumber>12</SeatRowNumber>
+    <ColumnID>A</ColumnID>
+  </SelectedSeat>
+</SelectedOfferItem>
+```
+
+### Flight Association Types
+
+| Association Type | Use Case |
+|-----------------|----------|
+| `PaxSegmentRefID` | Segment-level ancillaries |
+| `PaxJourneyRefID` | Journey-level ancillaries |
+| `DatedOperatingLegRefID` | Leg-level ancillaries |
+
+### Important Notes
+
+- A La Carte cannot be added with passenger count change in same request
+- Qty is always processed as 1 regardless of value provided
+- Seats and ancillaries return separate OfferItems in response
+
+---
+
+## Non-Flight Service Fees
+
+Agent service fees can be added through the AugmentationPoint.
+
+### Request Structure
+
+```xml
+<AugmentationPoint>
+  <AcceptOrderItemList xmlns="http://ndcgateway.navitaire.com/Orders/AugmentationPoint">
+    <CreateOrderItem>
+      <OfferItemType>
+        <OtherItem>
+          <DescText>ServiceFee</DescText>
+          <Price>
+            <Fee>
+              <Amount CurCode="AUD">25.00</Amount>
+              <DesigText>SVCFEE</DesigText>  <!-- Fee code in New Skies -->
+            </Fee>
+          </Price>
+        </OtherItem>
+      </OfferItemType>
+      <OwnerCode>JQ</OwnerCode>
+    </CreateOrderItem>
+  </AcceptOrderItemList>
+</AugmentationPoint>
+```
+
+### Namespace
+
+The AcceptOrderItemList uses a special namespace:
+```
+http://ndcgateway.navitaire.com/Orders/AugmentationPoint
+```
+
+### Fee Code Configuration
+
+The `DesigText` must match a configured fee code in New Skies. The amount is informational - actual fee is calculated based on configuration.
+
+---
+
+## OfferPrice Response Structure
+
+### PricedOffer Element
+
+| Field | Description |
+|-------|-------------|
+| `OfferID` | Unique priced offer ID |
+| `OwnerCode` | Carrier code |
+| `OfferExpirationTimeLimitDateTime` | Offer expiry (UTC) |
+| `TotalPrice/TotalAmount` | Total price for all services |
+| `BaggageAssociations` | Fare baggage allowances per journey/PTC |
+| `JourneyOverview` | Price class references per journey |
+
+### OfferItem Types
+
+The response contains separate OfferItems for:
+
+1. **Flight OfferItems** - Per passenger type, per journey
+2. **Seat OfferItems** - Per passenger, per segment
+3. **Ancillary OfferItems** - Per passenger, per SSR, per fee application
+
+### Flight OfferItem Fields
+
+| Field | Description |
+|-------|-------------|
+| `OfferItemID` | Unique item ID |
+| `MandatoryInd` | Always `true` - all items mandatory |
+| `CancelRestrictions` | Cancellation rules |
+| `ChangeRestrictions` | Change/modification rules |
+| `PaymentTimelimit` | Hold duration (e.g., "PT2H3M") |
+| `Price/BaseAmount` | Base fare amount |
+| `Price/TaxSummary` | Tax breakdown |
+| `Price/TotalAmount` | Total including taxes/fees |
+| `FareDetail` | Detailed fare components |
+| `Service` | Flight service with journey reference |
+
+### Payment Time Limit Format
+
+```xml
+<PaymentTimelimit>
+  <PaymentTimeLimitDuration>
+    <PaymentTimelimitDuration>PT2H3M0S</PaymentTimelimitDuration>
+  </PaymentTimeLimitDuration>
+</PaymentTimelimit>
+```
+
+Format: `PT{hours}H{minutes}M{seconds}S` (ISO 8601 duration)
+
+---
+
+## RBD Codes (Booking Classes)
+
+RBD (Reservation Booking Designator) identifies the booking class for inventory and fare purposes.
+
+### Common RBD Codes
+
+| Code | Typical Meaning |
+|------|-----------------|
+| `J` | Business Class Premium |
+| `C` | Business Class |
+| `D` | Business Discounted |
+| `Y` | Economy Full Fare |
+| `B` | Economy Flexible |
+| `M` | Economy Standard |
+| `H` | Economy Discount |
+| `K` | Economy Deep Discount |
+| `L` | Economy Promo |
+| `O` | Economy Lowest |
+| `Q` | Economy Sale |
+
+**Note**: RBD codes vary by airline. Always check airline-specific fare rules.
+
+### RBD in XML
+
+```xml
+<RBD>
+  <RBD_Code>Y</RBD_Code>
+</RBD>
+```
+
+Or in passive segments:
+```xml
+<MarketingCarrierRBD_Code>Y</MarketingCarrierRBD_Code>
+```
+
+---
+
+## Cabin Type Codes
+
+Cabin types indicate the class of service.
+
+| Code | Description |
+|------|-------------|
+| `1` | First Class |
+| `2` | First Class Premium |
+| `3` | First Class Discounted |
+| `4` | Business Class |
+| `5` | Economy/Coach |
+| `6` | Premium Economy |
+| `7` | Economy Discounted |
+
+### XML Example
+
+```xml
+<CabinType>
+  <CabinTypeCode>5</CabinTypeCode>
+  <CabinTypeName>Economy</CabinTypeName>
+</CabinType>
+```
+
+### Usage in Long Sell
+
+Only the `CabinTypeCode` of the **first PaxSegment** is considered by NDC Gateway logic:
+
+```xml
+<ShoppingRequestPaxSegmentList>
+  <PaxSegment>
+    <CabinTypeAssociationChoice>
+      <SegmentCabinType>
+        <CabinTypeCode>5</CabinTypeCode>  <!-- This is used -->
+      </SegmentCabinType>
+    </CabinTypeAssociationChoice>
+    ...
+  </PaxSegment>
+</ShoppingRequestPaxSegmentList>
+```
+
+---
+
 ## Quick Reference: Request Types
 
 | Request | Root Element | Purpose |
@@ -628,6 +1066,7 @@ Related builder files in this project:
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-15 | 1.1 | Added OfferPrice, FareComponent, Baggage, A La Carte, RBD codes sections |
 | 2026-01-15 | 1.0 | Initial knowledge base created |
 
 ---
