@@ -837,10 +837,76 @@ router.post("/order-create", async (req: any, res: any) => {
     });
   }
 });
-router.post(
-  "/order-retrieve",
-  handleNDCRoute("OrderRetrieve", config.ndc.endpoints.orderRetrieve)
-);
+// OrderRetrieve - Custom handler to build XML from JSON request
+router.post("/order-retrieve", async (req: any, res: any) => {
+  let xmlRequest: string | undefined;
+
+  try {
+    // Import builder (assuming it exists)
+    const { buildOrderRetrieveXml } = await import("../builders/order-retrieve.builder.js");
+
+    // If body has xml property, use it directly
+    if (req.body.xml) {
+      xmlRequest = req.body.xml;
+    } else if (typeof req.body === "string") {
+      xmlRequest = req.body;
+    } else {
+      // Build XML from JSON payload (orderId, ownerCode)
+      xmlRequest = buildOrderRetrieveXml(req.body);
+    }
+
+    console.log("[NDC] OrderRetrieve XML Request:\n", xmlRequest);
+
+    const xmlResponse = await callNDC(
+      "OrderRetrieve",
+      config.ndc.endpoints.orderRetrieve,
+      xmlRequest,
+      req.token,
+      req.subscriptionKey,
+      req.ndcEnvironment
+    );
+
+    // Parse XML response (assuming parser exists)
+    try {
+      const { orderParser } = await import("../parsers/order.parser.js");
+      const parsed = orderParser.parseOrderView(xmlResponse);
+
+      console.log("[NDC] OrderRetrieve parsed successfully");
+
+      res.json({
+        success: true,
+        data: parsed,
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+      });
+    } catch (parseError) {
+      console.warn("[NDC] OrderRetrieve: Parser not available or failed, returning raw XML");
+      // If parser fails, return raw XML
+      res.json({
+        success: true,
+        data: { xml: xmlResponse },
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+      });
+    }
+  } catch (error: any) {
+    console.error("[NDC] OrderRetrieve Error:", error.message);
+    console.error("[NDC] OrderRetrieve Error Response:", error.response?.data);
+
+    const statusCode = error.response?.status || 500;
+    const errorMessage = error.response?.headers?.['error-msg-0']
+      || error.response?.data?.message
+      || error.message
+      || 'Order retrieval failed';
+
+    res.status(statusCode).json({
+      success: false,
+      error: errorMessage,
+      requestXml: xmlRequest,
+      responseXml: typeof error.response?.data === 'string' ? error.response.data : undefined,
+    });
+  }
+});
 router.post(
   "/order-reshop",
   handleNDCRoute("OrderReshop", config.ndc.endpoints.orderReshop)
