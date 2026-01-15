@@ -850,9 +850,15 @@ router.post("/order-retrieve", async (req: any, res: any) => {
       xmlRequest = req.body.xml;
     } else if (typeof req.body === "string") {
       xmlRequest = req.body;
-    } else {
+    } else if (req.body.orderId) {
       // Build XML from JSON payload (orderId, ownerCode)
+      console.log("[NDC] OrderRetrieve building XML from JSON:", req.body);
       xmlRequest = buildOrderRetrieveXml(req.body);
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required field: orderId",
+      });
     }
 
     console.log("[NDC] OrderRetrieve XML Request:\n", xmlRequest);
