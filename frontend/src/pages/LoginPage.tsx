@@ -277,7 +277,7 @@ export function LoginPage() {
             alt="Jetstar"
             className="w-80 mx-auto -my-4"
           />
-          <h1 className="text-2xl font-bold text-slate-900">NDC Booking Portal</h1>
+          <h1 className="text-2xl font-bold text-slate-900">NDC API Sandbox</h1>
           <p className="text-slate-500 text-sm mt-1">Sign in to continue</p>
         </div>
 
