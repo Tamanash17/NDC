@@ -6,8 +6,9 @@
 import { cn } from '@/lib/cn';
 import {
   User, Users, Baby, Mail, Phone, CreditCard, Award, FileText,
-  Armchair, Luggage, Utensils, Shield, Star, Calendar
+  Armchair, Luggage, Utensils, Shield, Star, Calendar, ChevronDown, ChevronUp
 } from 'lucide-react';
+import { useState } from 'react';
 
 export interface PassengerIdentityDoc {
   type: 'PP' | 'NI' | 'DL';
@@ -137,15 +138,18 @@ export function PassengerDetailsCard({
   );
 }
 
-// Individual Passenger Row
+// Individual Passenger Row - Collapsible
 interface PassengerRowProps {
   passenger: PassengerData;
   passengerNumber: number;
   showServices: boolean;
   compact: boolean;
+  defaultExpanded?: boolean;
 }
 
-function PassengerRow({ passenger, passengerNumber, showServices, compact }: PassengerRowProps) {
+function PassengerRow({ passenger, passengerNumber, showServices, compact, defaultExpanded = true }: PassengerRowProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
   const ptcConfig = {
     ADT: { label: 'Adult', icon: User, color: 'bg-blue-100 text-blue-700 border-blue-200' },
     CHD: { label: 'Child', icon: User, color: 'bg-purple-100 text-purple-700 border-purple-200' },
@@ -162,97 +166,129 @@ function PassengerRow({ passenger, passengerNumber, showServices, compact }: Pas
     passenger.surname
   ].filter(Boolean).join(' ');
 
+  // Count services and docs for collapsed summary
+  const serviceCount = passenger.services?.length || 0;
+  const hasDoc = !!passenger.identityDoc;
+  const hasLoyalty = !!passenger.loyalty;
+
   return (
-    <div className={cn(
-      'bg-gray-50 rounded-xl border border-gray-100 overflow-hidden',
-      compact ? 'p-4' : 'p-5'
-    )}>
-      {/* Header Row */}
-      <div className="flex items-start justify-between mb-4">
+    <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
+      {/* Collapsible Header */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition-colors"
+      >
         <div className="flex items-center gap-3">
           <div className={cn(
-            'p-2.5 rounded-xl',
+            'p-2 rounded-lg',
             passenger.ptc === 'ADT' ? 'bg-blue-100' :
             passenger.ptc === 'CHD' ? 'bg-purple-100' : 'bg-pink-100'
           )}>
             <IconComponent className={cn(
-              'w-5 h-5',
+              'w-4 h-4',
               passenger.ptc === 'ADT' ? 'text-blue-600' :
               passenger.ptc === 'CHD' ? 'text-purple-600' : 'text-pink-600'
             )} />
           </div>
-          <div>
-            <h4 className="text-lg font-bold text-gray-900">{fullName}</h4>
-            <p className="text-sm text-gray-500">
-              Passenger {passengerNumber}
-            </p>
+          <div className="text-left">
+            <h4 className="text-base font-bold text-gray-900">{fullName}</h4>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span>Pax {passengerNumber}</span>
+              <span className="text-[10px] font-mono bg-gray-200 px-1 py-0.5 rounded">{passenger.paxId}</span>
+            </div>
           </div>
         </div>
 
-        <div className={cn(
-          'px-3 py-1 rounded-full text-sm font-semibold border',
-          config.color
-        )}>
-          {config.label}
+        <div className="flex items-center gap-2">
+          {/* Collapsed summary badges */}
+          {!isExpanded && (
+            <>
+              {hasDoc && (
+                <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Doc</span>
+              )}
+              {hasLoyalty && (
+                <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">FF</span>
+              )}
+              {serviceCount > 0 && (
+                <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">{serviceCount} svc</span>
+              )}
+            </>
+          )}
+          <span className={cn(
+            'px-2 py-0.5 rounded-full text-xs font-semibold border',
+            config.color
+          )}>
+            {config.label}
+          </span>
+          {isExpanded ? (
+            <ChevronUp className="w-4 h-4 text-gray-400" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-gray-400" />
+          )}
         </div>
-      </div>
+      </button>
 
-      {/* Details Grid */}
-      <div className={cn(
-        'grid gap-4',
-        compact ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'
-      )}>
-        {/* Birthdate */}
-        <DetailItem
-          icon={Calendar}
-          label="Date of Birth"
-          value={formatDate(passenger.birthdate)}
-        />
+      {/* Expanded Content */}
+      {isExpanded && (
+        <div className={cn('border-t border-gray-200 bg-white', compact ? 'p-3' : 'p-4')}>
+          {/* Details Grid */}
+          <div className={cn(
+            'grid gap-3',
+            compact ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'
+          )}>
+            {/* Birthdate */}
+            <DetailItem
+              icon={Calendar}
+              label="Date of Birth"
+              value={formatDate(passenger.birthdate)}
+            />
 
-        {/* Gender */}
-        <DetailItem
-          icon={User}
-          label="Gender"
-          value={passenger.gender === 'M' ? 'Male' : passenger.gender === 'F' ? 'Female' : 'Not Specified'}
-        />
+            {/* Gender */}
+            <DetailItem
+              icon={User}
+              label="Gender"
+              value={passenger.gender === 'M' ? 'Male' : passenger.gender === 'F' ? 'Female' : 'Not Specified'}
+            />
 
-        {/* Email */}
-        {passenger.email && (
-          <DetailItem
-            icon={Mail}
-            label="Email"
-            value={passenger.email}
-          />
-        )}
+            {/* Email */}
+            {passenger.email && (
+              <DetailItem
+                icon={Mail}
+                label="Email"
+                value={passenger.email}
+              />
+            )}
 
-        {/* Phone */}
-        {passenger.phone && (
-          <DetailItem
-            icon={Phone}
-            label="Phone"
-            value={passenger.phone}
-          />
-        )}
-      </div>
+            {/* Phone */}
+            {passenger.phone && (
+              <DetailItem
+                icon={Phone}
+                label="Phone"
+                value={passenger.phone}
+              />
+            )}
+          </div>
 
-      {/* Identity Document */}
-      {passenger.identityDoc && !compact && (
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <IdentityDocSection doc={passenger.identityDoc} />
-        </div>
-      )}
+          {/* Identity Document */}
+          {passenger.identityDoc && !compact && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <IdentityDocSection doc={passenger.identityDoc} />
+            </div>
+          )}
 
-      {/* Loyalty Program */}
-      {passenger.loyalty && !compact && (
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <LoyaltySection loyalty={passenger.loyalty} />
-        </div>
-      )}
+          {/* Loyalty Program */}
+          {passenger.loyalty && !compact && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <LoyaltySection loyalty={passenger.loyalty} />
+            </div>
+          )}
 
-      {/* Services */}
-      {showServices && passenger.services && passenger.services.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <ServicesSection services={passenger.services} />
+          {/* Services */}
+          {showServices && passenger.services && passenger.services.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <ServicesSection services={passenger.services} />
+            </div>
+          )}
         </div>
       )}
     </div>
