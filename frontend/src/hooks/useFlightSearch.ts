@@ -173,10 +173,16 @@ export function useFlightSearch(): UseFlightSearchResult {
       console.log('[FlightSearch] response.data:', response.data);
 
       // WORKAROUND: Backend not returning error correctly, check data.success
+      // If backend wrapped error in success:true, detect it and throw to trigger catch block
       if (response.data && !response.data.success && response.data.errors && response.data.errors.length > 0) {
         console.error('[FlightSearch] NDC response contained errors (detected in frontend):', response.data.errors);
-        const errorMessage = response.data.errors.map((e: any) => `${e.code}: ${e.message}`).join(' | ');
-        throw new Error(errorMessage);
+        // Create a fake error response so it goes through normal error handling
+        const fakeError: any = new Error('NDC Error');
+        fakeError.response = {
+          status: 400,
+          data: response.data
+        };
+        throw fakeError;
       }
 
       // Build descriptive operation name with route codes
@@ -469,10 +475,16 @@ export function useFlightSearch(): UseFlightSearchResult {
       console.log('='.repeat(60));
 
       // WORKAROUND: Backend not returning error correctly, check data.success
+      // If backend wrapped error in success:true, detect it and throw to trigger catch block
       if (response.data && !response.data.success && response.data.errors && response.data.errors.length > 0) {
         console.error('[FlightSearch] NDC response contained errors (detected in frontend):', response.data.errors);
-        const errorMessage = response.data.errors.map((e: any) => `${e.code}: ${e.message}`).join(' | ');
-        throw new Error(errorMessage);
+        // Create a fake error response so it goes through normal error handling
+        const fakeError: any = new Error('NDC Error');
+        fakeError.response = {
+          status: 400,
+          data: response.data
+        };
+        throw fakeError;
       }
 
       // Build descriptive operation name with both routes
