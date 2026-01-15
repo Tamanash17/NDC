@@ -210,10 +210,32 @@ router.post("/air-shopping", async (req: any, res: any) => {
     if (!parsed.success && parsed.errors && parsed.errors.length > 0) {
       console.error("[NDC] AirShopping response contained errors:", parsed.errors);
 
+      // Build descriptive error message with search context
+      const searchParams = typeof req.body === 'object' && !req.body.xml ? req.body : {};
+      const origin = searchParams.origin || 'Unknown';
+      const destination = searchParams.destination || 'Unknown';
+      const departureDate = searchParams.departureDate || 'Unknown';
+      const returnDate = searchParams.returnDate;
+      const passengers = searchParams.passengers || {};
+      const totalPax = (passengers.adults || 0) + (passengers.children || 0) + (passengers.infants || 0);
+
+      let contextMessage = `No flights available for ${origin} to ${destination} on ${departureDate}`;
+      if (returnDate) {
+        contextMessage += `, returning ${returnDate}`;
+      }
+      if (totalPax > 0) {
+        contextMessage += ` (${totalPax} passenger${totalPax > 1 ? 's' : ''})`;
+      }
+      contextMessage += '.';
+
+      // Format NDC error details
+      const ndcErrorDetails = parsed.errors.map(e => `${e.code}: ${e.message}`).join(' | ');
+      const fullErrorMessage = `${contextMessage}\n\nError Details:\n${ndcErrorDetails}`;
+
       // Return error response with parsed NDC errors
       return res.status(400).json({
         success: false,
-        error: parsed.errors.map(e => `${e.code}: ${e.message}`).join(' | '),
+        error: fullErrorMessage,
         parsed: {
           errors: parsed.errors
         },
