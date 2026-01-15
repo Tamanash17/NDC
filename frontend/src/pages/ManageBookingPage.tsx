@@ -115,8 +115,9 @@ export function ManageBookingPage() {
       });
 
       const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Booking not found';
-      setError(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
-      toast.error('Booking not found');
+      const displayError = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg);
+      setError(displayError);
+      toast.error(displayError);
     } finally {
       setIsLoading(false);
     }
