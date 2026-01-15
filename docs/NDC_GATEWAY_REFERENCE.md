@@ -32,6 +32,13 @@ This document serves as a knowledge base for the Navitaire NDC Gateway (IATA NDC
 22. [OrderViewRS Response Structure](#orderviewrs-response-structure)
 23. [Delivery Status Codes](#delivery-status-codes)
 24. [3D Secure Payment (3DS v2)](#3d-secure-payment-3ds-v2)
+25. [OrderChange Request](#orderchange-request)
+26. [OrderReshop Request](#orderreshop-request)
+27. [Adding Seats to Existing Orders](#adding-seats-to-existing-orders)
+28. [Adding Ancillaries to Existing Orders](#adding-ancillaries-to-existing-orders)
+29. [Full Order Cancellation](#full-order-cancellation)
+30. [Partial Order Cancellation](#partial-order-cancellation)
+31. [Reshop for Flight Changes](#reshop-for-flight-changes)
 
 ---
 
@@ -1333,6 +1340,527 @@ For 3D Secure authenticated payments, include SecurePaymentVersion2:
 
 ---
 
+## OrderChange Request
+
+OrderChange is used to modify existing orders, including adding seats, ancillaries, or making payments on hold bookings.
+
+### Request Structure
+
+```xml
+<IATA_OrderChangeRQ xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersMessage">
+  <DistributionChain>...</DistributionChain>
+  <PayloadAttributes>
+    <VersionNumber xmlns="...">21.3</VersionNumber>
+  </PayloadAttributes>
+  <Request>
+    <ChangeOrder xmlns="...">
+      <AcceptSelectedQuotedOffer>
+        <SelectedOffer>
+          <OfferRefID>OFFER-123</OfferRefID>
+          <OwnerCode>JQ</OwnerCode>
+          <SelectedOfferItem>
+            <OfferItemRefID>ITEM-001</OfferItemRefID>
+            <PaxRefID>PAX1</PaxRefID>
+          </SelectedOfferItem>
+        </SelectedOffer>
+      </AcceptSelectedQuotedOffer>
+      <Order>
+        <OrderID>ABC123</OrderID>  <!-- PNR -->
+        <OwnerCode>JQ</OwnerCode>
+      </Order>
+    </ChangeOrder>
+    <DataLists xmlns="...">
+      <PaxList>...</PaxList>
+    </DataLists>
+    <PaymentFunctions>...</PaymentFunctions>
+  </Request>
+</IATA_OrderChangeRQ>
+```
+
+### Key Elements
+
+| Element | Description |
+|---------|-------------|
+| `Order/OrderID` | PNR/Record Locator of existing booking |
+| `Order/OwnerCode` | Carrier code |
+| `AcceptSelectedQuotedOffer` | Selected items from ServiceListRS or SeatAvailabilityRS |
+| `PaymentFunctions` | Payment for the change (if applicable) |
+
+### Payment for OrderChange
+
+When adding paid services, include payment:
+
+```xml
+<PaymentFunctions>
+  <PaymentProcessingDetails>
+    <Amount CurCode="AUD">25.00</Amount>
+    <PaymentMethod>
+      <PaymentCard>
+        <CardBrandCode>VI</CardBrandCode>
+        <CardNumber>4111111111111111</CardNumber>
+        <!-- ... other card fields ... -->
+      </PaymentCard>
+    </PaymentMethod>
+  </PaymentProcessingDetails>
+</PaymentFunctions>
+```
+
+### Response
+
+OrderChange returns an OrderViewRS with updated order details.
+
+---
+
+## OrderReshop Request
+
+OrderReshop is used for:
+1. **Cancellation pricing** - Get refund/penalty amounts before cancelling
+2. **Flight change pricing** - Get fare difference for date/route changes
+
+### Cancellation Reshop Request
+
+```xml
+<IATA_OrderReshopRQ xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersMessage">
+  <DistributionChain>...</DistributionChain>
+  <PayloadAttributes>
+    <VersionNumber xmlns="...">21.3</VersionNumber>
+  </PayloadAttributes>
+  <Request>
+    <OrderReshop xmlns="...">
+      <Actions>
+        <ActionType>
+          <OrderActionCode>Cancel</OrderActionCode>  <!-- Full cancellation -->
+        </ActionType>
+      </Actions>
+      <Order>
+        <OrderID>ABC123</OrderID>
+        <OwnerCode>JQ</OwnerCode>
+      </Order>
+    </OrderReshop>
+  </Request>
+</IATA_OrderReshopRQ>
+```
+
+### OrderActionCode Values
+
+| Code | Description |
+|------|-------------|
+| `Cancel` | Full order cancellation |
+| `Refund` | Refund calculation |
+| `Change` | Flight change/reshop |
+
+### Reshop Response (OrderReshopRS)
+
+```xml
+<IATA_OrderReshopRS>
+  <Response>
+    <ReshopOffers>
+      <ReshopOffer>
+        <OfferID>RESHOP-001</OfferID>
+        <OwnerCode>JQ</OwnerCode>
+        <ReshopOfferItem>
+          <ReshopOfferItemID>RESHOP-ITEM-001</ReshopOfferItemID>
+          <ReshopDueAmounts>
+            <Due>
+              <Amount CurCode="AUD">-150.00</Amount>  <!-- Negative = refund -->
+            </Due>
+          </ReshopDueAmounts>
+          <ReshopRefundAmounts>
+            <Refund>
+              <RefundAmount CurCode="AUD">150.00</RefundAmount>
+            </Refund>
+          </ReshopRefundAmounts>
+          <Penalty>
+            <Amount CurCode="AUD">50.00</Amount>  <!-- Cancellation fee -->
+          </Penalty>
+        </ReshopOfferItem>
+      </ReshopOffer>
+    </ReshopOffers>
+  </Response>
+</IATA_OrderReshopRS>
+```
+
+### Key Response Fields
+
+| Field | Description |
+|-------|-------------|
+| `ReshopDueAmounts/Due/Amount` | Amount due (negative = refund) |
+| `ReshopRefundAmounts/Refund/RefundAmount` | Refund amount |
+| `Penalty/Amount` | Cancellation/change fee |
+| `ReshopOfferItemID` | Use in OrderChange to execute the reshop |
+
+---
+
+## Adding Seats to Existing Orders
+
+### Flow
+
+1. **SeatAvailabilityRQ** - Get available seats with Order reference
+2. **OrderChangeRQ** - Add selected seat with payment
+
+### Step 1: SeatAvailability with Order
+
+```xml
+<IATA_SeatAvailabilityRQ xmlns="...">
+  <Request>
+    <Order>
+      <OrderID>ABC123</OrderID>
+      <OwnerCode>JQ</OwnerCode>
+    </Order>
+    <SeatAvailCoreQuery>
+      <PaxSegmentRefID>seg000000001</PaxSegmentRefID>
+    </SeatAvailCoreQuery>
+  </Request>
+</IATA_SeatAvailabilityRQ>
+```
+
+### Step 2: OrderChange with Seat Selection
+
+```xml
+<IATA_OrderChangeRQ xmlns="...">
+  <Request>
+    <ChangeOrder xmlns="...">
+      <AcceptSelectedQuotedOffer>
+        <SelectedOffer>
+          <OfferRefID>SEAT-OFFER-123</OfferRefID>
+          <OwnerCode>JQ</OwnerCode>
+          <SelectedOfferItem>
+            <OfferItemRefID>SEAT-ITEM-001</OfferItemRefID>
+            <PaxRefID>PAX1</PaxRefID>
+            <SelectedSeat>
+              <RowNumber>12</RowNumber>
+              <ColumnID>A</ColumnID>
+            </SelectedSeat>
+          </SelectedOfferItem>
+        </SelectedOffer>
+      </AcceptSelectedQuotedOffer>
+      <Order>
+        <OrderID>ABC123</OrderID>
+        <OwnerCode>JQ</OwnerCode>
+      </Order>
+    </ChangeOrder>
+    <PaymentFunctions>
+      <PaymentProcessingDetails>
+        <Amount CurCode="AUD">15.00</Amount>
+        <!-- Payment method... -->
+      </PaymentProcessingDetails>
+    </PaymentFunctions>
+  </Request>
+</IATA_OrderChangeRQ>
+```
+
+### Important Notes
+
+- Seat offers from SeatAvailabilityRS are segment-level
+- Each passenger gets a separate OfferItem
+- Free seats may still require OrderChange (with zero payment)
+- Seat changes may incur fees depending on fare rules
+
+---
+
+## Adding Ancillaries to Existing Orders
+
+### Flow
+
+1. **ServiceListRQ** - Get available services with Order reference
+2. **OrderChangeRQ** - Add selected ancillary with payment
+
+### Step 1: ServiceList with Order
+
+```xml
+<IATA_ServiceListRQ xmlns="...">
+  <Request>
+    <Order>
+      <OrderID>ABC123</OrderID>
+      <OwnerCode>JQ</OwnerCode>
+    </Order>
+    <ServiceListCoreQuery>
+      <ServiceFilterType>
+        <ServiceTypeCode>Baggage</ServiceTypeCode>  <!-- Filter by type -->
+      </ServiceFilterType>
+    </ServiceListCoreQuery>
+  </Request>
+</IATA_ServiceListRQ>
+```
+
+### Common ServiceTypeCode Values
+
+| Code | Description |
+|------|-------------|
+| `Baggage` | Checked baggage |
+| `Meal` | Onboard meals |
+| `Lounge` | Lounge access |
+| `Priority` | Priority boarding |
+| `Insurance` | Travel insurance |
+
+### Step 2: OrderChange with Ancillary
+
+```xml
+<IATA_OrderChangeRQ xmlns="...">
+  <Request>
+    <ChangeOrder xmlns="...">
+      <AcceptSelectedQuotedOffer>
+        <SelectedOffer>
+          <OfferRefID>ANC-OFFER-123</OfferRefID>
+          <OwnerCode>JQ</OwnerCode>
+          <SelectedOfferItem>
+            <OfferItemRefID>BAG-ITEM-001</OfferItemRefID>
+            <PaxRefID>PAX1</PaxRefID>
+            <SelectedALaCarteOfferItem>
+              <Qty>1</Qty>
+              <OfferFlightAssociations>
+                <PaxJourneyRef>
+                  <PaxJourneyRefID>fl000000001</PaxJourneyRefID>
+                </PaxJourneyRef>
+              </OfferFlightAssociations>
+            </SelectedALaCarteOfferItem>
+          </SelectedOfferItem>
+        </SelectedOffer>
+      </AcceptSelectedQuotedOffer>
+      <Order>
+        <OrderID>ABC123</OrderID>
+        <OwnerCode>JQ</OwnerCode>
+      </Order>
+    </ChangeOrder>
+    <PaymentFunctions>
+      <PaymentProcessingDetails>
+        <Amount CurCode="AUD">35.00</Amount>
+        <!-- Payment method... -->
+      </PaymentProcessingDetails>
+    </PaymentFunctions>
+  </Request>
+</IATA_OrderChangeRQ>
+```
+
+### Ancillary Association Levels
+
+| Level | Element | Example |
+|-------|---------|---------|
+| Journey | `PaxJourneyRefID` | Baggage for entire outbound journey |
+| Segment | `PaxSegmentRefID` | Meal for specific segment |
+| Leg | `DatedOperatingLegRefID` | Seat for specific leg |
+
+---
+
+## Full Order Cancellation
+
+### Flow
+
+1. **OrderReshopRQ** - Get cancellation pricing (optional but recommended)
+2. **OrderCancelRQ** - Execute cancellation
+
+### OrderCancel Request
+
+```xml
+<IATA_OrderCancelRQ xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersMessage">
+  <DistributionChain>...</DistributionChain>
+  <PayloadAttributes>
+    <VersionNumber xmlns="...">21.3</VersionNumber>
+  </PayloadAttributes>
+  <Request>
+    <CancelOrder xmlns="...">
+      <Order>
+        <OrderID>ABC123</OrderID>
+        <OwnerCode>JQ</OwnerCode>
+      </Order>
+    </CancelOrder>
+  </Request>
+</IATA_OrderCancelRQ>
+```
+
+### OrderCancel Response
+
+Returns OrderViewRS with:
+- `StatusCode`: CLOSED
+- Updated payment/refund information
+
+### Cancellation Rules
+
+| Scenario | Result |
+|----------|--------|
+| Hold booking (unpaid) | No penalty, immediate cancellation |
+| Paid booking within 24hrs | May qualify for free cancellation (fare rules) |
+| Paid booking outside 24hrs | Penalty per fare rules |
+| Non-refundable fare | May get taxes only, or nothing |
+
+### Refund Processing
+
+Refunds are processed automatically to original payment method. For credit card payments:
+
+```xml
+<PaymentInfo>
+  <PaymentProcessingDetails>
+    <Amount CurCode="AUD">-150.00</Amount>  <!-- Negative = refund -->
+    <PaymentStatusCode>SUCCESSFUL</PaymentStatusCode>
+  </PaymentProcessingDetails>
+</PaymentInfo>
+```
+
+---
+
+## Partial Order Cancellation
+
+Partial cancellation removes specific items while keeping the rest of the booking active.
+
+### Supported Partial Cancellations
+
+| Item Type | Cancellable | Notes |
+|-----------|-------------|-------|
+| Seat | Yes | Releases seat assignment |
+| Ancillary | Yes | Per-item basis |
+| Flight Segment | Depends | Only if multi-segment booking |
+| Passenger | No | Use full cancel + rebook |
+
+### OrderChange for Partial Cancellation
+
+```xml
+<IATA_OrderChangeRQ xmlns="...">
+  <Request>
+    <ChangeOrder xmlns="...">
+      <Order>
+        <OrderID>ABC123</OrderID>
+        <OwnerCode>JQ</OwnerCode>
+      </Order>
+      <DeleteOrderItem>
+        <OrderItemRefID>SEAT-ITEM-001</OrderItemRefID>  <!-- Item to remove -->
+      </DeleteOrderItem>
+    </ChangeOrder>
+  </Request>
+</IATA_OrderChangeRQ>
+```
+
+### Important Notes
+
+- Partial cancellation may trigger fare recalculation
+- Some ancillaries may be non-refundable
+- Check `AllowedModificationInd` in OrderViewRS before attempting
+
+### Checking Cancellation Eligibility
+
+In OrderViewRS, each OrderItem has:
+
+```xml
+<CancelRestrictions>
+  <AllowedModificationInd>true</AllowedModificationInd>
+  <DescText>Cancellation is allowed with no fee</DescText>
+</CancelRestrictions>
+```
+
+---
+
+## Reshop for Flight Changes
+
+Reshop enables changing flight dates or routes while maintaining the booking.
+
+### Flight Change Flow
+
+1. **OrderReshopRQ** - Get available alternatives and pricing
+2. **OrderChangeRQ** - Execute the change with selected offer
+
+### OrderReshop for Flight Change
+
+```xml
+<IATA_OrderReshopRQ xmlns="...">
+  <Request>
+    <OrderReshop xmlns="...">
+      <Actions>
+        <ActionType>
+          <OrderActionCode>Change</OrderActionCode>
+        </ActionType>
+      </Actions>
+      <Order>
+        <OrderID>ABC123</OrderID>
+        <OwnerCode>JQ</OwnerCode>
+      </Order>
+      <Reshop>
+        <ReshopCriteria>
+          <OriginDest>
+            <OriginCode>SYD</OriginCode>
+            <DestCode>MEL</DestCode>
+            <PaxJourneyRefID>fl000000001</PaxJourneyRefID>  <!-- Journey to change -->
+          </OriginDest>
+          <DepartureDate>2026-02-15</DepartureDate>  <!-- New date -->
+        </ReshopCriteria>
+      </Reshop>
+    </OrderReshop>
+  </Request>
+</IATA_OrderReshopRQ>
+```
+
+### Reshop Response Offers
+
+The response contains:
+- Available flight alternatives
+- Fare difference (positive = additional payment, negative = refund)
+- Change fees if applicable
+
+```xml
+<ReshopOffer>
+  <OfferID>RESHOP-CHANGE-001</OfferID>
+  <ReshopOfferItem>
+    <ReshopDueAmounts>
+      <Due>
+        <Amount CurCode="AUD">75.00</Amount>  <!-- Pay extra -->
+      </Due>
+    </ReshopDueAmounts>
+    <Service>
+      <FlightRef>
+        <PaxJourneyRefID>fl000000001</PaxJourneyRefID>
+      </FlightRef>
+    </Service>
+  </ReshopOfferItem>
+</ReshopOffer>
+```
+
+### Execute Flight Change
+
+```xml
+<IATA_OrderChangeRQ xmlns="...">
+  <Request>
+    <ChangeOrder xmlns="...">
+      <AcceptReshopOffer>
+        <SelectedReshopOffer>
+          <OfferRefID>RESHOP-CHANGE-001</OfferRefID>
+          <OwnerCode>JQ</OwnerCode>
+          <SelectedReshopOfferItem>
+            <ReshopOfferItemRefID>RESHOP-ITEM-001</ReshopOfferItemRefID>
+          </SelectedReshopOfferItem>
+        </SelectedReshopOffer>
+      </AcceptReshopOffer>
+      <Order>
+        <OrderID>ABC123</OrderID>
+        <OwnerCode>JQ</OwnerCode>
+      </Order>
+    </ChangeOrder>
+    <PaymentFunctions>
+      <!-- Payment for fare difference -->
+    </PaymentFunctions>
+  </Request>
+</IATA_OrderChangeRQ>
+```
+
+### Change Restrictions
+
+In OrderViewRS, check change eligibility:
+
+```xml
+<ChangeRestrictions>
+  <AllowedModificationInd>true</AllowedModificationInd>
+  <DescText>Changes allowed with fee</DescText>
+</ChangeRestrictions>
+```
+
+### Common Reshop Scenarios
+
+| Scenario | ReshopCriteria | Expected Outcome |
+|----------|----------------|------------------|
+| Date change same route | New DepartureDate | Fare difference + change fee |
+| Route change same date | New OriginCode/DestCode | Full reprice |
+| Date + route change | Both new values | Full reprice |
+| Earlier flight same day | Earlier DepartureDate | May be free or fee |
+
+---
+
 ## Quick Reference: Request Types
 
 | Request | Root Element | Purpose |
@@ -1346,6 +1874,7 @@ For 3D Secure authenticated payments, include SecurePaymentVersion2:
 | ServiceList | `IATA_ServiceListRQ` | Get available ancillaries |
 | SeatAvailability | `IATA_SeatAvailabilityRQ` | Get available seats |
 | AirlineProfile | `IATA_AirlineProfileRQ` | Get airline route network |
+| OrderReshop | `IATA_OrderReshopRQ` | Get cancellation/change pricing |
 
 ---
 
@@ -1363,6 +1892,7 @@ Related builder files in this project:
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-15 | 1.3 | Added OrderChange, OrderReshop, cancellation, seat/ancillary modification sections |
 | 2026-01-15 | 1.2 | Added OrderCreate, OrderViewRS, 3DS, Delivery Status sections |
 | 2026-01-15 | 1.1 | Added OfferPrice, FareComponent, Baggage, A La Carte, RBD codes sections |
 | 2026-01-15 | 1.0 | Initial knowledge base created |
