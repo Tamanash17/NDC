@@ -6,10 +6,15 @@
 import { cn } from '@/lib/cn';
 import {
   CheckCircle, Clock, AlertCircle, XCircle, CreditCard, Plane,
-  Ticket, Info, ChevronRight, Timer
+  Ticket, Info, ChevronRight, Timer, AlertTriangle
 } from 'lucide-react';
 
 export type OverallHealth = 'success' | 'warning' | 'error' | 'info';
+
+export interface OrderWarning {
+  code?: string;
+  message: string;
+}
 
 export interface BookingStatusBannerProps {
   health: OverallHealth;
@@ -33,6 +38,7 @@ export interface BookingStatusBannerProps {
     code: string;
     label: string;
   };
+  warnings?: OrderWarning[];
   pnr: string;
   onActionClick?: () => void;
 }
@@ -79,6 +85,7 @@ export function BookingStatusBanner({
   paymentStatus,
   orderStatus,
   deliveryStatus,
+  warnings,
   pnr,
   onActionClick,
 }: BookingStatusBannerProps) {
@@ -110,13 +117,14 @@ export function BookingStatusBanner({
             </p>
           </div>
 
-          {/* Status Pills */}
+          {/* Status Pills - Shows NDC code + friendly label */}
           <div className="flex flex-wrap gap-2">
             {paymentStatus && (
               <StatusPill
                 icon={statusIcons.payment}
                 label="Payment"
                 value={paymentStatus.label}
+                code={paymentStatus.code}
                 health={paymentStatus.code === 'SUCCESSFUL' ? 'success' :
                        paymentStatus.code === 'FAILED' ? 'error' : 'warning'}
               />
@@ -126,6 +134,7 @@ export function BookingStatusBanner({
                 icon={statusIcons.order}
                 label="Order"
                 value={orderStatus.label}
+                code={orderStatus.code}
                 health={orderStatus.code === 'TICKETED' || orderStatus.code === 'CONFIRMED' ? 'success' :
                        orderStatus.code === 'CANCELLED' ? 'error' : 'info'}
               />
@@ -135,7 +144,8 @@ export function BookingStatusBanner({
                 icon={statusIcons.delivery}
                 label="Tickets"
                 value={deliveryStatus.label}
-                health={deliveryStatus.code === 'CONFIRMED' || deliveryStatus.code === 'DELIVERED' ? 'success' : 'info'}
+                code={deliveryStatus.code}
+                health={deliveryStatus.code === 'READY_TO_PROCEED' || deliveryStatus.code === 'RTP' ? 'success' : 'info'}
               />
             )}
           </div>
@@ -169,6 +179,15 @@ export function BookingStatusBanner({
           </div>
         )}
 
+        {/* Order Warnings (Underpaid/Overpaid) */}
+        {warnings && warnings.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {warnings.map((warning, idx) => (
+              <WarningBadge key={idx} warning={warning} />
+            ))}
+          </div>
+        )}
+
         {/* Action Required */}
         {actionRequired && (
           <button
@@ -191,15 +210,16 @@ export function BookingStatusBanner({
   );
 }
 
-// Status Pill Component
+// Status Pill Component - Shows NDC code + friendly label
 interface StatusPillProps {
   icon: React.ElementType;
   label: string;
   value: string;
+  code: string;  // NDC status code (e.g., SUCCESSFUL, OPENED, READY_TO_PROCEED)
   health: 'success' | 'warning' | 'error' | 'info';
 }
 
-function StatusPill({ icon: Icon, label, value, health }: StatusPillProps) {
+function StatusPill({ icon: Icon, label, value, code, health }: StatusPillProps) {
   const pillColors = {
     success: 'bg-emerald-400/20 border-emerald-300/30',
     warning: 'bg-amber-400/20 border-amber-300/30',
@@ -216,6 +236,47 @@ function StatusPill({ icon: Icon, label, value, health }: StatusPillProps) {
       <div className="text-sm">
         <span className="text-white/60">{label}:</span>
         <span className="text-white font-semibold ml-1">{value}</span>
+        <span className="text-white/50 ml-1 text-xs">({code})</span>
+      </div>
+    </div>
+  );
+}
+
+// Warning Badge Component - Shows order warnings like underpaid/overpaid
+interface WarningBadgeProps {
+  warning: OrderWarning;
+}
+
+function WarningBadge({ warning }: WarningBadgeProps) {
+  // Determine warning type for styling
+  const isUnderpaid = warning.code === 'OF2003' || warning.message.toLowerCase().includes('underpaid');
+  const isOverpaid = warning.code === 'OF2007' || warning.message.toLowerCase().includes('overpaid');
+
+  // Underpaid = warning (amber), Overpaid = info (white/yellow for visibility on green)
+  const variant = isUnderpaid ? 'warning' : isOverpaid ? 'info' : 'default';
+
+  const variantStyles = {
+    warning: 'bg-amber-100 border-amber-300 text-amber-900',
+    info: 'bg-yellow-100 border-yellow-300 text-yellow-900',
+    default: 'bg-white/90 border-white text-gray-800',
+  };
+
+  return (
+    <div className={cn(
+      'flex items-center gap-3 px-4 py-3 rounded-xl border shadow-sm',
+      variantStyles[variant]
+    )}>
+      <AlertTriangle className={cn(
+        'w-5 h-5 flex-shrink-0',
+        isUnderpaid && 'text-amber-600',
+        isOverpaid && 'text-yellow-600',
+        !isUnderpaid && !isOverpaid && 'text-gray-600'
+      )} />
+      <div className="flex-1">
+        <span className="font-medium">{warning.message}</span>
+        {warning.code && (
+          <span className="ml-2 text-xs opacity-70">({warning.code})</span>
+        )}
       </div>
     </div>
   );

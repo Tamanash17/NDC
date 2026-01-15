@@ -12,6 +12,11 @@ import type { PaymentStatus, PaymentMethod, PriceBreakdownItem } from '@/compone
 // STATUS TRANSFORMERS
 // ----------------------------------------------------------------------------
 
+export interface OrderWarning {
+  code?: string;
+  message: string;
+}
+
 export interface BookingStatusData {
   health: OverallHealth;
   headline: string;
@@ -25,16 +30,22 @@ export interface BookingStatusData {
   paymentStatus?: { code: string; label: string };
   orderStatus?: { code: string; label: string };
   deliveryStatus?: { code: string; label: string };
+  warnings?: OrderWarning[];
 }
 
 export function transformBookingStatus(rawData: any): BookingStatusData {
   // Extract raw status codes - check multiple possible paths
-  // Backend parsed format uses order.status (not StatusCode)
-  const orderStatusRaw = rawData?.order?.status ||
+  // Backend returns data directly (not nested in order object)
+  // rawData.status is the order status from backend parser
+  // Note: Backend already derives effective status from payment info
+  // (If payment is SUCCESSFUL but XML has OPENED, backend returns CONFIRMED)
+  const orderStatusRaw = rawData?.status ||  // Direct from backend parsed data
+                         rawData?.order?.status ||
                          rawData?.Response?.Order?.StatusCode ||
-                         rawData?.Order?.StatusCode ||
-                         rawData?.order?.StatusCode || 'OK';
+                         rawData?.Order?.StatusCode || 'OK';
+
   const paymentStatusRaw = extractPaymentStatus(rawData);
+
   const deliveryStatusRaw = extractDeliveryStatus(rawData);
 
   // Determine overall health
@@ -48,6 +59,9 @@ export function transformBookingStatus(rawData: any): BookingStatusData {
 
   // Check for urgent deadlines
   const urgentDeadline = checkUrgentDeadlines(rawData);
+
+  // Extract warnings from backend response
+  const warnings = extractWarnings(rawData);
 
   return {
     health,
@@ -67,33 +81,62 @@ export function transformBookingStatus(rawData: any): BookingStatusData {
       code: deliveryStatusRaw,
       label: formatStatusLabel(deliveryStatusRaw, 'delivery'),
     },
+    warnings: warnings.length > 0 ? warnings : undefined,
   };
 }
 
+function extractWarnings(data: any): OrderWarning[] {
+  const warnings: OrderWarning[] = [];
+
+  // Backend parsed format uses lowercase 'warnings' array with { code, message }
+  const rawWarnings = normalizeToArray(data?.warnings || data?.Response?.Warning || data?.Warning);
+
+  for (const w of rawWarnings) {
+    const message = w?.message || w?.DescText || '';
+    const code = w?.code || w?.TypeCode || undefined;
+
+    if (message) {
+      warnings.push({ code, message });
+    }
+  }
+
+  return warnings;
+}
+
 function extractPaymentStatus(data: any): string {
-  // Check for warnings first - "Order is underpaid" is critical
+  // FIRST: Check backend-parsed paymentInfo (from PaymentProcessingSummary)
+  // This is the most reliable source - it's the actual payment result
+  const backendPaymentInfo = data?.paymentInfo;
+  if (backendPaymentInfo?.status) {
+    // Map backend status to our format
+    if (backendPaymentInfo.status === 'SUCCESSFUL') return 'SUCCESSFUL';
+    if (backendPaymentInfo.status === 'PENDING') return 'PENDING';
+    if (backendPaymentInfo.status === 'FAILED') return 'FAILED';
+  }
+
+  // Check for warnings - "Order is underpaid" is critical
   // Backend parsed format uses lowercase 'warnings' array with { code, message }
   const warnings = normalizeToArray(data?.warnings || data?.Response?.Warning || data?.Warning);
-  const hasUnderpaidWarning = warnings.some((w: any) =>
-    w?.message?.toLowerCase().includes('underpaid') ||
-    w?.DescText?.toLowerCase().includes('underpaid') ||
-    w?.code === 'OF2003' ||
-    w?.TypeCode === 'OF2003'
-  );
+
+  const hasUnderpaidWarning = warnings.some((w: any) => {
+    const msgLower = (w?.message || w?.DescText || '').toLowerCase();
+    const codeMatch = w?.code === 'OF2003' || w?.TypeCode === 'OF2003';
+    return msgLower.includes('underpaid') || codeMatch;
+  });
 
   // Get order status - OPENED means hold booking (not paid)
-  // Backend parsed format uses order.status (not StatusCode)
-  const orderStatus = data?.order?.status ||
+  // Backend returns status directly in data (not nested)
+  const orderStatus = data?.status ||  // Direct from backend parsed data
+                      data?.order?.status ||
                       data?.Response?.Order?.StatusCode ||
-                      data?.Order?.StatusCode ||
-                      data?.order?.StatusCode || '';
+                      data?.Order?.StatusCode || '';
 
-  // OPENED status = hold booking, payment required
-  if (orderStatus === 'OPENED' || hasUnderpaidWarning) {
+  // OPENED status = hold booking, payment required (only if no successful payment)
+  if ((orderStatus === 'OPENED' || hasUnderpaidWarning) && !backendPaymentInfo?.status) {
     return 'PENDING';
   }
 
-  // Check for explicit payment info
+  // Check for explicit payment info in legacy format
   const paymentInfo = data?.Response?.PaymentInfo ||
                       data?.PaymentInfo ||
                       data?.order?.PaymentInfo;
@@ -107,8 +150,8 @@ function extractPaymentStatus(data: any): string {
 
   // Check if order has payment time limit (hold booking)
   const orderItems = normalizeToArray(data?.Response?.Order?.OrderItem || data?.Order?.OrderItem || data?.order?.OrderItem);
-  const timeLimit = orderItems[0]?.PaymentTimeLimitDateTime;
-  if (timeLimit) {
+  const timeLimit = orderItems[0]?.PaymentTimeLimitDateTime || data?.paymentTimeLimit;
+  if (timeLimit && !backendPaymentInfo?.status) {
     const deadline = new Date(timeLimit);
     if (deadline > new Date()) return 'PENDING';
   }
@@ -141,11 +184,17 @@ function determineHealth(payment: string, order: string, _delivery: string): Ove
   // Error states
   if (payment === 'FAILED' || order === 'CANCELLED' || order === 'XX') return 'error';
 
-  // Warning states - OPENED = hold booking, PENDING = awaiting payment
-  if (payment === 'PENDING' || payment === 'PARTIAL' || order === 'OPENED') return 'warning';
+  // Success states - payment SUCCESSFUL overrides order status
+  // Even if order is OPENED, if payment is SUCCESSFUL, booking is good
+  if (payment === 'SUCCESSFUL') {
+    return 'success';
+  }
 
-  // Success states
-  if ((payment === 'SUCCESSFUL' || payment === 'UNKNOWN') &&
+  // Warning states - PENDING payment = awaiting payment
+  if (payment === 'PENDING' || payment === 'PARTIAL') return 'warning';
+
+  // Success states based on order status
+  if ((payment === 'UNKNOWN') &&
       (order === 'CONFIRMED' || order === 'TICKETED' || order === 'OK' || order === 'TK' || order === 'HK')) {
     return 'success';
   }
@@ -170,8 +219,17 @@ function generateHeadlines(payment: string, order: string, _delivery: string, da
     };
   }
 
-  // OPENED = Hold booking, PENDING payment
-  if (order === 'OPENED' || payment === 'PENDING') {
+  // Payment SUCCESSFUL overrides order status OPENED
+  // (Jetstar sometimes returns OPENED even after successful payment)
+  if (payment === 'SUCCESSFUL') {
+    return {
+      headline: 'Booking Confirmed',
+      subheadline: 'Your payment has been processed successfully.',
+    };
+  }
+
+  // OPENED = Hold booking, PENDING payment (only if payment not successful)
+  if (payment === 'PENDING') {
     // Backend parsed format uses order.paymentTimeLimit
     const timeLimit = data?.order?.paymentTimeLimit ||
                       data?.Response?.Order?.OrderItem?.[0]?.PaymentTimeLimitDateTime ||
@@ -262,34 +320,65 @@ function formatDeadline(dateStr: string): string {
 }
 
 function formatStatusLabel(code: string, type: 'payment' | 'order' | 'delivery'): string {
+  // ==========================================================================
+  // NDC STATUS CODE REFERENCE (Jetstar/Navitaire NDC Gateway)
+  // ==========================================================================
+  //
+  // PAYMENT STATUS (from PaymentProcessingSummary/PaymentStatusCode):
+  //   SUCCESSFUL - Payment has been successfully accepted
+  //   PENDING    - Payment committed, pending approval (must poll OrderRetrieve)
+  //   FAILED     - Payment has been declined
+  //
+  // ORDER STATUS (from Order/StatusCode):
+  //   OPENED     - Hold, Confirmed (order is active, awaiting payment)
+  //   CLOSED     - Closed, HoldCancelled (order cancelled or expired)
+  //   Note: OPENED does NOT mean incomplete - it's a confirmed hold booking
+  //
+  // ORDER ITEM STATUS (from OrderItem/StatusCode):
+  //   ACTIVE     - OrderItem expected to be delivered
+  //   CANCELLED  - OrderItem has been cancelled
+  //
+  // SERVICE ITEM DELIVERY STATUS (from Service/DeliveryStatusCode):
+  //   CONFIRMED        - Unpaid/Underpaid OrderItems (payment required)
+  //   READY TO PROCEED - Fully paid/Overpaid OrderItems (ready for travel)
+  //
+  // ==========================================================================
+
   const labels: Record<string, Record<string, string>> = {
+    // Payment status from PaymentProcessingSummary/PaymentStatusCode
     payment: {
-      SUCCESSFUL: 'Paid',
-      SUCCESS: 'Paid',
-      COMPLETED: 'Paid',
-      PENDING: 'Awaiting Payment',
-      FAILED: 'Failed',
-      REFUNDED: 'Refunded',
-      PARTIAL: 'Partial',
-      UNKNOWN: 'Unknown',
+      SUCCESSFUL: 'Paid',           // Payment accepted
+      SUCCESS: 'Paid',              // Alias
+      COMPLETED: 'Paid',            // Alias
+      PENDING: 'Awaiting Payment',  // Payment committed but pending approval
+      FAILED: 'Failed',             // Payment declined
+      REFUNDED: 'Refunded',         // Payment refunded
+      PARTIAL: 'Partial',           // Partial payment
+      UNKNOWN: 'Unknown',           // No payment info available
     },
+    // Order status from Order/StatusCode
     order: {
-      OK: 'Confirmed',
-      HK: 'Confirmed',
-      CONFIRMED: 'Confirmed',
-      TICKETED: 'Ticketed',
-      TK: 'Ticketed',
-      CANCELLED: 'Cancelled',
-      XX: 'Cancelled',
-      OPENED: 'On Hold',
-      PENDING: 'Pending',
+      OK: 'Confirmed',              // IATA code - confirmed
+      HK: 'Confirmed',              // IATA code - holding confirmed
+      CONFIRMED: 'Confirmed',       // Booking confirmed and paid
+      TICKETED: 'Ticketed',         // Tickets issued
+      TK: 'Ticketed',               // IATA code - ticketed
+      CANCELLED: 'Cancelled',       // Order cancelled
+      XX: 'Cancelled',              // IATA code - cancelled
+      OPENED: 'On Hold',            // NDC: Hold, Confirmed - awaiting payment
+      CLOSED: 'Closed',             // NDC: Closed, HoldCancelled
+      PENDING: 'Pending',           // Awaiting confirmation
     },
+    // Service delivery status from Service/DeliveryStatusCode
     delivery: {
-      CONFIRMED: 'Ready',
-      READY_TO_PROCEED: 'Processing',
-      RTP: 'Processing',
-      DELIVERED: 'Sent',
-      PENDING: 'Pending',
+      // Per Jetstar NDC docs (Table 6):
+      // CONFIRMED = Unpaid/Underpaid OrderItems
+      // READY TO PROCEED = Fully paid/Overpaid OrderItems
+      CONFIRMED: 'Pending',         // Unpaid - payment still required
+      READY_TO_PROCEED: 'Ready',    // Fully paid - ready for travel
+      RTP: 'Ready',                 // Alias for READY_TO_PROCEED
+      DELIVERED: 'Sent',            // Tickets/docs delivered
+      PENDING: 'Pending',           // Awaiting processing
     },
   };
 
@@ -458,6 +547,14 @@ function determineServiceType(serviceDef: any): 'seat' | 'baggage' | 'meal' | 'o
 // PAYMENT TRANSFORMER
 // ----------------------------------------------------------------------------
 
+export interface PaymentTransactionData {
+  transactionId?: string;
+  status: PaymentStatus;
+  amount: { value: number; currency: string };
+  surchargeAmount?: { value: number; currency: string };
+  method?: PaymentMethod;
+}
+
 export interface PaymentData {
   status: PaymentStatus;
   method?: PaymentMethod;
@@ -465,15 +562,23 @@ export interface PaymentData {
   amountPaid?: { value: number; currency: string };
   amountDue?: { value: number; currency: string };
   breakdown?: PriceBreakdownItem[];
+  transactions?: PaymentTransactionData[];
 }
 
 export function transformPaymentData(rawData: any): PaymentData {
-  const order = rawData?.order || rawData?.Response?.Order || rawData?.Order;
-  const orderItems = normalizeToArray(order?.orderItems || order?.OrderItem);
-  const paymentInfo = rawData?.Response?.PaymentInfo || rawData?.PaymentInfo;
+  // Backend returns data directly (not nested in order object)
+  const orderItems = normalizeToArray(rawData?.orderItems || rawData?.order?.orderItems || rawData?.Order?.OrderItem);
 
-  // Get total from order.totalPrice (backend parsed format) or Order.TotalPrice
-  const orderTotal = order?.totalPrice || order?.TotalPrice?.TotalAmount;
+  // FIRST: Check backend-parsed paymentInfo (from PaymentProcessingSummary)
+  // This is the authoritative source for payment status and amounts
+  const backendPaymentInfo = rawData?.paymentInfo;
+  const legacyPaymentInfo = rawData?.Response?.PaymentInfo || rawData?.PaymentInfo;
+
+  // Get total - backend returns totalPrice directly on data object
+  const orderTotal = rawData?.totalPrice ||  // Direct from backend
+                     rawData?.order?.totalPrice ||
+                     rawData?.Order?.TotalPrice?.TotalAmount;
+
   let totalValue = 0;
   let currency = 'AUD';
 
@@ -537,26 +642,92 @@ export function transformPaymentData(rawData: any): PaymentData {
     });
   });
 
-  // Determine payment status
+  // Determine payment status - uses backendPaymentInfo if available
   const paymentStatus = extractPaymentStatus(rawData) as PaymentStatus;
+
+  // Transform ALL payments into transactions array
+  // Backend now returns payments[] array with all PaymentProcessingSummary elements
+  const paymentsArray = normalizeToArray(rawData?.payments);
+  const transactions: PaymentTransactionData[] = paymentsArray.map((payment: any) => {
+    let paymentMethod: PaymentMethod | undefined;
+    if (payment?.method) {
+      paymentMethod = {
+        type: payment.method.type || 'CC',
+        cardBrand: payment.method.cardBrand,
+        cardLastFour: payment.method.maskedCardNumber?.slice(-4),
+      };
+    }
+    return {
+      transactionId: payment?.paymentId,
+      status: (payment?.status || 'UNKNOWN') as PaymentStatus,
+      amount: {
+        value: payment?.amount?.value || 0,
+        currency: payment?.amount?.currency || currency,
+      },
+      // Include surcharge amount separately (CC fees)
+      surchargeAmount: payment?.surchargeAmount?.value ? {
+        value: payment.surchargeAmount.value,
+        currency: payment.surchargeAmount.currency || currency,
+      } : undefined,
+      method: paymentMethod,
+    };
+  });
+
+  // Calculate total amount paid from ALL successful payments
+  let amountPaid: { value: number; currency: string } | undefined;
+  if (transactions.length > 0) {
+    // Sum all successful payment amounts
+    const totalPaid = transactions
+      .filter(tx => tx.status === 'SUCCESSFUL')
+      .reduce((sum, tx) => sum + tx.amount.value, 0);
+    amountPaid = { value: totalPaid, currency };
+  } else if (backendPaymentInfo?.amount?.value !== undefined) {
+    // Fallback to single payment info
+    amountPaid = {
+      value: backendPaymentInfo.amount.value,
+      currency: backendPaymentInfo.amount.currency || currency,
+    };
+  } else if (legacyPaymentInfo?.Amount) {
+    amountPaid = {
+      value: parseFloat(legacyPaymentInfo.Amount['#text'] || legacyPaymentInfo.Amount || 0),
+      currency,
+    };
+  } else if (paymentStatus === 'SUCCESSFUL') {
+    // If payment is successful but no amount info, assume full payment
+    amountPaid = { value: totalValue, currency };
+  } else if (paymentStatus === 'PENDING') {
+    amountPaid = { value: 0, currency };
+  }
 
   // Calculate amount due for hold bookings
   const amountDue = paymentStatus === 'PENDING' ? { value: totalValue, currency } : undefined;
 
+  // Get payment method from first payment (for header display)
+  let method: PaymentMethod | undefined;
+  if (transactions.length > 0 && transactions[0].method) {
+    method = transactions[0].method;
+  } else if (backendPaymentInfo?.method) {
+    method = {
+      type: backendPaymentInfo.method.type || 'CC',
+      cardBrand: backendPaymentInfo.method.cardBrand,
+      cardLastFour: backendPaymentInfo.method.maskedCardNumber?.slice(-4),
+    };
+  } else if (legacyPaymentInfo?.PaymentMethod) {
+    method = {
+      type: legacyPaymentInfo.PaymentMethod.PaymentTypeCode || 'CC',
+      cardBrand: legacyPaymentInfo.PaymentMethod.PaymentCard?.CardBrandCode,
+      cardLastFour: legacyPaymentInfo.PaymentMethod.PaymentCard?.CardNumber?.slice(-4),
+    };
+  }
+
   return {
     status: paymentStatus || 'UNKNOWN',
-    method: paymentInfo?.PaymentMethod ? {
-      type: paymentInfo.PaymentMethod.PaymentTypeCode || 'CC',
-      cardBrand: paymentInfo.PaymentMethod.PaymentCard?.CardBrandCode,
-      cardLastFour: paymentInfo.PaymentMethod.PaymentCard?.CardNumber?.slice(-4),
-    } : undefined,
+    method,
     totalAmount: { value: totalValue, currency },
-    amountPaid: paymentInfo?.Amount ? {
-      value: parseFloat(paymentInfo.Amount['#text'] || paymentInfo.Amount || 0),
-      currency,
-    } : (paymentStatus === 'PENDING' ? { value: 0, currency } : undefined),
+    amountPaid,
     amountDue,
     breakdown: breakdown.length > 0 ? breakdown : undefined,
+    transactions: transactions.length > 0 ? transactions : undefined,
   };
 }
 
@@ -583,12 +754,11 @@ export function transformBookingData(rawData: any) {
     journeys: transformFlightJourneys(rawData),
     passengers: transformPassengers(rawData),
     payment: transformPaymentData(rawData),
-    // Backend parsed format uses order.orderId (lowercase)
-    pnr: rawData?.order?.orderId ||
+    // Backend returns orderId directly on data object
+    pnr: rawData?.orderId ||  // Direct from backend
+         rawData?.order?.orderId ||
          rawData?.Response?.Order?.OrderID ||
-         rawData?.Order?.OrderID ||
-         rawData?.order?.OrderID ||
-         rawData?.orderId || '',
+         rawData?.Order?.OrderID || '',
     contactInfo: extractContactInfo(rawData),
   };
 }

@@ -4,9 +4,9 @@
 // ============================================================================
 
 import { BaseXmlParser } from "./base.parser.js";
-import type { 
-  Order, Passenger, BookingReference, OrderItem, 
-  FlightSegment, PaxJourney, OrderStatus 
+import type {
+  Order, Passenger, BookingReference, OrderItem,
+  FlightSegment, PaxJourney, OrderStatus, PaymentInfo, PaymentType, CardBrand
 } from "../types/ndc.types.js";
 
 export interface OrderWarning {
@@ -81,13 +81,29 @@ export class OrderParser extends BaseXmlParser {
     return warnings;
   }
 
+  /**
+   * Get text content of a DIRECT child element only (not nested descendants)
+   */
+  private getDirectChildText(parent: Element, tagName: string): string | null {
+    const children = parent.childNodes;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      if (child.nodeType === 1 && (child as Element).localName === tagName) {
+        return child.textContent?.trim() || null;
+      }
+    }
+    return null;
+  }
+
   private parseOrder(orderEl: Element, doc: Document): Order {
-    const orderId = this.getAttribute(orderEl, "OrderID") || 
+    const orderId = this.getAttribute(orderEl, "OrderID") ||
                     this.getText(orderEl, "OrderID") || "";
-    const ownerCode = this.getAttribute(orderEl, "Owner") || 
+    const ownerCode = this.getAttribute(orderEl, "Owner") ||
                       this.getText(orderEl, "OwnerCode") || "JQ";
 
-    const statusText = this.getText(orderEl, "StatusCode") || 
+    // Get StatusCode that is a DIRECT child of Order element (not nested in OrderItem)
+    // getElementsByTagName gets ALL descendants, so we need to check direct children only
+    const statusText = this.getDirectChildText(orderEl, "StatusCode") ||
                        this.getText(orderEl, "OrderStatus") || "CONFIRMED";
     const status = this.mapStatus(statusText);
 
@@ -146,11 +162,20 @@ export class OrderParser extends BaseXmlParser {
     const passengers: Passenger[] = this.parsePassengers(doc);
     const journeys = this.parseJourneys(doc);
     const segments = this.parseSegments(doc);
+    const payments = this.parseAllPayments(doc);
+    const paymentInfo = payments.length > 0 ? payments[0] : undefined;
+
+    // Derive effective order status from payment info
+    // If payment is SUCCESSFUL but XML has OPENED, the booking is actually CONFIRMED
+    let effectiveStatus = status;
+    if (paymentInfo?.status === "SUCCESSFUL" && status === "OPENED") {
+      effectiveStatus = "CONFIRMED";
+    }
 
     return {
       orderId,
       ownerCode,
-      status,
+      status: effectiveStatus,
       creationDateTime,
       paymentTimeLimit,
       totalPrice,
@@ -159,7 +184,94 @@ export class OrderParser extends BaseXmlParser {
       passengers,
       journeys: journeys.length > 0 ? journeys : undefined,
       segments: segments.length > 0 ? segments : undefined,
+      paymentInfo,
+      payments: payments.length > 0 ? payments : undefined,
     };
+  }
+
+  /**
+   * Parse a single PaymentProcessingSummary element into PaymentInfo
+   */
+  private parseSinglePayment(paymentSummaryEl: Element): PaymentInfo {
+    const paymentStatusCode = this.getText(paymentSummaryEl, "PaymentStatusCode");
+    const paymentId = this.getText(paymentSummaryEl, "PaymentID");
+
+    // Parse payment amount
+    const amountEl = this.getElement(paymentSummaryEl, "Amount");
+    const amount = this.parseAmount(amountEl);
+
+    // Parse surcharge amount
+    const surchargeEl = this.getElement(paymentSummaryEl, "SurchargeAmount");
+    const surchargeAmount = this.parseAmount(surchargeEl);
+
+    // Parse payment method details
+    const paymentMethodEl = this.getElement(paymentSummaryEl, "PaymentProcessingSummaryPaymentMethod");
+    let method: PaymentInfo["method"] | undefined;
+
+    if (paymentMethodEl) {
+      const cardEl = this.getElement(paymentMethodEl, "PaymentCard");
+      if (cardEl) {
+        method = {
+          type: "CC" as PaymentType,
+          cardBrand: (this.getText(cardEl, "CardBrandCode") || "VI") as CardBrand,
+          maskedCardNumber: this.getText(cardEl, "MaskedCardID") || undefined,
+        };
+      } else {
+        // Check for other payment types
+        const agencyEl = this.getElement(paymentMethodEl, "AgencyPayment");
+        if (agencyEl) {
+          method = { type: "AGT" as PaymentType };
+        } else {
+          method = { type: "CA" as PaymentType }; // Cash/BSP
+        }
+      }
+    }
+
+    // Map status code to our enum
+    let status: PaymentInfo["status"] = "UNKNOWN";
+    if (paymentStatusCode) {
+      const upperStatus = paymentStatusCode.toUpperCase();
+      if (upperStatus === "SUCCESSFUL" || upperStatus === "SUCCESS" || upperStatus === "PAID") {
+        status = "SUCCESSFUL";
+      } else if (upperStatus === "PENDING" || upperStatus === "PROCESSING") {
+        status = "PENDING";
+      } else if (upperStatus === "FAILED" || upperStatus === "REJECTED" || upperStatus === "DECLINED") {
+        status = "FAILED";
+      }
+    }
+
+    return {
+      paymentId: paymentId || undefined,
+      status,
+      amount: amount || undefined,
+      surchargeAmount: surchargeAmount || undefined,
+      method,
+    };
+  }
+
+  /**
+   * Parse PaymentFunctions/PaymentProcessingSummary from response
+   * This contains actual payment status after OrderChange with payment
+   * Returns first payment as paymentInfo for backward compatibility
+   */
+  private parsePaymentInfo(doc: Document): PaymentInfo | undefined {
+    const payments = this.parseAllPayments(doc);
+    return payments.length > 0 ? payments[0] : undefined;
+  }
+
+  /**
+   * Parse ALL PaymentProcessingSummary elements from response
+   * Returns array of all payments on the order
+   */
+  private parseAllPayments(doc: Document): PaymentInfo[] {
+    const payments: PaymentInfo[] = [];
+    const paymentSummaryElements = this.getElements(doc, "PaymentProcessingSummary");
+
+    for (const paymentEl of paymentSummaryElements) {
+      payments.push(this.parseSinglePayment(paymentEl));
+    }
+
+    return payments;
   }
 
   private mapStatus(statusText: string): OrderStatus {

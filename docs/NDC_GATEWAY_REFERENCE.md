@@ -63,13 +63,15 @@ All requests must include the version number in the `PayloadAttributes`:
 
 ## Payment Status Codes
 
-Payment status is returned in OrderCreate response under `<PaymentStatusCode>`.
+Payment status is returned in `<PaymentProcessingSummary>/<PaymentStatusCode>`.
 
 | Code | Description | Action Required |
 |------|-------------|-----------------|
-| `SUCCESSFUL` | Payment was processed successfully | Booking confirmed |
-| `PENDING` | Payment is being processed | Wait for confirmation |
-| `FAILED` | Payment was declined/failed | Show error to user |
+| `SUCCESSFUL` | Payment has been successfully accepted | Booking confirmed |
+| `PENDING` | Payment committed, pending approval | Poll OrderRetrieve until status changes to SUCCESSFUL or FAILED |
+| `FAILED` | Payment has been declined | Show error to user, retry with different card |
+
+**Important**: When `PaymentStatusCode` is `PENDING`, the seller must retrieve the Order periodically until the status changes.
 
 ### Implementation Example
 
@@ -100,19 +102,38 @@ if (paymentStatusMatch && paymentStatusMatch[1].toUpperCase() === 'FAILED') {
 
 ## Order Status Codes
 
-Order status is returned in `<OrderStatusCode>` element.
+Order status is returned in `<Order>/<StatusCode>` element.
 
 | Code | Description | Meaning |
 |------|-------------|---------|
-| `OPENED` | Order is active | Hold booking, not yet ticketed |
-| `CLOSED` | Order is closed | Cancelled or completed |
-| `TICKETED` | Tickets issued | Final booking state |
+| `OPENED` | Hold, Confirmed | Order is active and confirmed, awaiting payment |
+| `CLOSED` | Closed, HoldCancelled | Order has been closed (cancelled or expired) |
+
+**Important**: `OPENED` does NOT mean "incomplete" - it means the booking is confirmed but on hold awaiting payment. The payment status determines whether action is needed.
+
+### Order Item Status Codes
+
+Individual OrderItems have their own status in `<OrderItem>/<StatusCode>`:
+
+| Code | Description |
+|------|-------------|
+| `ACTIVE` | OrderItem(s) expected to be delivered (active or passive flights) |
+| `CANCELLED` | OrderItem(s) that have been cancelled |
+
+### Service Item Status Codes
+
+| Code | Description |
+|------|-------------|
+| `CONFIRMED` | Confirmed, Closed, Closed Pending |
+| `WAITLISTED` | Waitlist status |
+| `REQUESTED` | Pending, Holding Need, BlockAllActivities |
+| `CANCELLED` | Cancelled, Unable-special service not provided, No action taken, Unable to confirm/waitlist, Suspended, Mishap |
 
 ### Common Status Flows
 
-1. **Hold Booking**: `OPENED` (ticketing pending)
-2. **Confirmed Booking**: `TICKETED` (payment successful, tickets issued)
-3. **Cancelled Booking**: `CLOSED` (cancelled by user or system)
+1. **Hold Booking (Unpaid)**: Order `OPENED` + Payment none/`PENDING` = Payment required
+2. **Confirmed Booking (Paid)**: Order `OPENED` + Payment `SUCCESSFUL` = Booking complete
+3. **Cancelled Booking**: Order `CLOSED` = Cancelled or expired
 
 ---
 
@@ -1010,19 +1031,19 @@ Or in passive segments:
 
 ---
 
-## Cabin Type Codes
+## Cabin Type Codes (PADIS Codeset 9873)
 
 Cabin types indicate the class of service.
 
 | Code | Description |
 |------|-------------|
-| `1` | First Class |
-| `2` | First Class Premium |
-| `3` | First Class Discounted |
-| `4` | Business Class |
-| `5` | Economy/Coach |
-| `6` | Premium Economy |
-| `7` | Economy Discounted |
+| `1` | First |
+| `2` | Business |
+| `3` | Third Class (All economy) |
+| `4` | Premium Economy |
+| `5` | Economy |
+| `6` | Discounted Economy |
+| `7` | All |
 
 ### XML Example
 
@@ -1290,14 +1311,16 @@ All services include booking references:
 
 ---
 
-## Delivery Status Codes
+## Delivery Status Codes (Service Item Delivery)
 
-Returned in `Service/DeliveryStatusCode`:
+Returned in `Service/DeliveryStatusCode` - indicates payment status at service level:
 
 | Code | Description |
 |------|-------------|
-| `CONFIRMED` | Order not yet fully paid (hold booking) |
-| `READY TO PROCEED` | Order has been fully paid or overpaid |
+| `CONFIRMED` | Unpaid/Underpaid OrderItems - payment still required |
+| `READY TO PROCEED` | Fully paid/Overpaid OrderItems - ready for travel |
+
+**Note**: This is the most reliable indicator of payment status at the service level.
 
 ---
 
@@ -2335,6 +2358,7 @@ Related builder files in this project:
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-16 | 1.5 | Updated status codes from official Jetstar NDC documentation - corrected Order Status (OPENED=Hold,Confirmed), Payment Status (PENDING requires polling), Delivery Status (CONFIRMED=Unpaid, READY TO PROCEED=Paid), Cabin Types (PADIS 9873), added Order Item and Service Item status codes |
 | 2026-01-15 | 1.4 | Added ServiceList, SeatAvailability, OrderReshop details, PriceDifferential, Penalty sections |
 | 2026-01-15 | 1.3 | Added OrderChange, OrderReshop, cancellation, seat/ancillary modification sections |
 | 2026-01-15 | 1.2 | Added OrderCreate, OrderViewRS, 3DS, Delivery Status sections |

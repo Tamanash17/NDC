@@ -1,7 +1,10 @@
 ﻿import axios from 'axios';
 import { useSessionStore } from '@/core/context/SessionStore';
 
-const API_BASE_URL = 'https://ndc-production.up.railway.app/api';
+// Use localhost for local development, Railway for production
+const API_BASE_URL = import.meta.env.DEV
+  ? 'http://localhost:3002/api'
+  : 'https://ndc-production.up.railway.app/api';
 
 export async function login(credentials: {
   domain: string;

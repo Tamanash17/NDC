@@ -15,6 +15,7 @@ import '@/i18n';
 // Pages
 import { LoginPage, DashboardPage, WizardPage, BookingPage, ManageBookingPage } from '@/pages';
 import { PaymentPage } from '@/pages/PaymentPage';
+import { ServicePaymentPage } from '@/pages/ServicePaymentPage';
 
 // Loading fallback
 function LoadingFallback() {
@@ -82,10 +83,17 @@ function AppWithXmlLogPanel() {
             </ProtectedRoute>
           } />
 
-          {/* Payment Page */}
+          {/* Payment Pages */}
           <Route path="/payment" element={
             <ProtectedRoute>
               <PaymentPage />
+            </ProtectedRoute>
+          } />
+
+          {/* Service Payment - for servicing flow from Manage Booking */}
+          <Route path="/service-payment" element={
+            <ProtectedRoute>
+              <ServicePaymentPage />
             </ProtectedRoute>
           } />
 

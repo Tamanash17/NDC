@@ -15,7 +15,7 @@ import {
 } from '@/components/booking';
 import {
   Search, RefreshCw, XCircle, Luggage, Armchair, Plane,
-  Mail, Phone, Home, MapPin
+  Mail, Phone, Home, MapPin, CreditCard
 } from 'lucide-react';
 
 export function ManageBookingPage() {
@@ -103,7 +103,7 @@ export function ManageBookingPage() {
 
         const errorMsg = response.error || response.errors?.[0]?.message || 'Booking retrieval failed';
         setError(errorMsg);
-        toast.error(errorMsg);
+        // Don't show toast - the inline Alert already displays the error
         return;
       }
 
@@ -119,14 +119,13 @@ export function ManageBookingPage() {
 
       // Try different response structures
       const bookingData = response.data || response.parsed || response.Response || response;
-      console.log('[ManageBooking] Booking data:', bookingData);
 
       if (!bookingData) {
         throw new Error('No booking data received');
       }
 
       setBooking(bookingData);
-      toast.success('Booking found');
+      // No toast needed - the booking details display is confirmation enough
     } catch (err: any) {
       console.error('[ManageBooking] Search error:', err);
       console.error('[ManageBooking] Error response:', err.response);
@@ -144,7 +143,7 @@ export function ManageBookingPage() {
       const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Booking not found';
       const displayError = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg);
       setError(displayError);
-      toast.error(displayError);
+      // Don't show toast - the inline Alert already displays the error
     } finally {
       setIsLoading(false);
     }
@@ -274,17 +273,17 @@ export function ManageBookingPage() {
             </Button>
 
             {/* Status Banner - The WOW Header */}
+            {/* Note: actionRequired removed - Complete Payment button is now in Manage Your Booking section */}
             <BookingStatusBanner
               health={transformedData.status.health}
               headline={transformedData.status.headline}
               subheadline={transformedData.status.subheadline}
-              actionRequired={transformedData.status.actionRequired}
               urgentDeadline={transformedData.status.urgentDeadline}
               paymentStatus={transformedData.status.paymentStatus}
               orderStatus={transformedData.status.orderStatus}
               deliveryStatus={transformedData.status.deliveryStatus}
+              warnings={transformedData.status.warnings}
               pnr={transformedData.pnr || pnr}
-              onActionClick={() => navigate('/payment')}
             />
 
             {/* Flight Journey Timeline */}
@@ -354,6 +353,7 @@ export function ManageBookingPage() {
               totalAmount={transformedData.payment.totalAmount}
               amountPaid={transformedData.payment.amountPaid}
               breakdown={transformedData.payment.breakdown}
+              transactions={transformedData.payment.transactions}
               showBreakdown={true}
             />
 
@@ -363,6 +363,45 @@ export function ManageBookingPage() {
                 Manage Your Booking
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Show Complete Payment button if payment is pending */}
+                {transformedData.payment.status === 'PENDING' && (
+                  <ActionButton
+                    onClick={() => {
+                      // Navigate to service-payment page (dedicated for servicing flow)
+                      const paymentParams = new URLSearchParams({
+                        pnr: transformedData.pnr || pnr,
+                        orderId: booking?.orderId || '',
+                        amount: String(transformedData.payment.totalAmount.value || 0),
+                        currency: transformedData.payment.totalAmount.currency || 'AUD',
+                      });
+                      navigate(`/service-payment?${paymentParams.toString()}`);
+                    }}
+                    icon={CreditCard}
+                    title="Complete Payment"
+                    description="Pay now"
+                    variant="primary"
+                  />
+                )}
+                {/* Show Add Payment button if payment is already successful */}
+                {transformedData.payment.status === 'SUCCESSFUL' && (
+                  <ActionButton
+                    onClick={() => {
+                      // Navigate to service-payment page with mode=add for custom amount
+                      const paymentParams = new URLSearchParams({
+                        pnr: transformedData.pnr || pnr,
+                        orderId: booking?.orderId || '',
+                        amount: '0',
+                        currency: transformedData.payment.totalAmount.currency || 'AUD',
+                        mode: 'add',
+                      });
+                      navigate(`/service-payment?${paymentParams.toString()}`);
+                    }}
+                    icon={CreditCard}
+                    title="Add Payment"
+                    description="Add extra payment"
+                    variant="default"
+                  />
+                )}
                 <ActionButton
                   onClick={() => handleAction('change')}
                   icon={RefreshCw}
@@ -430,22 +469,38 @@ interface ActionButtonProps {
   icon: React.ElementType;
   title: string;
   description: string;
-  variant: 'default' | 'danger';
+  variant: 'default' | 'danger' | 'primary';
 }
 
 function ActionButton({ onClick, icon: Icon, title, description, variant }: ActionButtonProps) {
+  const getStyles = () => {
+    switch (variant) {
+      case 'primary':
+        return {
+          container: 'border-orange-500 bg-orange-50 hover:bg-orange-100',
+          icon: 'text-orange-600',
+        };
+      case 'danger':
+        return {
+          container: 'border-gray-200 hover:border-red-500 hover:bg-red-50',
+          icon: 'text-red-500',
+        };
+      default:
+        return {
+          container: 'border-gray-200 hover:border-orange-500 hover:bg-orange-50',
+          icon: 'text-orange-600',
+        };
+    }
+  };
+
+  const styles = getStyles();
+
   return (
     <button
       onClick={onClick}
-      className={`p-6 rounded-xl border-2 transition-all text-center group ${
-        variant === 'danger'
-          ? 'border-gray-200 hover:border-red-500 hover:bg-red-50'
-          : 'border-gray-200 hover:border-orange-500 hover:bg-orange-50'
-      }`}
+      className={`p-6 rounded-xl border-2 transition-all text-center group ${styles.container}`}
     >
-      <Icon className={`w-10 h-10 mx-auto mb-3 group-hover:scale-110 transition-transform ${
-        variant === 'danger' ? 'text-red-500' : 'text-orange-600'
-      }`} />
+      <Icon className={`w-10 h-10 mx-auto mb-3 group-hover:scale-110 transition-transform ${styles.icon}`} />
       <p className="font-semibold text-gray-900">{title}</p>
       <p className="text-xs text-gray-500 mt-1">{description}</p>
     </button>

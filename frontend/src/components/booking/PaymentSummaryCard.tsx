@@ -35,6 +35,7 @@ export interface PaymentTransaction {
   transactionId?: string;
   status: PaymentStatus;
   amount: { value: number; currency: string };
+  surchargeAmount?: { value: number; currency: string };
   timestamp?: string;
   method?: PaymentMethod;
 }
@@ -53,7 +54,6 @@ export interface PaymentSummaryCardProps {
 
 export function PaymentSummaryCard({
   paymentStatus,
-  paymentMethod,
   transactions,
   totalAmount,
   breakdown,
@@ -65,6 +65,10 @@ export function PaymentSummaryCard({
   const [isBreakdownExpanded, setIsBreakdownExpanded] = useState(false);
 
   const statusConfig = getStatusConfig(paymentStatus);
+
+  // For header display, show amountPaid if available (sum of all payments), otherwise totalAmount
+  const headerAmount = amountPaid || totalAmount;
+  const headerLabel = amountPaid ? 'Total Paid' : 'Total Due';
 
   return (
     <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
@@ -86,40 +90,35 @@ export function PaymentSummaryCard({
                 {statusConfig.title}
               </h3>
               <p className={cn('text-sm', statusConfig.subtextColor)}>
-                {statusConfig.description}
+                {transactions && transactions.length > 1
+                  ? `${transactions.length} payments on this booking`
+                  : statusConfig.description}
               </p>
             </div>
           </div>
 
-          {/* Total Amount */}
+          {/* Total Amount Paid (or Due) */}
           <div className="text-right">
-            <p className={cn('text-sm', statusConfig.subtextColor)}>Total</p>
+            <p className={cn('text-sm', statusConfig.subtextColor)}>{headerLabel}</p>
             <p className={cn('text-3xl font-bold', statusConfig.textColor)}>
-              {formatCurrency(totalAmount.value, totalAmount.currency)}
+              {formatCurrency(headerAmount.value, headerAmount.currency)}
             </p>
           </div>
         </div>
-
-        {/* Payment Method */}
-        {paymentMethod && (
-          <div className="mt-4 pt-4 border-t border-white/20">
-            <PaymentMethodDisplay method={paymentMethod} light />
-          </div>
-        )}
       </div>
 
       {/* Payment Details */}
       <div className="p-6">
-        {/* Amount Summary */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {/* Amount Summary - Show booking total vs amount paid */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
           <AmountCard
-            label="Total Fare"
+            label="Booking Total"
             amount={totalAmount}
             variant="neutral"
           />
           {amountPaid && (
             <AmountCard
-              label="Amount Paid"
+              label="Total Paid"
               amount={amountPaid}
               variant="success"
             />
@@ -166,13 +165,13 @@ export function PaymentSummaryCard({
           </div>
         )}
 
-        {/* Transaction History */}
+        {/* Payment Transactions */}
         {transactions && transactions.length > 0 && (
           <div className="border-t border-gray-100 pt-4 mt-4">
-            <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              Transaction History
+            <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+              {transactions.length > 1 ? 'Payment Transactions' : 'Payment Details'}
             </h4>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {transactions.map((tx, idx) => (
                 <TransactionRow key={idx} transaction={tx} />
               ))}
@@ -468,46 +467,118 @@ function BreakdownSection({ title, items, isDiscount }: BreakdownSectionProps) {
   );
 }
 
-// Transaction Row
+// Transaction Row - Shows payment method, ID, and amount
 interface TransactionRowProps {
   transaction: PaymentTransaction;
 }
 
 function TransactionRow({ transaction }: TransactionRowProps) {
   const statusColors = {
-    SUCCESSFUL: 'bg-emerald-100 text-emerald-700',
-    PENDING: 'bg-amber-100 text-amber-700',
-    FAILED: 'bg-red-100 text-red-700',
-    REFUNDED: 'bg-blue-100 text-blue-700',
-    PARTIAL: 'bg-orange-100 text-orange-700',
-    UNKNOWN: 'bg-gray-100 text-gray-700',
+    SUCCESSFUL: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    PENDING: 'bg-amber-100 text-amber-700 border-amber-200',
+    FAILED: 'bg-red-100 text-red-700 border-red-200',
+    REFUNDED: 'bg-blue-100 text-blue-700 border-blue-200',
+    PARTIAL: 'bg-orange-100 text-orange-700 border-orange-200',
+    UNKNOWN: 'bg-gray-100 text-gray-700 border-gray-200',
   };
 
+  const cardBrandLogos: Record<string, string> = {
+    VI: 'Visa',
+    MC: 'Mastercard',
+    AX: 'Amex',
+    DC: 'Diners Club',
+    JC: 'JCB',
+    UP: 'UnionPay',
+  };
+
+  const getPaymentTypeLabel = (method?: PaymentMethod) => {
+    if (!method) return 'Payment';
+    if (method.type === 'CC') {
+      const brand = method.cardBrand ? cardBrandLogos[method.cardBrand] || method.cardBrand : 'Card';
+      const lastFour = method.cardLastFour ? ` •••• ${method.cardLastFour}` : '';
+      return `${brand}${lastFour}`;
+    }
+    if (method.type === 'AGT') return 'Agency Payment';
+    if (method.type === 'CA') return 'Cash';
+    return 'Payment';
+  };
+
+  const getPaymentIcon = (method?: PaymentMethod) => {
+    if (!method) return Wallet;
+    if (method.type === 'CC') return CreditCard;
+    if (method.type === 'AGT') return Building2;
+    if (method.type === 'CA') return Banknote;
+    return Wallet;
+  };
+
+  const PaymentIcon = getPaymentIcon(transaction.method);
+
   return (
-    <div className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
-      <div className="flex items-center gap-3">
-        <div className={cn(
-          'px-2 py-1 rounded text-xs font-semibold',
-          statusColors[transaction.status]
-        )}>
-          {transaction.status}
+    <div className={cn(
+      'flex items-center justify-between p-4 rounded-xl border',
+      statusColors[transaction.status]
+    )}>
+      <div className="flex items-center gap-4">
+        {/* Payment Method Icon */}
+        <div className="p-2 bg-white/60 rounded-lg">
+          <PaymentIcon className="w-5 h-5 text-gray-600" />
         </div>
+
+        {/* Payment Details */}
         <div>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-gray-900">
+              {getPaymentTypeLabel(transaction.method)}
+            </span>
+            <span className={cn(
+              'px-2 py-0.5 rounded text-xs font-semibold',
+              transaction.status === 'SUCCESSFUL' ? 'bg-emerald-200 text-emerald-800' :
+              transaction.status === 'FAILED' ? 'bg-red-200 text-red-800' :
+              'bg-gray-200 text-gray-800'
+            )}>
+              {transaction.status}
+            </span>
+          </div>
           {transaction.transactionId && (
-            <p className="text-sm font-mono text-gray-600">
-              #{transaction.transactionId}
+            <p className="text-sm text-gray-500 font-mono mt-0.5">
+              ID: {transaction.transactionId}
             </p>
           )}
           {transaction.timestamp && (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-400 mt-0.5">
               {formatDateTime(transaction.timestamp)}
             </p>
           )}
         </div>
       </div>
-      <span className="font-semibold text-gray-900">
-        {formatCurrency(transaction.amount.value, transaction.amount.currency)}
-      </span>
+
+      {/* Amount with breakdown */}
+      <div className="text-right">
+        {transaction.surchargeAmount && transaction.surchargeAmount.value > 0 ? (
+          <>
+            {/* Base amount (total - surcharge) */}
+            <div className="text-sm text-gray-500">
+              Base: {formatCurrency(
+                transaction.amount.value - transaction.surchargeAmount.value,
+                transaction.amount.currency
+              )}
+            </div>
+            <div className="text-sm text-gray-500">
+              CC Fee: {formatCurrency(
+                transaction.surchargeAmount.value,
+                transaction.surchargeAmount.currency
+              )}
+            </div>
+            <div className="text-xl font-bold text-gray-900 border-t border-gray-200 pt-1 mt-1">
+              {formatCurrency(transaction.amount.value, transaction.amount.currency)}
+            </div>
+          </>
+        ) : (
+          <span className="text-xl font-bold text-gray-900">
+            {formatCurrency(transaction.amount.value, transaction.amount.currency)}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

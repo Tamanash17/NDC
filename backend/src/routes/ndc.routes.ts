@@ -890,10 +890,16 @@ router.post("/order-retrieve", async (req: any, res: any) => {
       }
 
       console.log("[NDC] OrderRetrieve parsed successfully");
+      if (parsed.warnings?.length) {
+        console.log("[NDC] OrderRetrieve warnings:", parsed.warnings);
+      }
 
       res.json({
         success: true,
-        data: parsed.order,
+        data: {
+          ...parsed.order,
+          warnings: parsed.warnings,  // Include warnings in response
+        },
         requestXml: xmlRequest,
         responseXml: xmlResponse,
       });

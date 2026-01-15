@@ -425,6 +425,18 @@ export interface OrderItem {
   serviceRefIds?: string[];
 }
 
+export interface PaymentInfo {
+  paymentId?: string;
+  status: "SUCCESSFUL" | "PENDING" | "FAILED" | "UNKNOWN";
+  amount?: Amount;
+  surchargeAmount?: Amount;
+  method?: {
+    type: PaymentType;
+    cardBrand?: CardBrand;
+    maskedCardNumber?: string;
+  };
+}
+
 export interface Order {
   orderId: string;
   ownerCode: string;
@@ -437,6 +449,9 @@ export interface Order {
   passengers: Passenger[];
   journeys?: PaxJourney[];
   segments?: FlightSegment[];
+  paymentInfo?: PaymentInfo;
+  // Array of all payments on this order (for multiple payment scenarios)
+  payments?: PaymentInfo[];
 }
 
 // ----------------------------------------------------------------------------

@@ -1,65 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useFlightSelectionStore } from '@/hooks/useFlightSelection';
 import { useDistributionContext } from '@/core/context/SessionStore';
 import { useXmlViewer } from '@/core/context/XmlViewerContext';
-import { processPayment, fetchAllCCFees, type CCFeeResult, type LongSellSegment, type LongSellJourney, type LongSellPassenger } from '@/lib/ndc-api';
+import { processPayment } from '@/lib/ndc-api';
 import { formatCurrency } from '@/lib/format';
 import { AppLayout } from '@/components/layout';
-
-// Helper to parse display date format to ISO format
-// Input formats: "Fri, 23 Jan", "2025-01-23", "23 Jan 2025", etc.
-function parseToISODate(dateStr: string, year?: number): string {
-  // If already in ISO format (YYYY-MM-DD), return as-is
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return dateStr;
-  }
-
-  // Try to parse various formats
-  const months: Record<string, string> = {
-    'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
-    'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-    'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
-  };
-
-  // Try format: "Fri, 23 Jan" or "23 Jan"
-  const match = dateStr.match(/(\d{1,2})\s+(\w{3})/);
-  if (match) {
-    const day = match[1].padStart(2, '0');
-    const month = months[match[2]] || '01';
-    const yearToUse = year || new Date().getFullYear();
-    return `${yearToUse}-${month}-${day}`;
-  }
-
-  // Fallback: try JavaScript Date parsing
-  try {
-    const parsed = new Date(dateStr);
-    if (!isNaN(parsed.getTime())) {
-      return parsed.toISOString().split('T')[0];
-    }
-  } catch {
-    // Ignore
-  }
-
-  // Last resort: return current date
-  console.warn(`[PaymentPage] Could not parse date: ${dateStr}`);
-  return new Date().toISOString().split('T')[0];
-}
 import {
   CreditCard,
   Building2,
   Wallet,
   Lock,
   CheckCircle,
-  ArrowRight,
-  ArrowLeft,
   Loader2,
   Shield,
   Sparkles,
   AlertCircle,
   Plane,
-  Users,
-  Calendar,
   Info,
 } from 'lucide-react';
 
@@ -85,29 +41,38 @@ interface CardPaymentForm {
 }
 
 interface AgencyPaymentForm {
-  selectedParticipant: 'seller' | 'distributor';  // Which participant to bill (IATA_Number 1 or 2)
+  selectedParticipant: 'seller' | 'distributor';
 }
 
-interface IFGPaymentForm {
-  selectedParticipant: 'seller' | 'distributor';  // Which participant to use for IATA_Number
-  referenceNumber: string;
-}
-
-export function PaymentPage() {
+/**
+ * ServicePaymentPage - Payment page for servicing flow (from Manage Booking)
+ *
+ * This is a simplified version of PaymentPage specifically for servicing scenarios:
+ * - Gets all data from URL params (no flight store dependency)
+ * - No CC fee calculation (Long Sell requires flight data we don't have)
+ * - Back button goes to Manage Booking page
+ * - Same OrderChange payment API as prime flow
+ */
+export function ServicePaymentPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const flightStore = useFlightSelectionStore();
   const distributionContext = useDistributionContext();
   const { addCapture } = useXmlViewer();
 
-  // Get booking details from URL params or store
-  const orderId = searchParams.get('orderId') || flightStore.orderId;
-  const pnr = searchParams.get('pnr') || flightStore.pnr;
-  const totalAmount = parseFloat(searchParams.get('amount') || '0') || flightStore.totalAmount || 0;
-  const currency = searchParams.get('currency') || flightStore.currency || 'AUD';
+  // Get booking details from URL params ONLY
+  const orderId = searchParams.get('orderId') || '';
+  const pnr = searchParams.get('pnr') || '';
+  const initialAmount = parseFloat(searchParams.get('amount') || '0');
+  const currency = searchParams.get('currency') || 'AUD';
+  const mode = searchParams.get('mode') || 'complete'; // 'complete' or 'add'
+  const isAddMode = mode === 'add';
 
-  // Back navigation always goes to booking page for prime flow
-  const backTo = '/booking';
+  // For add mode, allow user to enter custom amount
+  const [customAmount, setCustomAmount] = useState<string>(isAddMode ? '' : String(initialAmount));
+  const totalAmount = isAddMode ? parseFloat(customAmount || '0') : initialAmount;
+
+  // Back navigation always goes to manage booking
+  const backTo = `/manage?pnr=${encodeURIComponent(pnr)}`;
 
   // State
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('CC');
@@ -115,11 +80,6 @@ export function PaymentPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [paymentResult, setPaymentResult] = useState<any>(null);
-
-  // CC fees state
-  const [ccFees, setCCFees] = useState<CCFeeResult[]>([]);
-  const [isLoadingCCFees, setIsLoadingCCFees] = useState(false);
-  const [ccFeesError, setCCFeesError] = useState<string | null>(null);
 
   // Form states
   const [cardForm, setCardForm] = useState<CardPaymentForm>({
@@ -131,163 +91,16 @@ export function PaymentPage() {
   });
 
   const [agencyForm, setAgencyForm] = useState<AgencyPaymentForm>({
-    selectedParticipant: 'seller',  // Default to seller (IATA_Number = 1)
+    selectedParticipant: 'seller',
   });
 
-  const [ifgForm, setIFGForm] = useState<IFGPaymentForm>({
-    selectedParticipant: 'seller',  // Default to seller (IATA_Number = 1)
-    referenceNumber: '',
-  });
-
-  // Check if this is a BOB booking (has distributor in distribution chain)
+  // Check if this is a BOB booking
   const isBOBBooking = distributionContext.isValid &&
     (distributionContext.getPartyConfig()?.participants?.length || 0) > 1;
 
-  // Get participant details for display
+  // Get participant details
   const sellerInfo = distributionContext.seller;
   const distributorInfo = distributionContext.getPartyConfig()?.participants?.find(p => p.role === 'Distributor');
-
-  // Fetch CC fees on page load using Long Sell
-  useEffect(() => {
-    const fetchCCFees = async () => {
-      // Build segments and journeys from flight selection
-      const selection = flightStore.selection;
-      const searchCriteria = flightStore.searchCriteria;
-
-      if (!selection.outbound) {
-        console.log('[PaymentPage] No flight selection, skipping CC fee fetch');
-        setCCFeesError('No flight selection available');
-        return;
-      }
-
-      setIsLoadingCCFees(true);
-      setCCFeesError(null);
-
-      try {
-        // Build segments from journey data
-        const segments: LongSellSegment[] = [];
-        const journeys: LongSellJourney[] = [];
-
-        // Get year from search criteria for date parsing
-        const outboundYear = searchCriteria?.departureDate ? new Date(searchCriteria.departureDate).getFullYear() : new Date().getFullYear();
-        const inboundYear = searchCriteria?.returnDate ? new Date(searchCriteria.returnDate).getFullYear() : outboundYear;
-
-        // Process outbound
-        if (selection.outbound?.journey) {
-          const outboundJourney = selection.outbound.journey;
-          const outboundSegmentIds: string[] = [];
-
-          outboundJourney.segments.forEach((seg, idx) => {
-            const segmentId = `seg-out-${idx}`;
-            outboundSegmentIds.push(segmentId);
-            const isoDate = parseToISODate(seg.departureDate, outboundYear);
-            segments.push({
-              segmentId,
-              origin: seg.origin,
-              destination: seg.destination,
-              departureDateTime: `${isoDate}T${seg.departureTime}:00`,
-              carrierCode: seg.marketingCarrier,
-              flightNumber: seg.flightNumber,
-              cabinCode: selection.outbound?.cabinType || '5',
-            });
-          });
-
-          journeys.push({
-            journeyId: 'journey-out',
-            origin: outboundJourney.segments[0]?.origin || '',
-            destination: outboundJourney.segments[outboundJourney.segments.length - 1]?.destination || '',
-            segmentIds: outboundSegmentIds,
-          });
-        }
-
-        // Process inbound
-        if (selection.inbound?.journey) {
-          const inboundJourney = selection.inbound.journey;
-          const inboundSegmentIds: string[] = [];
-
-          inboundJourney.segments.forEach((seg, idx) => {
-            const segmentId = `seg-in-${idx}`;
-            inboundSegmentIds.push(segmentId);
-            const isoDate = parseToISODate(seg.departureDate, inboundYear);
-            segments.push({
-              segmentId,
-              origin: seg.origin,
-              destination: seg.destination,
-              departureDateTime: `${isoDate}T${seg.departureTime}:00`,
-              carrierCode: seg.marketingCarrier,
-              flightNumber: seg.flightNumber,
-              cabinCode: selection.inbound?.cabinType || '5',
-            });
-          });
-
-          journeys.push({
-            journeyId: 'journey-in',
-            origin: inboundJourney.segments[0]?.origin || '',
-            destination: inboundJourney.segments[inboundJourney.segments.length - 1]?.destination || '',
-            segmentIds: inboundSegmentIds,
-          });
-        }
-
-        // Build passengers from search criteria
-        const passengers: LongSellPassenger[] = [];
-        const pax = searchCriteria?.passengers || { adults: 1, children: 0, infants: 0 };
-
-        for (let i = 0; i < pax.adults; i++) {
-          passengers.push({ paxId: `ADT${i}`, ptc: 'ADT' });
-        }
-        for (let i = 0; i < pax.children; i++) {
-          passengers.push({ paxId: `CHD${i}`, ptc: 'CHD' });
-        }
-        for (let i = 0; i < pax.infants; i++) {
-          passengers.push({ paxId: `INF${i}`, ptc: 'INF' });
-        }
-
-        console.log('[PaymentPage] Fetching CC fees with:', { segments, journeys, passengers });
-
-        const fees = await fetchAllCCFees(segments, journeys, passengers, currency);
-        setCCFees(fees);
-
-        console.log('[PaymentPage] CC fees fetched:', fees);
-
-        // Log only Visa (VI) Long Sell request/response for debugging
-        // We only log one card brand to avoid cluttering the console
-        // VI (Visa) is chosen as the primary reference since it's most commonly used
-        const visaFee = fees.find(f => f.cardBrand === 'VI');
-        if (visaFee) {
-          console.log('[PaymentPage] === VISA (VI) LONG SELL DEBUG ===');
-          console.log('[PaymentPage] Surcharge Amount:', visaFee.ccSurcharge);
-          console.log('[PaymentPage] Surcharge Type:', visaFee.surchargeType);
-          if (visaFee.requestXml) {
-            console.log('[PaymentPage] Request XML:', visaFee.requestXml);
-          }
-          if (visaFee.rawResponse) {
-            console.log('[PaymentPage] Response XML:', visaFee.rawResponse);
-          }
-          if (visaFee.error) {
-            console.log('[PaymentPage] Error:', visaFee.error);
-          }
-          console.log('[PaymentPage] === END VISA DEBUG ===');
-        }
-      } catch (err: any) {
-        console.error('[PaymentPage] Error fetching CC fees:', err);
-        setCCFeesError(err.message || 'Failed to fetch CC fees');
-      } finally {
-        setIsLoadingCCFees(false);
-      }
-    };
-
-    fetchCCFees();
-  }, [flightStore.selection, flightStore.searchCriteria, currency]);
-
-  // Get CC fee for currently detected card brand
-  const getCurrentCardFee = (): CCFeeResult | null => {
-    if (ccFees.length === 0 || !cardForm.cardNumber) return null;
-    const brand = detectCardBrand(cardForm.cardNumber);
-    // Map brand codes (VI -> VI, MC -> MC, AX -> AX, JC -> JCB)
-    const brandMapping: Record<string, string> = { 'VI': 'VI', 'MC': 'MC', 'AX': 'AX', 'JC': 'JCB', 'DC': 'VI', 'UP': 'VI' };
-    const mappedBrand = brandMapping[brand] || 'VI';
-    return ccFees.find(f => f.cardBrand === mappedBrand) || null;
-  };
 
   // Detect card brand
   const detectCardBrand = (number: string): string => {
@@ -297,7 +110,7 @@ export function PaymentPage() {
         return brand.code;
       }
     }
-    return 'VI'; // Default to Visa
+    return 'VI';
   };
 
   // Format card number with spaces
@@ -319,27 +132,19 @@ export function PaymentPage() {
   };
 
   const validateAgencyPayment = (): boolean => {
-    // Need valid participant selected (distributor only for BOB bookings)
-    // No account number required - uses IATA_Number from distribution chain
     return agencyForm.selectedParticipant === 'seller' ||
       (agencyForm.selectedParticipant === 'distributor' && isBOBBooking);
   };
 
-  const validateIFGPayment = (): boolean => {
-    // Just need a participant selected - seller is always available
-    return ifgForm.selectedParticipant === 'seller' ||
-      (ifgForm.selectedParticipant === 'distributor' && isBOBBooking);
-  };
-
   const canSubmit = (): boolean => {
-    if (!orderId) return false;
+    if (!orderId || totalAmount <= 0) return false;
     switch (selectedMethod) {
       case 'CC':
         return validateCreditCard();
       case 'AGT':
         return validateAgencyPayment();
       case 'IFG':
-        return validateIFGPayment();
+        return true; // BSP always available for seller
     }
     return false;
   };
@@ -370,7 +175,6 @@ export function PaymentPage() {
     const startTime = Date.now();
 
     try {
-      // Build base payment request
       let payment: any = {
         amount: {
           value: totalAmount,
@@ -378,13 +182,10 @@ export function PaymentPage() {
         },
       };
 
-      // Build distribution chain
       const distributionChain = buildDistributionChainPayload();
 
-      // Add payment method specific fields
       switch (selectedMethod) {
         case 'CC':
-          // Get the detected card brand
           const brand = detectCardBrand(cardForm.cardNumber);
           payment = {
             ...payment,
@@ -400,9 +201,6 @@ export function PaymentPage() {
           break;
 
         case 'AGT':
-          // IATA_Number: 1 = Seller, 2 = Distributor (per Postman AG flow)
-          // For direct bookings (non-BOB), always use 1 (Seller)
-          // For BOB bookings, use selected participant ordinal
           payment = {
             ...payment,
             type: 'AGT',
@@ -413,23 +211,20 @@ export function PaymentPage() {
           break;
 
         case 'IFG':
-          // IFG uses CA payment type (Cash Agency) - NO IATA_Number per Postman
-          // Settlement is determined by Seller OrgID in distribution chain
           payment = {
             ...payment,
-            type: 'CA',  // Cash Agency payment type
+            type: 'CA',
           };
           break;
       }
 
-      console.log('[PaymentPage] Submitting payment:', {
+      console.log('[ServicePaymentPage] Submitting payment:', {
         orderId,
         method: selectedMethod,
         amount: totalAmount,
         currency,
       });
 
-      // Call Process Payment API
       const response = await processPayment({
         orderId,
         ownerCode: 'JQ',
@@ -439,26 +234,21 @@ export function PaymentPage() {
 
       const duration = response.duration || Date.now() - startTime;
 
-      // Add to XML viewer
       addCapture({
-        operation: 'OrderChange (Payment)',
+        operation: 'OrderChange (Service Payment)',
         request: response.requestXml || '',
         response: response.responseXml || '',
         duration,
         status: 'success',
-        userAction: `Payment via ${selectedMethod}`,
+        userAction: `Service Payment via ${selectedMethod}`,
       });
 
       setPaymentResult(response.data);
       setSuccess(true);
 
-      console.log('[PaymentPage] Payment successful:', response.data);
+      console.log('[ServicePaymentPage] Payment successful:', response.data);
     } catch (err: any) {
-      // Backend returns { success: false, error: "Error message string" }
-      // Log entire error response for debugging
-      console.error('[PaymentPage] Full error object:', err);
-      console.error('[PaymentPage] err.response:', err.response);
-      console.error('[PaymentPage] err.response?.data:', err.response?.data);
+      console.error('[ServicePaymentPage] Payment error:', err);
 
       let errorMessage =
         err.response?.data?.error ||
@@ -466,9 +256,7 @@ export function PaymentPage() {
         err.message ||
         'Payment failed';
 
-      // If we still have generic message, try to get more details
       if (errorMessage === 'Request failed with status code 400' && err.response?.data) {
-        // Try to stringify the entire response data for debugging
         const dataStr = typeof err.response.data === 'string'
           ? err.response.data
           : JSON.stringify(err.response.data);
@@ -477,28 +265,18 @@ export function PaymentPage() {
 
       setError(errorMessage);
 
-      console.error('[PaymentPage] Payment error details:', {
-        status: err.response?.status,
-        data: err.response?.data,
-        message: errorMessage,
-      });
-
       const errorDuration = Date.now() - startTime;
-
-      // Capture request and response XML from error response
       const requestXml = err.response?.data?.requestXml || '';
       const responseXml = err.response?.data?.responseXml || err.response?.data?.details || `<error>${errorMessage}</error>`;
 
       addCapture({
-        operation: 'OrderChange (Payment)',
+        operation: 'OrderChange (Service Payment)',
         request: requestXml,
         response: typeof responseXml === 'string' ? responseXml : JSON.stringify(responseXml, null, 2),
         duration: errorDuration,
         status: 'error',
-        userAction: `Payment via ${selectedMethod} (FAILED)`,
+        userAction: `Service Payment via ${selectedMethod} (FAILED)`,
       });
-
-      console.error('[PaymentPage] Payment error:', err);
     } finally {
       setIsProcessing(false);
     }
@@ -509,16 +287,14 @@ export function PaymentPage() {
     return (
       <AppLayout title="Payment Complete" backTo="/dashboard">
         <div className="max-w-2xl mx-auto">
-          {/* Success Header */}
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-200">
               <CheckCircle className="w-10 h-10 text-white" />
             </div>
             <h1 className="text-3xl font-bold text-slate-900 mb-2">Payment Successful!</h1>
-            <p className="text-slate-600">Your booking has been confirmed and paid.</p>
+            <p className="text-slate-600">Your booking payment has been processed.</p>
           </div>
 
-          {/* Booking Details Card */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
             <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-4">
               <p className="text-white/80 text-sm font-medium">Booking Reference</p>
@@ -528,7 +304,7 @@ export function PaymentPage() {
             <div className="p-6 space-y-4">
               <div className="flex justify-between items-center py-3 border-b border-slate-100">
                 <span className="text-slate-600">Order ID</span>
-                <span className="font-mono font-medium text-slate-900">{orderId}</span>
+                <span className="font-mono font-medium text-slate-900">{orderId.slice(0, 20)}...</span>
               </div>
 
               <div className="flex justify-between items-center py-3 border-b border-slate-100">
@@ -536,7 +312,7 @@ export function PaymentPage() {
                 <span className="font-medium text-slate-900">
                   {selectedMethod === 'CC' && 'Credit Card'}
                   {selectedMethod === 'AGT' && 'Agency Payment'}
-                  {selectedMethod === 'IFG' && 'IFG Payment'}
+                  {selectedMethod === 'IFG' && 'BSP Payment'}
                 </span>
               </div>
 
@@ -549,20 +325,18 @@ export function PaymentPage() {
             </div>
           </div>
 
-          {/* Confirmation Message */}
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-8">
             <div className="flex gap-3">
               <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-emerald-900">Confirmation email sent</p>
+                <p className="font-semibold text-emerald-900">Payment Confirmed</p>
                 <p className="text-sm text-emerald-700">
-                  A confirmation email with your itinerary has been sent to your registered email address.
+                  Your booking has been updated with the payment confirmation.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex gap-4 justify-center flex-wrap">
             <button
               onClick={() => navigate('/dashboard')}
@@ -571,17 +345,11 @@ export function PaymentPage() {
               Back to Dashboard
             </button>
             <button
-              onClick={() => navigate(`/manage?pnr=${encodeURIComponent(pnr || '')}`)}
+              onClick={() => navigate(`/manage?pnr=${encodeURIComponent(pnr)}`)}
               className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors flex items-center gap-2"
             >
               <Plane className="w-4 h-4" />
-              Retrieve PNR
-            </button>
-            <button
-              onClick={() => window.print()}
-              className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-            >
-              Print Confirmation
+              View Booking
             </button>
           </div>
         </div>
@@ -591,21 +359,85 @@ export function PaymentPage() {
 
   // Payment form view
   return (
-    <AppLayout title="Complete Payment" backTo={backTo}>
+    <AppLayout title={isAddMode ? "Add Payment" : "Complete Payment"} backTo={backTo}>
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-orange-100 rounded-full mb-4">
             <Wallet className="w-4 h-4 text-orange-600" />
             <span className="text-sm font-semibold text-orange-700">Secure Payment</span>
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Complete Your Booking</h1>
-          <p className="text-slate-600">Choose your preferred payment method to finalize your reservation.</p>
+          <h1 className="text-3xl font-bold text-slate-900 mb-2">
+            {isAddMode ? "Add Extra Payment" : "Complete Your Payment"}
+          </h1>
+          <p className="text-slate-600">
+            {isAddMode
+              ? "Enter the amount you wish to add to your booking."
+              : "Choose your preferred payment method to complete your booking."}
+          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Payment Methods */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Amount Input - Only shown in add mode */}
+            {isAddMode && (
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <h2 className="text-lg font-bold text-slate-900 mb-4">Payment Amount</h2>
+
+                {/* Info note explaining add payment mode */}
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+                  <div className="flex gap-3">
+                    <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-blue-900">Adding Extra Payment</p>
+                      <p className="text-sm text-blue-700">
+                        Your booking is already paid in full. You can add an additional payment here for any extra services or adjustments.
+                        Enter the amount you wish to add below.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Enter Amount ({currency})
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">
+                      {currency === 'AUD' ? '$' : currency}
+                    </span>
+                    <input
+                      type="number"
+                      value={customAmount}
+                      onChange={(e) => setCustomAmount(e.target.value)}
+                      placeholder="0.00"
+                      min="0.01"
+                      step="0.01"
+                      className="w-full pl-12 pr-4 py-4 text-2xl font-bold border-2 border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">
+                    Enter the additional amount you want to pay for this booking.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Fixed amount note - Only shown in complete mode */}
+            {!isAddMode && initialAmount > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <div className="flex gap-3">
+                  <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-amber-900">Payment Required</p>
+                    <p className="text-sm text-amber-700">
+                      The amount due of <strong>{formatCurrency(initialAmount, currency)}</strong> is based on your booking total from the airline.
+                      This amount cannot be changed.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Method Selection */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
               <h2 className="text-lg font-bold text-slate-900 mb-4">Select Payment Method</h2>
@@ -636,7 +468,7 @@ export function PaymentPage() {
                   </p>
                 </button>
 
-                {/* Jetstar Agency Payment */}
+                {/* Agency Payment */}
                 <button
                   onClick={() => setSelectedMethod('AGT')}
                   className={`relative p-4 rounded-xl border-2 transition-all text-left ${
@@ -698,14 +530,12 @@ export function PaymentPage() {
                       <CreditCard className="w-5 h-5 text-orange-500" />
                       Card Details
                     </h3>
-                    {/* Use Test Card Checkbox */}
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={cardForm.cardNumber === '4444 3333 2222 1111'}
                         onChange={(e) => {
                           if (e.target.checked) {
-                            // Populate with test card data
                             setCardForm({
                               cardNumber: '4444 3333 2222 1111',
                               cardholderName: 'TEST CARD',
@@ -714,7 +544,6 @@ export function PaymentPage() {
                               cvv: '737',
                             });
                           } else {
-                            // Clear form
                             setCardForm({
                               cardNumber: '',
                               cardholderName: '',
@@ -813,91 +642,17 @@ export function PaymentPage() {
                     </div>
                   </div>
 
-                  {/* CC Surcharge Display */}
-                  {isLoadingCCFees && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                      <div className="flex items-center gap-3">
-                        <Loader2 className="w-5 h-5 text-slate-400 animate-spin" />
-                        <span className="text-sm text-slate-600">Loading card surcharges...</span>
-                      </div>
+                  {/* No CC fees for servicing - show info message */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <Info className="w-4 h-4" />
+                      <span>Card surcharges will be calculated at payment time</span>
                     </div>
-                  )}
-
-                  {!isLoadingCCFees && ccFees.length > 0 && (() => {
-                    // Filter to only show VI, MC, AX (exclude JCB)
-                    const displayFees = ccFees.filter(f => ['VI', 'MC', 'AX'].includes(f.cardBrand));
-                    const validFees = displayFees.filter(f => !f.error && f.ccSurcharge > 0);
-
-                    // Determine if percentage-based or fixed amount
-                    // Rule: If all amounts are the same = fixed, if different = percentage-based
-                    const uniqueAmounts = new Set(validFees.map(f => f.ccSurcharge));
-                    const isFixedAmount = uniqueAmounts.size === 1 && validFees.length > 1;
-
-                    // Calculate percentage relative to total amount
-                    const calculatePercentage = (fee: number) => {
-                      if (totalAmount <= 0) return 0;
-                      return ((fee / totalAmount) * 100).toFixed(2);
-                    };
-
-                    return (
-                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                        <div className="flex items-center gap-3">
-                          <Info className="w-5 h-5 text-amber-600 flex-shrink-0" />
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-amber-900">Card Surcharges</span>
-                              {isFixedAmount && validFees.length > 0 ? (
-                                <span className="text-sm text-amber-800">
-                                  <span className="font-mono font-semibold">{formatCurrency(validFees[0].ccSurcharge, currency)}</span>
-                                  <span className="text-amber-600 ml-1">(Fixed)</span>
-                                </span>
-                              ) : validFees.length > 0 ? (
-                                <span className="text-sm text-amber-800">
-                                  {displayFees.map((fee, idx) => {
-                                    const brandName = fee.cardBrand === 'VI' ? 'Visa' :
-                                                     fee.cardBrand === 'MC' ? 'MC' :
-                                                     fee.cardBrand === 'AX' ? 'Amex' : fee.cardBrand;
-                                    const pct = fee.ccSurcharge > 0 ? calculatePercentage(fee.ccSurcharge) : '0';
-                                    return (
-                                      <span key={fee.cardBrand}>
-                                        {idx > 0 && <span className="mx-1 text-amber-400">|</span>}
-                                        <span className="text-amber-700">{brandName}</span>
-                                        <span className="font-mono font-semibold ml-1">{pct}%</span>
-                                      </span>
-                                    );
-                                  })}
-                                </span>
-                              ) : (
-                                <span className="text-sm text-emerald-700">No surcharge</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {ccFeesError && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                      <div className="flex items-center gap-2 text-sm text-slate-500">
-                        <AlertCircle className="w-4 h-4" />
-                        <span>Unable to load card surcharges: {ccFeesError}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {!isLoadingCCFees && !ccFeesError && ccFees.length === 0 && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                      <div className="flex items-center gap-2 text-sm text-slate-500">
-                        <Info className="w-4 h-4" />
-                        <span>Card surcharges not available for this booking</span>
-                      </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
               )}
 
-              {/* Jetstar Agency Payment Form */}
+              {/* Agency Payment Form */}
               {selectedMethod === 'AGT' && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -905,11 +660,9 @@ export function PaymentPage() {
                     Jetstar Agency Settlement
                   </h3>
 
-                  {/* Settlement Party Selection */}
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-2">Settlement Account</label>
                     <div className="space-y-3">
-                      {/* Seller Option - Always available */}
                       <label
                         className={`flex items-center gap-3 p-4 border-2 rounded-xl transition-all ${
                           isBOBBooking ? 'cursor-pointer' : 'cursor-default'
@@ -941,7 +694,6 @@ export function PaymentPage() {
                         </div>
                       </label>
 
-                      {/* Distributor Option - Only for BOB bookings */}
                       {isBOBBooking && distributorInfo && (
                         <label
                           className={`flex items-center gap-3 p-4 border-2 rounded-xl cursor-pointer transition-all ${
@@ -979,20 +731,7 @@ export function PaymentPage() {
                         <p className="font-semibold text-blue-900">Agency Account Settlement</p>
                         <p className="text-sm text-blue-700">
                           Payment will be charged to {agencyForm.selectedParticipant === 'seller' ? 'Seller' : 'Distributor'}'s
-                          agency account ({agencyForm.selectedParticipant === 'seller' ? sellerInfo?.orgName : distributorInfo?.orgName}).
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <div className="flex gap-3">
-                      <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-semibold text-amber-900">Account Configuration Required</p>
-                        <p className="text-sm text-amber-700">
-                          This payment method is subject to your agency account configuration with Jetstar.
-                          Ensure your IATA number and settlement account are properly configured before processing.
+                          agency account.
                         </p>
                       </div>
                     </div>
@@ -1000,7 +739,7 @@ export function PaymentPage() {
                 </div>
               )}
 
-              {/* BSP/IFG Payment Form */}
+              {/* BSP Payment Form */}
               {selectedMethod === 'IFG' && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -1008,7 +747,6 @@ export function PaymentPage() {
                     BSP Payment Details
                   </h3>
 
-                  {/* Settlement Info - CA payment uses Seller from Distribution Chain */}
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-semibold text-slate-700">Settlement Account</span>
@@ -1024,20 +762,7 @@ export function PaymentPage() {
                       <div>
                         <p className="font-semibold text-purple-900">BSP Settlement (Cash Agency)</p>
                         <p className="text-sm text-purple-700">
-                          Payment will be processed through IATA BSP settlement. Settlement is automatically linked to the Seller's account from the distribution chain.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <div className="flex gap-3">
-                      <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-semibold text-amber-900">Account Configuration Required</p>
-                        <p className="text-sm text-amber-700">
-                          This payment method is subject to your BSP/IFG account configuration with Jetstar.
-                          Ensure your seller account is properly configured with valid settlement details before processing.
+                          Payment will be processed through IATA BSP settlement.
                         </p>
                       </div>
                     </div>
@@ -1063,37 +788,39 @@ export function PaymentPage() {
           {/* Order Summary Sidebar */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sticky top-24">
-              <h3 className="text-lg font-bold text-slate-900 mb-4">Booking Summary</h3>
+              <h3 className="text-lg font-bold text-slate-900 mb-4">Payment Summary</h3>
 
-              {/* Booking Reference */}
               <div className="bg-slate-50 rounded-xl p-4 mb-4">
                 <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Booking Reference</p>
-                <p className="text-xl font-bold text-slate-900 font-mono">{pnr || 'Pending'}</p>
+                <p className="text-xl font-bold text-slate-900 font-mono">{pnr || 'N/A'}</p>
               </div>
 
-              {/* Order Details */}
               <div className="space-y-3 mb-6">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-600">Order ID</span>
-                  <span className="font-mono text-slate-900">{orderId?.slice(0, 20)}...</span>
+                  <span className="font-mono text-slate-900">{orderId?.slice(0, 16)}...</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-600">Status</span>
-                  <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">
-                    Awaiting Payment
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                    isAddMode
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {isAddMode ? 'Paid - Adding Extra' : 'Awaiting Payment'}
                   </span>
                 </div>
               </div>
 
-              {/* Total */}
               <div className="border-t border-slate-200 pt-4">
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-600">Total Due</span>
-                  <span className="text-2xl font-bold text-orange-600">{formatCurrency(totalAmount, currency)}</span>
+                  <span className="text-slate-600">{isAddMode ? 'Amount to Add' : 'Total Due'}</span>
+                  <span className="text-2xl font-bold text-orange-600">
+                    {totalAmount > 0 ? formatCurrency(totalAmount, currency) : `${currency} 0.00`}
+                  </span>
                 </div>
               </div>
 
-              {/* Pay Button */}
               <button
                 onClick={handleSubmit}
                 disabled={!canSubmit() || isProcessing}
@@ -1107,12 +834,11 @@ export function PaymentPage() {
                 ) : (
                   <>
                     <Lock className="w-5 h-5" />
-                    Pay {formatCurrency(totalAmount, currency)}
+                    {isAddMode ? 'Add Payment' : 'Pay'} {totalAmount > 0 ? formatCurrency(totalAmount, currency) : ''}
                   </>
                 )}
               </button>
 
-              {/* Security Badge */}
               <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-500">
                 <Shield className="w-4 h-4" />
                 <span>Secure Payment Gateway</span>
@@ -1125,4 +851,4 @@ export function PaymentPage() {
   );
 }
 
-export default PaymentPage;
+export default ServicePaymentPage;
