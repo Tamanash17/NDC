@@ -21,6 +21,17 @@ import { xmlTransactionLogger } from "../utils/xml-logger.js";
 
 const router = Router();
 
+// Version endpoint (no auth required) - to verify deployment
+router.get("/version", (req: any, res: any) => {
+  res.json({
+    version: "1.0.0",
+    buildDate: "2026-01-15T00:50:00Z",
+    commit: "d0fc747",
+    feature: "requestXml-in-error-responses",
+    message: "This deployment includes requestXml in ALL error responses (no more <request not captured>)"
+  });
+});
+
 // Middleware to check auth + extract environment
 const requireAuth = (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;
