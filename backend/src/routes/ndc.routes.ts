@@ -168,9 +168,9 @@ function handleNDCRoute(operation: string, endpoint: string) {
 
 // AirShopping - accepts JSON and builds XML
 router.post("/air-shopping", async (req: any, res: any) => {
-  try {
-    let xmlRequest: string;
+  let xmlRequest: string | undefined;
 
+  try {
     // If body has xml property, use it directly
     if (req.body.xml) {
       xmlRequest = req.body.xml;
@@ -304,6 +304,7 @@ router.post("/air-shopping", async (req: any, res: any) => {
       message: errorMessage,
       status: statusCode,
       details: errorDetails,
+      requestXml: xmlRequest,  // CRITICAL: Include request XML even when error happens
       responseXml: typeof error.response?.data === 'string' ? error.response.data : undefined,
     });
   }
