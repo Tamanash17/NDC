@@ -21,6 +21,17 @@ import { xmlTransactionLogger } from "../utils/xml-logger.js";
 
 const router = Router();
 
+// Version endpoint (no auth required) - to verify deployment
+router.get("/version", (req: any, res: any) => {
+  res.json({
+    version: "1.1.0",
+    buildDate: "2026-01-16T06:20:00Z",
+    commit: "76ea984",
+    feature: "multiple-payments-warnings",
+    message: "Multiple payments display, CC fee breakdown, order warnings (underpaid/overpaid)"
+  });
+});
+
 // Middleware to check auth + extract environment
 const requireAuth = (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;
@@ -168,9 +179,9 @@ function handleNDCRoute(operation: string, endpoint: string) {
 
 // AirShopping - accepts JSON and builds XML
 router.post("/air-shopping", async (req: any, res: any) => {
-  try {
-    let xmlRequest: string;
+  let xmlRequest: string | undefined;
 
+  try {
     // If body has xml property, use it directly
     if (req.body.xml) {
       xmlRequest = req.body.xml;
@@ -205,6 +216,44 @@ router.post("/air-shopping", async (req: any, res: any) => {
     }
     // Show all segment IDs
     console.log("[NDC] All segment IDs:", parsed.dataLists?.paxSegmentList?.map(s => s.paxSegmentId));
+
+    // CRITICAL: Check if parsing found errors in the NDC response
+    if (!parsed.success && parsed.errors && parsed.errors.length > 0) {
+      console.error("[NDC] AirShopping response contained errors:", parsed.errors);
+
+      // Build descriptive error message with search context
+      const searchParams = typeof req.body === 'object' && !req.body.xml ? req.body : {};
+      const origin = searchParams.origin || 'Unknown';
+      const destination = searchParams.destination || 'Unknown';
+      const departureDate = searchParams.departureDate || 'Unknown';
+      const returnDate = searchParams.returnDate;
+      const passengers = searchParams.passengers || {};
+      const totalPax = (passengers.adults || 0) + (passengers.children || 0) + (passengers.infants || 0);
+
+      let contextMessage = `No flights available for ${origin} to ${destination} on ${departureDate}`;
+      if (returnDate) {
+        contextMessage += `, returning ${returnDate}`;
+      }
+      if (totalPax > 0) {
+        contextMessage += ` (${totalPax} passenger${totalPax > 1 ? 's' : ''})`;
+      }
+      contextMessage += '.';
+
+      // Format NDC error details
+      const ndcErrorDetails = parsed.errors.map(e => `${e.code}: ${e.message}`).join(' | ');
+      const fullErrorMessage = `${contextMessage}\n\nError Details:\n${ndcErrorDetails}`;
+
+      // Return error response with parsed NDC errors
+      return res.status(400).json({
+        success: false,
+        error: fullErrorMessage,
+        parsed: {
+          errors: parsed.errors
+        },
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+      });
+    }
 
     res.json({
       success: true,
@@ -266,6 +315,7 @@ router.post("/air-shopping", async (req: any, res: any) => {
       message: errorMessage,
       status: statusCode,
       details: errorDetails,
+      requestXml: xmlRequest,  // CRITICAL: Include request XML even when error happens
       responseXml: typeof error.response?.data === 'string' ? error.response.data : undefined,
     });
   }
@@ -711,9 +761,9 @@ router.post("/seat-availability", async (req: any, res: any) => {
 });
 // OrderCreate - accepts JSON and builds XML
 router.post("/order-create", async (req: any, res: any) => {
-  try {
-    let xmlRequest: string;
+  let xmlRequest: string | undefined;
 
+  try {
     // If body has xml property, use it directly
     if (req.body.xml) {
       xmlRequest = req.body.xml;
@@ -782,15 +832,105 @@ router.post("/order-create", async (req: any, res: any) => {
       error: errorMessage,
       message: errorMessage,
       status: statusCode,
-      requestXml: error.config?.data,
+      requestXml: xmlRequest,  // FIXED: Use xmlRequest variable instead of error.config?.data
       responseXml: typeof error.response?.data === 'string' ? error.response.data : undefined,
     });
   }
 });
-router.post(
-  "/order-retrieve",
-  handleNDCRoute("OrderRetrieve", config.ndc.endpoints.orderRetrieve)
-);
+// OrderRetrieve - Custom handler to build XML from JSON request
+router.post("/order-retrieve", async (req: any, res: any) => {
+  let xmlRequest: string | undefined;
+
+  try {
+    // Import builder (assuming it exists)
+    const { buildOrderRetrieveXml } = await import("../builders/order-retrieve.builder.js");
+
+    // If body has xml property, use it directly
+    if (req.body.xml) {
+      xmlRequest = req.body.xml;
+    } else if (typeof req.body === "string") {
+      xmlRequest = req.body;
+    } else if (req.body.orderId) {
+      // Build XML from JSON payload (orderId, ownerCode)
+      console.log("[NDC] OrderRetrieve building XML from JSON:", req.body);
+      xmlRequest = buildOrderRetrieveXml(req.body);
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required field: orderId",
+      });
+    }
+
+    console.log("[NDC] OrderRetrieve XML Request:\n", xmlRequest);
+
+    const xmlResponse = await callNDC(
+      "OrderRetrieve",
+      config.ndc.endpoints.orderRetrieve,
+      xmlRequest,
+      req.token,
+      req.subscriptionKey,
+      req.ndcEnvironment
+    );
+
+    // Parse XML response (assuming parser exists)
+    try {
+      const { orderParser } = await import("../parsers/order.parser.js");
+      const parsed = orderParser.parse(xmlResponse);
+
+      // Check if parsing found errors in the response
+      if (!parsed.success) {
+        console.log("[NDC] OrderRetrieve returned errors:", parsed.errors);
+        return res.status(400).json({
+          success: false,
+          errors: parsed.errors,
+          error: parsed.errors?.[0]?.message || 'Order retrieval failed',
+          requestXml: xmlRequest,
+          responseXml: xmlResponse,
+        });
+      }
+
+      console.log("[NDC] OrderRetrieve parsed successfully");
+      if (parsed.warnings?.length) {
+        console.log("[NDC] OrderRetrieve warnings:", parsed.warnings);
+      }
+
+      res.json({
+        success: true,
+        data: {
+          ...parsed.order,
+          warnings: parsed.warnings,  // Include warnings in response
+        },
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+      });
+    } catch (parseError) {
+      console.warn("[NDC] OrderRetrieve: Parser not available or failed, returning raw XML");
+      // If parser fails, return raw XML
+      res.json({
+        success: true,
+        data: { xml: xmlResponse },
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+      });
+    }
+  } catch (error: any) {
+    console.error("[NDC] OrderRetrieve Error:", error.message);
+    console.error("[NDC] OrderRetrieve Error Response:", error.response?.data);
+
+    const statusCode = error.response?.status || 500;
+    const errorMessage = error.response?.headers?.['error-msg-0']
+      || error.response?.data?.message
+      || error.message
+      || 'Order retrieval failed';
+
+    res.status(statusCode).json({
+      success: false,
+      error: errorMessage,
+      requestXml: xmlRequest,
+      responseXml: typeof error.response?.data === 'string' ? error.response.data : undefined,
+    });
+  }
+});
 router.post(
   "/order-reshop",
   handleNDCRoute("OrderReshop", config.ndc.endpoints.orderReshop)
@@ -932,16 +1072,64 @@ router.post("/process-payment", async (req: any, res: any) => {
       });
     }
 
+    // Check for PaymentStatusCode - FAILED means payment was declined
+    const paymentStatusMatch = xmlResponse.match(/<PaymentStatusCode[^>]*>([^<]+)<\/PaymentStatusCode>/i);
+    if (paymentStatusMatch && paymentStatusMatch[1].toUpperCase() === 'FAILED') {
+      console.log("[NDC] Payment status FAILED detected");
+
+      // Extract warning messages for more context
+      const warningMessages: string[] = [];
+      const warningRegex = /<Warning[^>]*>[\s\S]*?<DescText[^>]*>([^<]+)<\/DescText>[\s\S]*?<\/Warning>/gi;
+      let warningMatch;
+      while ((warningMatch = warningRegex.exec(xmlResponse)) !== null) {
+        warningMessages.push(warningMatch[1].trim());
+      }
+
+      const errorMessage = warningMessages.length > 0
+        ? warningMessages.join('; ')
+        : 'Payment declined';
+
+      return res.status(400).json({
+        success: false,
+        error: errorMessage,
+        paymentStatus: 'FAILED',
+        warnings: warningMessages,
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+      });
+    }
+
+    // Check for warnings that indicate payment issues (even without explicit FAILED status)
+    const warningDeclinedMatch = xmlResponse.match(/<Warning[^>]*>[\s\S]*?<DescText[^>]*>(Payment declined|Order is underpaid)[^<]*<\/DescText>/i);
+    if (warningDeclinedMatch) {
+      console.log("[NDC] Payment warning detected:", warningDeclinedMatch[1]);
+      return res.status(400).json({
+        success: false,
+        error: warningDeclinedMatch[1].trim(),
+        paymentStatus: 'FAILED',
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+      });
+    }
+
     // Parse success indicators
     const orderIdMatch = xmlResponse.match(/<OrderID[^>]*>([^<]+)<\/OrderID>/i);
     const pnrMatch = xmlResponse.match(/<AirlineOrderID[^>]*>([^<]+)<\/AirlineOrderID>/i);
+
+    // Verify payment actually succeeded - look for successful payment status
+    const paymentStatus = paymentStatusMatch ? paymentStatusMatch[1].toUpperCase() : 'UNKNOWN';
+    const isPaymentSuccess = paymentStatus === 'COMPLETED' || paymentStatus === 'CONFIRMED' || paymentStatus === 'SUCCESS';
+
+    // If we got here without errors/warnings but payment status is unknown, treat as success
+    // (some responses may not include PaymentStatusCode explicitly)
 
     res.json({
       success: true,
       data: {
         orderId: orderIdMatch ? orderIdMatch[1] : orderId,
         pnr: pnrMatch ? pnrMatch[1] : null,
-        status: 'PAID',
+        status: isPaymentSuccess ? 'PAID' : 'PENDING',
+        paymentStatus: paymentStatus,
       },
       requestXml: xmlRequest,
       responseXml: xmlResponse,
