@@ -565,17 +565,26 @@ export function PassengersStep() {
       });
 
     } catch (err: any) {
-      const errorMessage = err.response?.data?.message || err.message || 'Booking failed';
+      console.error('[OrderCreate] Error caught:', err);
+      console.error('[OrderCreate] Error response:', err.response?.data);
+
+      const errorMessage = err.response?.data?.error
+        || err.response?.data?.message
+        || err.message
+        || 'Booking failed';
       const errorDuration = Date.now() - startTime;
-      const errorResponseXml = err.response?.data?.xml || `<error>${errorMessage}</error>`;
+
+      // Get XML from response data (backend returns requestXml and responseXml)
+      const requestXml = err.response?.data?.requestXml || '';
+      const responseXml = err.response?.data?.responseXml || err.response?.data?.xml || `<error>${errorMessage}</error>`;
 
       setBookingError(errorMessage);
 
       // Log error XML capture
       addCapture({
         operation: 'OrderCreate',
-        request: '',
-        response: errorResponseXml,
+        request: requestXml,
+        response: responseXml,
         duration: errorDuration,
         status: 'error',
         userAction: 'OrderCreate failed',
