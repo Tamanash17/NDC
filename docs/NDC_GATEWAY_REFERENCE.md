@@ -28,6 +28,10 @@ This document serves as a knowledge base for the Navitaire NDC Gateway (IATA NDC
 18. [OfferPrice Response Structure](#offerprice-response-structure)
 19. [RBD Codes (Booking Classes)](#rbd-codes-booking-classes)
 20. [Cabin Type Codes](#cabin-type-codes)
+21. [OrderCreate Request Structure](#ordercreate-request-structure)
+22. [OrderViewRS Response Structure](#orderviewrs-response-structure)
+23. [Delivery Status Codes](#delivery-status-codes)
+24. [3D Secure Payment (3DS v2)](#3d-secure-payment-3ds-v2)
 
 ---
 
@@ -1036,6 +1040,299 @@ Only the `CabinTypeCode` of the **first PaxSegment** is considered by NDC Gatewa
 
 ---
 
+## OrderCreate Request Structure
+
+OrderCreate converts a priced offer into a booking with payment.
+
+### Distribution Chain Rules (OrderCreate Specific)
+
+**Important**: For OrderCreate, the distribution chain has special requirements:
+
+| OrgRole | Ordinal | Notes |
+|---------|---------|-------|
+| `Seller` | **Must be 1** | Error if Seller is not Ordinal 1 |
+| `Distributor` | 2+ | For intermediaries (BOB, etc.) |
+| `Carrier` | Next after Distributor | OrgID = carrier code |
+
+### SelectedPricedOffer Structure
+
+```xml
+<CreateOrder>
+  <AcceptSelectedQuotedOfferList>
+    <SelectedPricedOffer>
+      <OfferRefID>OFFER-123</OfferRefID>  <!-- From OfferPriceRS -->
+      <OwnerCode>JQ</OwnerCode>
+      <SelectedOfferItem>
+        <OfferItemRefID>ITEM-001</OfferItemRefID>
+        <PaxRefID>PAX1</PaxRefID>
+      </SelectedOfferItem>
+      <SelectedOfferItem>
+        <OfferItemRefID>ITEM-002</OfferItemRefID>
+        <PaxRefID>PAX2</PaxRefID>
+      </SelectedOfferItem>
+    </SelectedPricedOffer>
+  </AcceptSelectedQuotedOfferList>
+</CreateOrder>
+```
+
+**Key Rule**: All OfferItems from OfferPriceRS must be included - NDC Gateway uses opt-in approach.
+
+### PaxList Fields (OrderCreate)
+
+OrderCreate requires more passenger information than other requests:
+
+| Field | Required | Max Length | Notes |
+|-------|----------|------------|-------|
+| `Individual/GivenName` | **Yes** | 32 chars | Up to 5 given names, space-delimited |
+| `Individual/Surname` | **Yes** | 32 chars | Last name |
+| `Individual/Birthdate` | Optional | - | Format: YYYY-MM-DD |
+| `Individual/GenderCode` | Optional | - | M/F, defaults to M |
+| `Individual/MiddleName` | Optional | 32 chars | Up to 3 middle names |
+| `Individual/TitleName` | Optional | 6 chars | Mr., Mrs., Dr., etc. |
+| `Individual/SuffixName` | Optional | 6 chars | Jr., Sr., III, etc. |
+| `PaxID` | **Yes** | - | Must match AirShopping ID |
+| `PTC` | **Yes** | - | ADT, CHD, INF |
+| `PaxRefID` | Conditional | - | Required for INF (references associated ADT) |
+| `ContactInfoRefID` | Optional | - | At least one passenger needs contact |
+
+### IdentityDoc Fields
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `IdentityDocID` | **Yes** | Document number (passport, etc.) |
+| `IdentityDocTypeCode` | **Yes** | PT (Passport), NI (National ID), DL (Driver License) |
+| `ExpiryDate` | Optional | Format: YYYY-MM-DD |
+| `IssuingCountryCode` | Optional | ISO country code |
+| `CitizenshipCountryCode` | Optional | ISO country code |
+
+### LoyaltyProgramAccount
+
+```xml
+<LoyaltyProgramAccount>
+  <AccountNumber>ABC123456</AccountNumber>
+  <LoyaltyProgram>
+    <Carrier>
+      <AirlineDesigCode>QF</AirlineDesigCode>
+    </Carrier>
+  </LoyaltyProgram>
+</LoyaltyProgramAccount>
+```
+
+**Note**: Loyalty for INF passengers is not supported and will be ignored.
+
+### Payment Types in OrderCreate
+
+#### Credit Card (CC)
+
+```xml
+<PaymentFunctions>
+  <PaymentProcessingDetails>
+    <Amount CurCode="AUD">299.00</Amount>
+    <PaymentMethod>
+      <PaymentCard>
+        <CardBrandCode>VI</CardBrandCode>
+        <CardNumber>4111111111111111</CardNumber>
+        <CardSecurityCode>123</CardSecurityCode>  <!-- CVV -->
+        <ExpirationDate>1228</ExpirationDate>  <!-- MMYY format -->
+        <CardholderAddress>
+          <CityName>Sydney</CityName>
+          <CountryCode>AU</CountryCode>
+          <PostalCode>2000</PostalCode>
+          <StreetText>123 Main St</StreetText>
+        </CardholderAddress>
+      </PaymentCard>
+    </PaymentMethod>
+    <Payer>
+      <PayerName>
+        <IndividualName>
+          <GivenName>JOHN</GivenName>
+          <Surname>SMITH</Surname>
+        </IndividualName>
+      </PayerName>
+    </Payer>
+  </PaymentProcessingDetails>
+</PaymentFunctions>
+```
+
+#### Agency Payment (AGT) - Hold Booking
+
+```xml
+<PaymentFunctions>
+  <PaymentProcessingDetails>
+    <Amount CurCode="AUD">299.00</Amount>
+    <PaymentMethod>
+      <SettlementPlan>
+        <PaymentTypeCode>AGT</PaymentTypeCode>
+        <IATA_Number>1</IATA_Number>  <!-- Ordinal of agency in chain -->
+      </SettlementPlan>
+    </PaymentMethod>
+  </PaymentProcessingDetails>
+</PaymentFunctions>
+```
+
+#### Credit File Payment (OT)
+
+```xml
+<PaymentFunctions>
+  <PaymentProcessingDetails>
+    <Amount CurCode="AUD">299.00</Amount>
+    <PaymentMethod>
+      <OfflinePayment>
+        <PaymentTypeCode>OT</PaymentTypeCode>
+        <Remark>
+          <RemarkText>CREDITFILE123</RemarkText>  <!-- Credit file code -->
+        </Remark>
+      </OfflinePayment>
+    </PaymentMethod>
+  </PaymentProcessingDetails>
+</PaymentFunctions>
+```
+
+---
+
+## OrderViewRS Response Structure
+
+OrderViewRS is returned for OrderCreate, OrderRetrieve, and OrderChange requests.
+
+### Order Element
+
+| Field | Description |
+|-------|-------------|
+| `OrderID` | PNR/Record Locator |
+| `OwnerCode` | Carrier code |
+| `StatusCode` | Order status (see Order Status Codes) |
+| `TotalPrice/TotalAmount` | Total order amount (excludes payment fee) |
+
+### OrderItem Types
+
+There are three types of OrderItems, distinguished by ID suffix:
+
+| Type | OrderItemID Suffix | Description |
+|------|-------------------|-------------|
+| Flight | `FLIGHT` | Flight services per passenger per journey |
+| Seat | `SEAT` | Seat assignments per passenger per segment |
+| Ancillary | ServiceCode | SSR services (bags, meals, etc.) |
+
+### Flight OrderItem Fields
+
+| Field | Description |
+|-------|-------------|
+| `CancelRestrictions/AllowedModificationInd` | Boolean - can cancel? |
+| `CancelRestrictions/DescText` | e.g., "Cancellation is allowed with no fee" |
+| `ChangeRestrictions/AllowedModificationInd` | Boolean - can change? |
+| `ChangeRestrictions/DescText` | e.g., "Booking changes not allowed" |
+| `PaymentTimeLimitDateTime` | UTC datetime for payment deadline |
+| `Price/BaseAmount` | Base fare (per passenger × count) |
+| `Price/TaxSummary/TotalTaxAmount` | Total taxes |
+| `Price/TotalAmount` | Total including all components |
+| `FareDetail` | Detailed fare breakdown |
+| `Service/DeliveryStatusCode` | CONFIRMED or READY TO PROCEED |
+| `Service/StatusCode` | IATA ATSB status code |
+
+### FareDetail Fields (OrderViewRS)
+
+| Field | Description |
+|-------|-------------|
+| `FareComponent/CabinType/CabinTypeCode` | Cabin code (e.g., 5 = Economy) |
+| `FareComponent/FareBasisCode` | Fare basis for pricing |
+| `FareComponent/RBD/RBD_Code` | Booking class |
+| `FareComponent/PaxSegmentRefID` | Associated segment |
+| `FareComponent/PriceClassRefID` | Associated price class |
+| `Price/BaseAmount` | Unit price per passenger |
+| `Price/Fee` | Fee breakdown |
+| `Price/Surcharge` | Surcharge breakdown |
+| `Price/TaxSummary/Tax` | Tax breakdown |
+
+### Seat OrderItem Fields
+
+| Field | Description |
+|-------|-------------|
+| `Service/OrderServiceAssociation/SeatOnLeg/Seat/RowNumber` | Seat row |
+| `Service/OrderServiceAssociation/SeatOnLeg/Seat/ColumnID` | Seat column (A, B, C...) |
+| `Service/OrderServiceAssociation/SeatOnLeg/SeatAssignmentAssociations` | Segment/leg reference |
+
+### Ancillary OrderItem Fields
+
+| Field | Description |
+|-------|-------------|
+| `OrderItemID` | Suffixed with SSR service code |
+| `Price/BaseAmount` | SSR Fee minus APO discounts |
+| `Service/OrderServiceAssociation/ServiceDefinitionRef` | Service reference |
+| `Service/OrderServiceAssociation/OrderFlightAssociations` | Segment/journey/leg reference |
+
+### BookingRef in Response
+
+All services include booking references:
+
+```xml
+<BookingRef>
+  <BookingEntity>
+    <Carrier>
+      <AirlineDesigCode>JQ</AirlineDesigCode>
+    </Carrier>
+  </BookingEntity>
+  <BookingID>ABC123</BookingID>
+  <BookingRefTypeCode>6</BookingRefTypeCode>  <!-- Passenger confirmation number -->
+</BookingRef>
+```
+
+---
+
+## Delivery Status Codes
+
+Returned in `Service/DeliveryStatusCode`:
+
+| Code | Description |
+|------|-------------|
+| `CONFIRMED` | Order not yet fully paid (hold booking) |
+| `READY TO PROCEED` | Order has been fully paid or overpaid |
+
+---
+
+## 3D Secure Payment (3DS v2)
+
+For 3D Secure authenticated payments, include SecurePaymentVersion2:
+
+```xml
+<PaymentCard>
+  <CardBrandCode>VI</CardBrandCode>
+  <CardNumber>4111111111111111</CardNumber>
+  <!-- ... other card fields ... -->
+  <SecurePaymentVersion2>
+    <AuthenticationTokenValue>AABBCCDDee123456</AuthenticationTokenValue>
+    <DirectoryServerTrxID>f38e1234-5678-90ab-cdef</DirectoryServerTrxID>
+    <ElectronicCommerceInd>05</ElectronicCommerceInd>
+    <TrxStatusText>Y</TrxStatusText>
+    <PayerAuthenticationExemptionCode>LowValueExemption</PayerAuthenticationExemptionCode>
+  </SecurePaymentVersion2>
+  <SecureProgram>
+    <EnrollmentStatusText>CardEnrolled</EnrollmentStatusText>
+  </SecureProgram>
+</PaymentCard>
+```
+
+### 3DS Fields
+
+| Field | Description |
+|-------|-------------|
+| `AuthenticationTokenValue` | Authentication value from 3DS |
+| `DirectoryServerTrxID` | DS transaction ID |
+| `ElectronicCommerceInd` | ECI value |
+| `TrxStatusText` | Authentication outcome (Y, A, N, U, etc.) |
+| `PayerAuthenticationExemptionCode` | Exemption if applicable |
+| `EnrollmentStatusText` | CardEnrolled, CardNotEnrolled, Unknown, etc. |
+
+### ECI Values
+
+| Value | Description |
+|-------|-------------|
+| `05` | Visa - Fully authenticated |
+| `06` | Visa - Attempted authentication |
+| `02` | MC/Amex - Fully authenticated |
+| `01` | MC/Amex - Attempted authentication |
+
+---
+
 ## Quick Reference: Request Types
 
 | Request | Root Element | Purpose |
@@ -1066,6 +1363,7 @@ Related builder files in this project:
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-15 | 1.2 | Added OrderCreate, OrderViewRS, 3DS, Delivery Status sections |
 | 2026-01-15 | 1.1 | Added OfferPrice, FareComponent, Baggage, A La Carte, RBD codes sections |
 | 2026-01-15 | 1.0 | Initial knowledge base created |
 
