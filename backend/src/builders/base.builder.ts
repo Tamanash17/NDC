@@ -54,9 +54,8 @@ export function formatDateTime(date: Date | string): string {
 export function buildPointOfSale(countryCode?: string, cityCode?: string): string {
   const country = countryCode || config.distributionChain.countryCode;
   const city = cityCode || config.distributionChain.cityCode;
-  
-  return `
-  <PointOfSale>
+
+  return `<PointOfSale>
     <Location>
       <CountryCode>${escapeXml(country)}</CountryCode>
       <CityCode>${escapeXml(city)}</CityCode>
@@ -76,8 +75,7 @@ export function buildParty(chain?: DistributionChain): string {
   const orgId = chain?.links?.[0]?.orgId || config.distributionChain.orgCode;
   const orgName = chain?.links?.[0]?.orgName || config.distributionChain.orgName || orgId;
 
-  let xml = `
-  <Party>
+  return `<Party>
     <Sender>
       <TravelAgency>
         <AgencyID>${escapeXml(orgId)}</AgencyID>
@@ -90,8 +88,6 @@ export function buildParty(chain?: DistributionChain): string {
       </Airline>
     </Recipient>
   </Party>`;
-
-  return xml;
 }
 
 /**
