@@ -5,7 +5,7 @@
 
 import { cn } from '@/lib/cn';
 import {
-  User, Users, Baby, Mail, Phone, CreditCard, Award, Passport,
+  User, Users, Baby, Mail, Phone, CreditCard, Award, FileText,
   Armchair, Luggage, Utensils, Shield, Star, Calendar
 } from 'lucide-react';
 
@@ -317,7 +317,7 @@ function IdentityDocSection({ doc }: IdentityDocSectionProps) {
   return (
     <div>
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
-        <Passport className="w-4 h-4" />
+        <FileText className="w-4 h-4" />
         Travel Document
       </p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
