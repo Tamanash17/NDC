@@ -8,6 +8,19 @@ import path from "path";
 
 const router = Router();
 
+// Deployment diagnostic endpoint (NO auth required) - to verify Railway deployment
+router.get("/deploy-info", (_req, res) => {
+  res.json({
+    deployed: true,
+    timestamp: new Date().toISOString(),
+    commit: "e8849da",
+    feature: "requestXml-in-error-responses",
+    message: "This version includes requestXml in ALL AirShopping error responses",
+    testUrl: "/api/ndc/air-shopping",
+    expectedBehavior: "Error responses should include requestXml field (not <request not captured>)"
+  });
+});
+
 // Debug logging endpoint with file writing
 router.post("/debug/log", async (req: any, res: any) => {
   try {
