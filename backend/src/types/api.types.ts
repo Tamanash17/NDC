@@ -189,6 +189,7 @@ export interface PassiveSegment {
   operatingCarrier: string;
   marketingCarrier: string;
   journeyId: string;
+  rbd?: string; // Booking class code (e.g., "O", "Y", "W")
 }
 
 export interface OrderCreateResponseData {

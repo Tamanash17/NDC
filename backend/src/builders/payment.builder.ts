@@ -175,8 +175,7 @@ function buildPayer(request: PaymentRequest): string {
               <GivenName>${escapeXml(firstName)}</GivenName>
               <Surname>${escapeXml(lastName)}</Surname>
             </IndividualName>
-          </PayerName>${emailXml}
-        </Payer>`;
+          </PayerName>${emailXml}</Payer>`;
 
   return payerXml;
 }

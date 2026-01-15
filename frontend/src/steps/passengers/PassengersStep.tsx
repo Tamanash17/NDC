@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWorkflow } from '@/core/engines';
-import { useFlightSelectionStore } from '@/hooks/useFlightSelection';
+import { useFlightSelectionStore, type FlightSelectionItem } from '@/hooks/useFlightSelection';
 import { useXmlViewer } from '@/core/context/XmlViewerContext';
 import { useDistributionContext } from '@/core/context/SessionStore';
 import { orderCreate } from '@/lib/ndc-api';
 import { Card, Input, Select, Alert } from '@/components/ui';
-import { User, Mail, Phone, ArrowLeft, ChevronRight, Wand2, CreditCard, Plane, Loader2, CheckCircle, Wallet, Clock, Calendar, AlertTriangle, Search } from 'lucide-react';
+import { User, Mail, Phone, ArrowLeft, ChevronRight, Wand2, CreditCard, Plane, Loader2, CheckCircle, Wallet, Clock, Calendar, AlertTriangle, Search, FileText } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
+import type { FlightSegment } from '@/components/flights';
 
 // Test passenger data for auto-populate feature
 // This provides sample data for testing the booking flow quickly
@@ -219,11 +220,102 @@ export function PassengersStep() {
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [autoPopulate, setAutoPopulate] = useState(false);
+  const [includePassiveSegments, setIncludePassiveSegments] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [bookingResult, setBookingResult] = useState<any>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
 
   const { addCapture } = useXmlViewer();
+
+  /**
+   * Build passive segments that are DIFFERENT from the sold flights but realistic
+   * Creates companion/connecting flights that make sense with the travel context
+   * Uses actual booking dates and logical routes based on the selected journey
+   */
+  const buildPassiveSegments = () => {
+    const segments: Array<{
+      segmentId: string;
+      origin: string;
+      destination: string;
+      departureDateTime: string;
+      arrivalDateTime: string;
+      flightNumber: string;
+      operatingCarrier: string;
+      marketingCarrier: string;
+      journeyId: string;
+      rbd: string; // Booking class code for the passive segment
+    }> = [];
+
+    // Common Australian domestic airports for realistic passive segments
+    const domesticHubs = ['MEL', 'SYD', 'BNE', 'PER', 'ADL', 'OOL', 'CNS', 'HBA'];
+
+    // Generate a realistic companion flight based on the sold flight context
+    const createCompanionSegment = (
+      selection: FlightSelectionItem | null,
+      direction: 'outbound' | 'inbound',
+      segmentIndex: number
+    ) => {
+      if (!selection?.journey?.segments?.[0]) return null;
+
+      const soldSegment = selection.journey.segments[0];
+      const soldDate = new Date(`${soldSegment.departureDate}T${soldSegment.departureTime}:00`);
+
+      // Find a different destination that's not in the sold route
+      const usedAirports = [soldSegment.origin, soldSegment.destination];
+      const availableHubs = domesticHubs.filter(h => !usedAirports.includes(h));
+      const companionDest = availableHubs[segmentIndex % availableHubs.length] || 'MEL';
+
+      // Create a flight on the same day, different time (earlier in the day as a "connecting" concept)
+      const companionDate = new Date(soldDate);
+      // Set departure 3-4 hours before the sold flight (realistic connection)
+      companionDate.setHours(soldDate.getHours() - 3 - segmentIndex);
+      if (companionDate.getHours() < 6) {
+        companionDate.setHours(6 + segmentIndex); // Don't go too early
+      }
+
+      // Arrival is ~1.5 hours after departure (typical domestic flight)
+      const arrivalDate = new Date(companionDate);
+      arrivalDate.setMinutes(arrivalDate.getMinutes() + 90);
+
+      // Generate realistic flight number (different from sold)
+      const flightNum = String(100 + (segmentIndex + 1) * 11 + Math.floor(Math.random() * 50));
+
+      const formatDT = (d: Date) => {
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+      };
+
+      return {
+        segmentId: `passive-${direction}-${segmentIndex + 1}`,
+        // Passive segment: from companion hub TO the sold flight's origin (feeding into the journey)
+        origin: companionDest,
+        destination: soldSegment.origin,
+        departureDateTime: formatDT(companionDate),
+        arrivalDateTime: formatDT(arrivalDate),
+        flightNumber: flightNum,
+        operatingCarrier: 'QF',
+        marketingCarrier: 'QF',
+        journeyId: `passive-journey-${direction}`,
+        rbd: 'O', // Default economy class booking code
+      };
+    };
+
+    // Add a passive segment related to outbound (a "connecting" flight feeding into it)
+    const outboundPassive = createCompanionSegment(flightStore.selection.outbound, 'outbound', 0);
+    if (outboundPassive) {
+      segments.push(outboundPassive);
+    }
+
+    // Add a passive segment for inbound if round-trip
+    if (flightStore.isRoundTrip && flightStore.selection.inbound) {
+      const inboundPassive = createCompanionSegment(flightStore.selection.inbound, 'inbound', 1);
+      if (inboundPassive) {
+        segments.push(inboundPassive);
+      }
+    }
+
+    return segments;
+  };
 
   // Auto-populate passenger details from test data
   const handleAutoPopulate = (checked: boolean) => {
@@ -437,12 +529,16 @@ export function PassengersStep() {
         })) || []
       } : undefined;
 
+      // Build passive segments if enabled (auto-synced with flight selection)
+      const passiveSegments = includePassiveSegments ? buildPassiveSegments() : undefined;
+
       // Build OrderCreate request - no payment (HOLD booking)
       const orderCreateRequest = {
         selectedOffers,
         passengers: apiPassengers,
         contact: apiContact,
         distributionChain,
+        ...(passiveSegments && passiveSegments.length > 0 && { passiveSegments }),
       };
 
       console.log('[OrderCreate] Request payload:', JSON.stringify(orderCreateRequest, null, 2));
@@ -744,6 +840,40 @@ export function PassengersStep() {
           <span className="text-sm text-amber-600 ml-auto">(For testing only)</span>
         </label>
 
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={includePassiveSegments}
+            onChange={(e) => setIncludePassiveSegments(e.target.checked)}
+            className="w-5 h-5 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+          />
+          <div className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-amber-600" />
+            <span className="font-medium text-amber-800">Include Passive Segments</span>
+          </div>
+          <span className="text-sm text-amber-600 ml-auto">(Auto-synced with selected flights)</span>
+        </label>
+
+        {/* Passive Segment Preview */}
+        {includePassiveSegments && (
+          <div className="mt-2 p-3 bg-amber-100 rounded-lg border border-amber-300">
+            <p className="text-xs font-semibold text-amber-700 mb-2 flex items-center gap-1">
+              <Plane className="w-3 h-3" />
+              Passive Segments Preview:
+            </p>
+            {buildPassiveSegments().length > 0 ? (
+              <div className="space-y-1.5">
+                {buildPassiveSegments().map((seg) => (
+                  <div key={seg.segmentId} className="text-xs text-amber-800 font-mono bg-amber-50 px-2 py-1 rounded">
+                    {seg.marketingCarrier} {seg.flightNumber}: {seg.origin} → {seg.destination} | {seg.departureDateTime.split('T')[0]} {seg.departureDateTime.split('T')[1].slice(0,5)}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-amber-600 italic">No flights selected yet</p>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* Passenger Forms */}

@@ -119,8 +119,7 @@ export function buildLongSellXml(input: LongSellRequest): string {
     return `
         <PaxJourney>
           <PaxJourneyID>fl${String(journeyIdx + 1).padStart(9, '0')}</PaxJourneyID>
-          ${segmentRefs}
-        </PaxJourney>`;
+          ${segmentRefs}</PaxJourney>`;
   }).join("");
 
   // Build PaxList with proper PaxID format (PaxID1, PaxID2, etc.)
@@ -191,25 +190,19 @@ ${headerComments}<IATA_OfferPriceRQ Version="8.000" xmlns="${JETSTAR_NAMESPACE}"
     <!-- Flight and passenger data lists -->
     <DataLists xmlns="${COMMON_TYPES_NAMESPACE}">
       <!-- Flight segment information list -->
-      <DatedMarketingSegmentList>${segmentList}
-      </DatedMarketingSegmentList>
+      <DatedMarketingSegmentList>${segmentList}</DatedMarketingSegmentList>
       <!-- Origin and destination list -->
-      <OriginDestList>${originDestList}
-      </OriginDestList>
+      <OriginDestList>${originDestList}</OriginDestList>
       <!-- Passenger journey list -->
-      <PaxJourneyList>${paxJourneyList}
-      </PaxJourneyList>
+      <PaxJourneyList>${paxJourneyList}</PaxJourneyList>
       <!-- Passenger information list -->
-      <PaxList>${paxList}
-      </PaxList>
+      <PaxList>${paxList}</PaxList>
       <!-- Shopping request passenger segment list -->
-      <ShoppingRequestPaxSegmentList>${paxSegmentList}
-      </ShoppingRequestPaxSegmentList>
+      <ShoppingRequestPaxSegmentList>${paxSegmentList}</ShoppingRequestPaxSegmentList>
     </DataLists>
     <!-- Priced offer selection -->
     <PricedOffer xmlns="${COMMON_TYPES_NAMESPACE}">
-      <AcceptOrderItemList>${acceptOrderItemList}
-      </AcceptOrderItemList>
+      <AcceptOrderItemList>${acceptOrderItemList}</AcceptOrderItemList>
     </PricedOffer>
     <!-- Payment functions for surcharge calculation -->
     <PaymentFunctions xmlns="${COMMON_TYPES_NAMESPACE}">

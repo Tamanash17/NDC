@@ -369,8 +369,10 @@ export function PaymentPage() {
     try {
       // Build base payment request
       let payment: any = {
-        amount: totalAmount,
-        currency,
+        amount: {
+          value: totalAmount,
+          currency,
+        },
       };
 
       // Build distribution chain
@@ -558,12 +560,19 @@ export function PaymentPage() {
           </div>
 
           {/* Actions */}
-          <div className="flex gap-4 justify-center">
+          <div className="flex gap-4 justify-center flex-wrap">
             <button
               onClick={() => navigate('/dashboard')}
               className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors"
             >
               Back to Dashboard
+            </button>
+            <button
+              onClick={() => navigate(`/manage?pnr=${encodeURIComponent(pnr || '')}`)}
+              className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors flex items-center gap-2"
+            >
+              <Plane className="w-4 h-4" />
+              Retrieve PNR
             </button>
             <button
               onClick={() => window.print()}

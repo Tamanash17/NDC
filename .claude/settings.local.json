@@ -133,7 +133,15 @@
       "Bash(if exist \"deploy_backend\\\\.git\" rmdir /s /q \"deploy_backend\\\\.git\")",
       "Bash(git reset:*)",
       "Bash(git config:*)",
-      "Bash(git remote:*)"
+      "Bash(git remote:*)",
+      "Bash(vercel ls:*)",
+      "Bash(git checkout:*)",
+      "Bash(git fetch:*)",
+      "Bash(git merge:*)",
+      "Bash(git revert:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(tr:*)"
     ]
   }
 }

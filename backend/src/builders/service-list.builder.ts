@@ -60,8 +60,7 @@ function buildDistributionChain(chain?: DistributionChain): string {
 
   return `
   <!-- Partner distribution chain configuration - Defines seller and optional distributor -->
-  <DistributionChain>${chainLinks}
-  </DistributionChain>`;
+  <DistributionChain>${chainLinks}</DistributionChain>`;
 }
 
 /**
@@ -91,8 +90,7 @@ function buildOffer(
 ): string {
   return `
       <Offer>
-        <OfferID>${escapeXml(offerId)}</OfferID>
-        ${buildOfferItems(offerItems)}
+        <OfferID>${escapeXml(offerId)}</OfferID>${buildOfferItems(offerItems)}
         <OwnerCode>${escapeXml(ownerCode)}</OwnerCode>
       </Offer>`;
 }
@@ -150,8 +148,7 @@ ${headerComments}<IATA_ServiceListRQ xmlns="${IATA_NAMESPACE}">${buildDistributi
   <!-- Service list query request for available ancillary services -->
   <Request>
     <ServiceListCoreRequest xmlns="${IATA_COMMON_NAMESPACE}">
-      <OfferRequest>${offersXml}
-      </OfferRequest>
+      <OfferRequest>${offersXml}</OfferRequest>
     </ServiceListCoreRequest>
   </Request>
 </IATA_ServiceListRQ>`;

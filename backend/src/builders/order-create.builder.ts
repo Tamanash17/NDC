@@ -7,7 +7,7 @@ import {
   formatDate,
   optional,
 } from "./base.builder.js";
-import type { OrderCreateRequest } from "../types/api.types.js";
+import type { OrderCreateRequest, PassiveSegment } from "../types/api.types.js";
 import type { DistributionChain, Passenger, Contact, Payment } from "../types/ndc.types.js";
 import { config } from "../config/index.js";
 
@@ -38,6 +38,7 @@ export function buildOrderCreateXml(
         paxRefIds: i.paxRefIds,
       })) || []
     ),
+    passiveSegmentsCount: input.passiveSegments?.length || 0,
   });
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -55,6 +56,7 @@ ${buildSelectedOffers(input)}
 <DataLists xmlns="${JETSTAR_NS.commonTypes}">
 ${buildContactList(input.contact)}
 ${buildPassengerList(input.passengers)}
+${input.passiveSegments && input.passiveSegments.length > 0 ? buildPassiveSegmentList(input.passiveSegments) : ""}
 </DataLists>
 ${input.payment ? buildPaymentFunctions(input.payment) : ""}
 </Request>
@@ -230,6 +232,123 @@ ${optional(payment.card.cvv, `<SeriesCode>${escapeXml(payment.card.cvv)}</Series
   }
 
   return "";
+}
+
+/**
+ * Build passive segments for manual/agency bookings
+ * Passive segments are used when flights need to be added without API validation
+ *
+ * Structure matches Postman collection - 4 separate lists:
+ * 1. DatedMarketingSegmentList - Marketing segment info
+ * 2. DatedOperatingSegmentList - Operating segment with SegmentTypeCode=2 (passive indicator)
+ * 3. PaxJourneyList - Journey associations
+ * 4. PaxSegmentList - Passenger segment associations
+ */
+function buildPassiveSegmentList(passiveSegments: PassiveSegment[]): string {
+  if (!passiveSegments || passiveSegments.length === 0) {
+    return "";
+  }
+
+  console.log('[OrderCreateBuilder] Building passive segments:', passiveSegments.length);
+
+  // Helper to format datetime for NDC
+  const formatDateTime = (dateTime: string): string => {
+    if (!dateTime) return "";
+    const date = new Date(dateTime);
+    if (isNaN(date.getTime())) {
+      console.warn(`[OrderCreateBuilder] Invalid passive segment datetime: ${dateTime}`);
+      return dateTime;
+    }
+    return date.toISOString().slice(0, 19); // Remove timezone Z for local time
+  };
+
+  // Group segments by journeyId to build PaxJourneyList
+  const journeyMap = new Map<string, PassiveSegment[]>();
+  passiveSegments.forEach(seg => {
+    const journeyId = seg.journeyId || 'passive-journey-1';
+    if (!journeyMap.has(journeyId)) {
+      journeyMap.set(journeyId, []);
+    }
+    journeyMap.get(journeyId)!.push(seg);
+  });
+
+  // 1. Build DatedMarketingSegmentList
+  let datedMarketingSegmentListXML = `<DatedMarketingSegmentList>`;
+  passiveSegments.forEach((seg) => {
+    const mktSegId = `Mkt-${seg.segmentId}`;
+    const oprSegId = `Opr-${seg.segmentId}`;
+    const marketingCarrier = seg.marketingCarrier || "QF";
+
+    datedMarketingSegmentListXML += `
+<DatedMarketingSegment>
+<Arrival>
+<AircraftScheduledDateTime>${formatDateTime(seg.arrivalDateTime)}</AircraftScheduledDateTime>
+<IATA_LocationCode>${escapeXml(seg.destination)}</IATA_LocationCode>
+</Arrival>
+<CarrierDesigCode>${escapeXml(marketingCarrier)}</CarrierDesigCode>
+<DatedMarketingSegmentId>${escapeXml(mktSegId)}</DatedMarketingSegmentId>
+<DatedOperatingSegmentRefId>${escapeXml(oprSegId)}</DatedOperatingSegmentRefId>
+<Dep>
+<AircraftScheduledDateTime>${formatDateTime(seg.departureDateTime)}</AircraftScheduledDateTime>
+<IATA_LocationCode>${escapeXml(seg.origin)}</IATA_LocationCode>
+</Dep>
+<MarketingCarrierFlightNumberText>${escapeXml(seg.flightNumber)}</MarketingCarrierFlightNumberText>
+</DatedMarketingSegment>`;
+  });
+  datedMarketingSegmentListXML += `
+</DatedMarketingSegmentList>`;
+
+  // 2. Build DatedOperatingSegmentList (SegmentTypeCode=2 marks as passive)
+  let datedOperatingSegmentListXML = `<DatedOperatingSegmentList>`;
+  passiveSegments.forEach((seg) => {
+    const oprSegId = `Opr-${seg.segmentId}`;
+    const operatingCarrier = seg.operatingCarrier || seg.marketingCarrier || "QF";
+
+    datedOperatingSegmentListXML += `
+<DatedOperatingSegment>
+<CarrierDesigCode>${escapeXml(operatingCarrier)}</CarrierDesigCode>
+<DatedOperatingSegmentId>${escapeXml(oprSegId)}</DatedOperatingSegmentId>
+<OperatingCarrierFlightNumberText>${escapeXml(seg.flightNumber)}</OperatingCarrierFlightNumberText>
+<SegmentTypeCode>2</SegmentTypeCode>
+</DatedOperatingSegment>`;
+  });
+  datedOperatingSegmentListXML += `
+</DatedOperatingSegmentList>`;
+
+  // 3. Build PaxJourneyList
+  let paxJourneyListXML = `<PaxJourneyList>`;
+  journeyMap.forEach((segments, journeyId) => {
+    paxJourneyListXML += `
+<PaxJourney>
+<PaxJourneyID>${escapeXml(journeyId)}</PaxJourneyID>`;
+    segments.forEach(seg => {
+      paxJourneyListXML += `
+<PaxSegmentRefID>${escapeXml(seg.segmentId)}</PaxSegmentRefID>`;
+    });
+    paxJourneyListXML += `
+</PaxJourney>`;
+  });
+  paxJourneyListXML += `
+</PaxJourneyList>`;
+
+  // 4. Build PaxSegmentList
+  let paxSegmentListXML = `<PaxSegmentList>`;
+  passiveSegments.forEach((seg) => {
+    const mktSegId = `Mkt-${seg.segmentId}`;
+    const rbd = seg.rbd || "O"; // Default to O class if not specified
+
+    paxSegmentListXML += `
+<PaxSegment>
+<DatedMarketingSegmentRefId>${escapeXml(mktSegId)}</DatedMarketingSegmentRefId>
+<MarketingCarrierRBD_Code>${escapeXml(rbd)}</MarketingCarrierRBD_Code>
+<PaxSegmentID>${escapeXml(seg.segmentId)}</PaxSegmentID>
+</PaxSegment>`;
+  });
+  paxSegmentListXML += `
+</PaxSegmentList>`;
+
+  // Combine all passive segment XML (matches Postman order)
+  return datedMarketingSegmentListXML + datedOperatingSegmentListXML + paxJourneyListXML + paxSegmentListXML;
 }
 
 export const orderCreateBuilder = {

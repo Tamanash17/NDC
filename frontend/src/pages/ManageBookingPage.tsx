@@ -31,11 +31,20 @@ export function ManageBookingPage() {
     console.log('[ManageBooking] Started new XML logging session for servicing');
   }, [startNewSession]);
 
-  // Update PNR when URL changes
+  // Update PNR when URL changes and auto-search if PNR provided
   useEffect(() => {
     const urlPnr = searchParams.get('pnr');
     if (urlPnr) {
       setPnr(urlPnr.toUpperCase());
+      // Auto-trigger search when PNR is provided via URL (e.g., from PaymentPage success)
+      // Use a small delay to ensure state is set
+      const autoSearch = searchParams.get('auto') !== 'false';
+      if (autoSearch && urlPnr.trim().length > 0) {
+        // Trigger search after component mounts
+        setTimeout(() => {
+          document.getElementById('pnr-search-btn')?.click();
+        }, 100);
+      }
     }
   }, [searchParams]);
 
@@ -214,6 +223,7 @@ export function ManageBookingPage() {
                 </div>
 
                 <Button
+                  id="pnr-search-btn"
                   variant="primary"
                   onClick={handleSearch}
                   isLoading={isLoading}
