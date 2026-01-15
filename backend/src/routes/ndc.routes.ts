@@ -1066,16 +1066,64 @@ router.post("/process-payment", async (req: any, res: any) => {
       });
     }
 
+    // Check for PaymentStatusCode - FAILED means payment was declined
+    const paymentStatusMatch = xmlResponse.match(/<PaymentStatusCode[^>]*>([^<]+)<\/PaymentStatusCode>/i);
+    if (paymentStatusMatch && paymentStatusMatch[1].toUpperCase() === 'FAILED') {
+      console.log("[NDC] Payment status FAILED detected");
+
+      // Extract warning messages for more context
+      const warningMessages: string[] = [];
+      const warningRegex = /<Warning[^>]*>[\s\S]*?<DescText[^>]*>([^<]+)<\/DescText>[\s\S]*?<\/Warning>/gi;
+      let warningMatch;
+      while ((warningMatch = warningRegex.exec(xmlResponse)) !== null) {
+        warningMessages.push(warningMatch[1].trim());
+      }
+
+      const errorMessage = warningMessages.length > 0
+        ? warningMessages.join('; ')
+        : 'Payment declined';
+
+      return res.status(400).json({
+        success: false,
+        error: errorMessage,
+        paymentStatus: 'FAILED',
+        warnings: warningMessages,
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+      });
+    }
+
+    // Check for warnings that indicate payment issues (even without explicit FAILED status)
+    const warningDeclinedMatch = xmlResponse.match(/<Warning[^>]*>[\s\S]*?<DescText[^>]*>(Payment declined|Order is underpaid)[^<]*<\/DescText>/i);
+    if (warningDeclinedMatch) {
+      console.log("[NDC] Payment warning detected:", warningDeclinedMatch[1]);
+      return res.status(400).json({
+        success: false,
+        error: warningDeclinedMatch[1].trim(),
+        paymentStatus: 'FAILED',
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+      });
+    }
+
     // Parse success indicators
     const orderIdMatch = xmlResponse.match(/<OrderID[^>]*>([^<]+)<\/OrderID>/i);
     const pnrMatch = xmlResponse.match(/<AirlineOrderID[^>]*>([^<]+)<\/AirlineOrderID>/i);
+
+    // Verify payment actually succeeded - look for successful payment status
+    const paymentStatus = paymentStatusMatch ? paymentStatusMatch[1].toUpperCase() : 'UNKNOWN';
+    const isPaymentSuccess = paymentStatus === 'COMPLETED' || paymentStatus === 'CONFIRMED' || paymentStatus === 'SUCCESS';
+
+    // If we got here without errors/warnings but payment status is unknown, treat as success
+    // (some responses may not include PaymentStatusCode explicitly)
 
     res.json({
       success: true,
       data: {
         orderId: orderIdMatch ? orderIdMatch[1] : orderId,
         pnr: pnrMatch ? pnrMatch[1] : null,
-        status: 'PAID',
+        status: isPaymentSuccess ? 'PAID' : 'PENDING',
+        paymentStatus: paymentStatus,
       },
       requestXml: xmlRequest,
       responseXml: xmlResponse,
