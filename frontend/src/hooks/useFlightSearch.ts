@@ -174,13 +174,18 @@ export function useFlightSearch(): UseFlightSearchResult {
 
       // WORKAROUND: Backend not returning error correctly, check data.success
       // If backend wrapped error in success:true, detect it and throw to trigger catch block
-      if (response.data && !response.data.success && response.data.errors && response.data.errors.length > 0) {
-        console.error('[FlightSearch] NDC response contained errors (detected in frontend):', response.data.errors);
+      // Handle BOTH: response.data.errors AND response.data.data.errors
+      const hasTopLevelErrors = response.data && !response.data.success && response.data.errors && response.data.errors.length > 0;
+      const hasNestedErrors = response.data?.data && !response.data.data.success && response.data.data.errors && response.data.data.errors.length > 0;
+
+      if (hasTopLevelErrors || hasNestedErrors) {
+        const errorData = hasTopLevelErrors ? response.data : response.data.data;
+        console.error('[FlightSearch] NDC response contained errors (detected in frontend):', errorData.errors);
         // Create a fake error response so it goes through normal error handling
         const fakeError: any = new Error('NDC Error');
         fakeError.response = {
           status: 400,
-          data: response.data
+          data: errorData
         };
         throw fakeError;
       }
@@ -480,13 +485,18 @@ export function useFlightSearch(): UseFlightSearchResult {
 
       // WORKAROUND: Backend not returning error correctly, check data.success
       // If backend wrapped error in success:true, detect it and throw to trigger catch block
-      if (response.data && !response.data.success && response.data.errors && response.data.errors.length > 0) {
-        console.error('[FlightSearch] NDC response contained errors (detected in frontend):', response.data.errors);
+      // Handle BOTH: response.data.errors AND response.data.data.errors
+      const hasTopLevelErrors = response.data && !response.data.success && response.data.errors && response.data.errors.length > 0;
+      const hasNestedErrors = response.data?.data && !response.data.data.success && response.data.data.errors && response.data.data.errors.length > 0;
+
+      if (hasTopLevelErrors || hasNestedErrors) {
+        const errorData = hasTopLevelErrors ? response.data : response.data.data;
+        console.error('[FlightSearch] NDC response contained errors (detected in frontend):', errorData.errors);
         // Create a fake error response so it goes through normal error handling
         const fakeError: any = new Error('NDC Error');
         fakeError.response = {
           status: 400,
-          data: response.data
+          data: errorData
         };
         throw fakeError;
       }
