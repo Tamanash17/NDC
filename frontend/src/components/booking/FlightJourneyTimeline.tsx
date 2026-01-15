@@ -104,7 +104,7 @@ function CompactJourneyCard({
   showDetails,
   passengerServices,
 }: CompactJourneyCardProps) {
-  const [isExpanded, setIsExpanded] = useState(showDetails);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const directionLabels = {
     outbound: 'Outbound',

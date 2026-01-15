@@ -147,7 +147,7 @@ interface PassengerRowProps {
   defaultExpanded?: boolean;
 }
 
-function PassengerRow({ passenger, passengerNumber, showServices, compact, defaultExpanded = true }: PassengerRowProps) {
+function PassengerRow({ passenger, passengerNumber, showServices, compact, defaultExpanded = false }: PassengerRowProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   const ptcConfig = {
