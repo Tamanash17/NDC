@@ -211,7 +211,12 @@ export function BookingServicesCard({
                     <p className="font-semibold text-lg flex items-center gap-2">
                       {journey.origin} <ArrowRight className="w-4 h-4" /> {journey.destination}
                     </p>
-                    <p className="text-emerald-100 text-sm">{getDirectionLabel(journey.direction)}</p>
+                    <div className="flex items-center gap-2 text-emerald-100 text-sm">
+                      <span>{getDirectionLabel(journey.direction)}</span>
+                      <span className="px-1.5 py-0.5 bg-white/20 rounded text-xs font-mono">
+                        {journey.journeyId}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 {isJourneyExpanded ? <ChevronDown className="w-6 h-6" /> : <ChevronRight className="w-6 h-6" />}
@@ -236,8 +241,13 @@ export function BookingServicesCard({
                           className="w-full flex items-center justify-between p-4 bg-white hover:bg-gray-50 transition-colors"
                         >
                           <div className="flex items-center gap-4 flex-wrap">
-                            <div className="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg font-mono font-bold text-sm">
-                              {segment.carrierCode} {segment.flightNumber}
+                            <div className="flex flex-col items-start">
+                              <div className="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg font-mono font-bold text-sm">
+                                {segment.carrierCode} {segment.flightNumber}
+                              </div>
+                              <span className="text-[10px] font-mono text-gray-400 mt-0.5 px-1">
+                                {segmentId}
+                              </span>
                             </div>
                             <div className="flex items-center gap-2">
                               <div className="text-left">
@@ -297,7 +307,12 @@ export function BookingServicesCard({
                                           <p className="font-semibold text-gray-900">
                                             {pax.title && `${pax.title} `}{pax.name}
                                           </p>
-                                          <p className="text-xs text-gray-500">{getPtcLabel(pax.ptc)}</p>
+                                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                                            <span>{getPtcLabel(pax.ptc)}</span>
+                                            <span className="font-mono text-[10px] text-gray-400 bg-gray-100 px-1 rounded">
+                                              {pax.paxId}
+                                            </span>
+                                          </div>
                                         </div>
                                       </div>
 
@@ -445,23 +460,44 @@ function ServiceItemRow({ service }: { service: ServiceItem }) {
   }
 
   return (
-    <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100">
-      <div className="flex items-center gap-3">
-        <div className={cn('p-2 rounded-lg', config.bgColor)}>
-          <Icon className={cn('w-4 h-4', config.color)} />
+    <div className="p-3 bg-white rounded-lg border border-gray-100">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className={cn('p-2 rounded-lg', config.bgColor)}>
+            <Icon className={cn('w-4 h-4', config.color)} />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-900">{displayName}</p>
+            {service.serviceCode && (
+              <span className="text-xs text-gray-500">Code: {service.serviceCode}</span>
+            )}
+            {service.quantity && service.quantity > 1 && (
+              <span className="text-xs text-gray-500 ml-2">Qty: {service.quantity}</span>
+            )}
+          </div>
         </div>
-        <div>
-          <p className="text-sm font-medium text-gray-900">{displayName}</p>
-          {service.quantity && service.quantity > 1 && (
-            <p className="text-xs text-gray-500">Quantity: {service.quantity}</p>
-          )}
-        </div>
+        {service.price && service.price.value > 0 && (
+          <span className={cn('text-sm font-bold', config.color)}>
+            {getCurrencySymbol(service.price.currency)}{service.price.value.toFixed(2)}
+          </span>
+        )}
       </div>
-      {service.price && service.price.value > 0 && (
-        <span className={cn('text-sm font-bold', config.color)}>
-          {getCurrencySymbol(service.price.currency)}{service.price.value.toFixed(2)}
+      {/* IDs for XML reference */}
+      <div className="mt-2 pt-2 border-t border-gray-100 flex flex-wrap gap-2">
+        <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
+          OrderItemID: {service.orderItemId}
         </span>
-      )}
+        {service.serviceDefinitionRefId && (
+          <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
+            ServiceDefRefID: {service.serviceDefinitionRefId}
+          </span>
+        )}
+        {service.segmentRefIds.length > 0 && (
+          <span className="text-[10px] font-mono text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
+            SegRef: {service.segmentRefIds.join(', ')}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
