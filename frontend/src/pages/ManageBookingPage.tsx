@@ -208,65 +208,81 @@ export function ManageBookingPage() {
             </Card>
 
             {/* Flight Details */}
-            {booking.flights || booking.order?.OrderItem ? (
+            {(booking.DataLists?.PaxJourneyList?.PaxJourney || booking.flights || booking.order?.OrderItem) && (
               <Card className="p-6">
                 <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
                   <Plane className="w-6 h-6 text-orange-600" />
                   Flight Itinerary
                 </h3>
                 <div className="space-y-4">
-                  {/* Parse flights from order response - we'll create this dynamically */}
-                  {booking.DataLists?.PaxJourneyList?.PaxJourney?.map((journey: any, idx: number) => {
-                    const segments = Array.isArray(journey.PaxSegmentRefID) ? journey.PaxSegmentRefID : [journey.PaxSegmentRefID];
-                    return (
-                      <div key={idx} className="bg-slate-50 rounded-xl p-5 border-2 border-slate-100">
-                        <div className="flex justify-between items-start mb-4">
-                          <Badge variant="secondary" className="font-mono">
-                            Journey {idx + 1}
-                          </Badge>
+                  {(() => {
+                    // Handle PaxJourney as array or single object
+                    const journeys = booking.DataLists?.PaxJourneyList?.PaxJourney;
+                    if (!journeys) {
+                      return <p className="text-slate-500 text-center py-8">No flight details available</p>;
+                    }
+
+                    const journeyArray = Array.isArray(journeys) ? journeys : [journeys];
+                    const segments = booking.DataLists?.DatedMarketingSegmentList?.DatedMarketingSegment;
+                    const segmentArray = segments ? (Array.isArray(segments) ? segments : [segments]) : [];
+
+                    return journeyArray.map((journey: any, idx: number) => {
+                      const segmentRefs = Array.isArray(journey.PaxSegmentRefID)
+                        ? journey.PaxSegmentRefID
+                        : [journey.PaxSegmentRefID];
+
+                      return (
+                        <div key={idx} className="bg-slate-50 rounded-xl p-5 border-2 border-slate-100">
+                          <div className="flex justify-between items-start mb-4">
+                            <Badge variant="secondary" className="font-mono">
+                              Journey {idx + 1}
+                            </Badge>
+                          </div>
+                          {segmentRefs.map((segId: string, segIdx: number) => {
+                            const segment = segmentArray.find((s: any) => s.DatedMarketingSegmentId === segId);
+                            if (!segment) return null;
+
+                            const dep = formatDateTime(segment.Dep?.AircraftScheduledDateTime || '');
+                            const arr = formatDateTime(segment.Arrival?.AircraftScheduledDateTime || '');
+
+                            return (
+                              <div key={segIdx} className="flex items-center gap-4 py-3">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3">
+                                    <MapPin className="w-5 h-5 text-orange-600" />
+                                    <div>
+                                      <p className="font-bold text-xl text-slate-900">{segment.Dep?.IATA_LocationCode || 'N/A'}</p>
+                                      <p className="text-sm text-slate-600">{dep.date}</p>
+                                      <p className="text-sm font-semibold text-slate-700">{dep.time}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-center px-4">
+                                  <Plane className="w-6 h-6 text-orange-600 transform rotate-90" />
+                                  <p className="text-xs font-semibold text-orange-600 mt-1">
+                                    {segment.CarrierDesigCode || 'JQ'} {segment.MarketingCarrierFlightNumberText || ''}
+                                  </p>
+                                </div>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3 justify-end">
+                                    <div className="text-right">
+                                      <p className="font-bold text-xl text-slate-900">{segment.Arrival?.IATA_LocationCode || 'N/A'}</p>
+                                      <p className="text-sm text-slate-600">{arr.date}</p>
+                                      <p className="text-sm font-semibold text-slate-700">{arr.time}</p>
+                                    </div>
+                                    <MapPin className="w-5 h-5 text-orange-600" />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                        {segments.map((segId: string, segIdx: number) => {
-                          const segment = booking.DataLists?.DatedMarketingSegmentList?.DatedMarketingSegment?.find((s: any) => s.DatedMarketingSegmentId === segId);
-                          if (!segment) return null;
-                          const dep = formatDateTime(segment.Dep?.AircraftScheduledDateTime);
-                          const arr = formatDateTime(segment.Arrival?.AircraftScheduledDateTime);
-                          return (
-                            <div key={segIdx} className="flex items-center gap-4 py-3">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-3">
-                                  <MapPin className="w-5 h-5 text-orange-600" />
-                                  <div>
-                                    <p className="font-bold text-xl text-slate-900">{segment.Dep?.IATA_LocationCode}</p>
-                                    <p className="text-sm text-slate-600">{dep.date}</p>
-                                    <p className="text-sm font-semibold text-slate-700">{dep.time}</p>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="flex flex-col items-center px-4">
-                                <Plane className="w-6 h-6 text-orange-600 transform rotate-90" />
-                                <p className="text-xs font-semibold text-orange-600 mt-1">{segment.CarrierDesigCode} {segment.MarketingCarrierFlightNumberText}</p>
-                              </div>
-                              <div className="flex-1">
-                                <div className="flex items-center gap-3 justify-end">
-                                  <div className="text-right">
-                                    <p className="font-bold text-xl text-slate-900">{segment.Arrival?.IATA_LocationCode}</p>
-                                    <p className="text-sm text-slate-600">{arr.date}</p>
-                                    <p className="text-sm font-semibold text-slate-700">{arr.time}</p>
-                                  </div>
-                                  <MapPin className="w-5 h-5 text-orange-600" />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  }) || (
-                    <p className="text-slate-500 text-center py-8">No flight details available</p>
-                  )}
+                      );
+                    });
+                  })()}
                 </div>
               </Card>
-            ) : null}
+            )}
 
             {/* Passengers */}
             {booking.DataLists?.PaxList?.Pax && (
