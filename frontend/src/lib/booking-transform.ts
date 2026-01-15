@@ -28,8 +28,9 @@ export interface BookingStatusData {
 }
 
 export function transformBookingStatus(rawData: any): BookingStatusData {
-  // Extract raw status codes - Response.Order is the correct path
+  // Extract raw status codes - check multiple possible paths
   const orderStatusRaw = rawData?.Response?.Order?.StatusCode ||
+                         rawData?.Order?.StatusCode ||
                          rawData?.order?.StatusCode || 'OK';
   const paymentStatusRaw = extractPaymentStatus(rawData);
   const deliveryStatusRaw = extractDeliveryStatus(rawData);
@@ -69,7 +70,7 @@ export function transformBookingStatus(rawData: any): BookingStatusData {
 
 function extractPaymentStatus(data: any): string {
   // Check for warnings first - "Order is underpaid" is critical
-  const warnings = normalizeToArray(data?.Response?.Warning);
+  const warnings = normalizeToArray(data?.Response?.Warning || data?.Warning);
   const hasUnderpaidWarning = warnings.some((w: any) =>
     w?.DescText?.toLowerCase().includes('underpaid') ||
     w?.TypeCode === 'OF2003'
@@ -77,6 +78,7 @@ function extractPaymentStatus(data: any): string {
 
   // Get order status - OPENED means hold booking (not paid)
   const orderStatus = data?.Response?.Order?.StatusCode ||
+                      data?.Order?.StatusCode ||
                       data?.order?.StatusCode || '';
 
   // OPENED status = hold booking, payment required
@@ -97,7 +99,7 @@ function extractPaymentStatus(data: any): string {
   }
 
   // Check if order has payment time limit (hold booking)
-  const orderItems = normalizeToArray(data?.Response?.Order?.OrderItem || data?.order?.OrderItem);
+  const orderItems = normalizeToArray(data?.Response?.Order?.OrderItem || data?.Order?.OrderItem || data?.order?.OrderItem);
   const timeLimit = orderItems[0]?.PaymentTimeLimitDateTime;
   if (timeLimit) {
     const deadline = new Date(timeLimit);
@@ -163,10 +165,11 @@ function generateHeadlines(payment: string, order: string, _delivery: string, da
 
   // OPENED = Hold booking, PENDING payment
   if (order === 'OPENED' || payment === 'PENDING') {
-    const orderItems = normalizeToArray(data?.Response?.Order?.OrderItem || data?.order?.OrderItem);
+    const orderItems = normalizeToArray(data?.Response?.Order?.OrderItem || data?.Order?.OrderItem || data?.order?.OrderItem);
     const timeLimit = orderItems[0]?.PaymentTimeLimitDateTime;
     const deadline = timeLimit ? formatDeadline(timeLimit) : 'soon';
     const totalPrice = data?.Response?.Order?.TotalPrice?.TotalAmount ||
+                       data?.Order?.TotalPrice?.TotalAmount ||
                        data?.order?.TotalPrice?.TotalAmount;
     const amount = totalPrice ? ` (${getCurrencySymbol(totalPrice['@CurCode'] || totalPrice?.CurCode || 'AUD')}${parseFloat(totalPrice['#text'] || totalPrice || 0).toFixed(2)})` : '';
 
@@ -204,8 +207,9 @@ function determineActionRequired(payment: string, order: string, _data: any): st
 }
 
 function checkUrgentDeadlines(data: any): BookingStatusData['urgentDeadline'] {
-  const timeLimit = data?.order?.OrderItem?.[0]?.PaymentTimeLimitDateTime ||
-                    data?.Response?.Order?.OrderItem?.[0]?.PaymentTimeLimitDateTime;
+  const timeLimit = data?.Response?.Order?.OrderItem?.[0]?.PaymentTimeLimitDateTime ||
+                    data?.Order?.OrderItem?.[0]?.PaymentTimeLimitDateTime ||
+                    data?.order?.OrderItem?.[0]?.PaymentTimeLimitDateTime;
 
   if (!timeLimit) return undefined;
 
@@ -343,7 +347,7 @@ function transformSegment(marketingSeg: any): FlightSegment {
 export function transformPassengers(rawData: any): PassengerData[] {
   const dataLists = rawData?.DataLists || rawData?.Response?.DataLists || {};
   const paxList = normalizeToArray(dataLists?.PaxList?.Pax);
-  const orderItems = normalizeToArray(rawData?.order?.OrderItem || rawData?.Response?.Order?.OrderItem);
+  const orderItems = normalizeToArray(rawData?.Response?.Order?.OrderItem || rawData?.Order?.OrderItem || rawData?.order?.OrderItem);
 
   return paxList.map((pax: any) => {
     const individual = pax.Individual || {};
@@ -446,7 +450,7 @@ export interface PaymentData {
 }
 
 export function transformPaymentData(rawData: any): PaymentData {
-  const order = rawData?.Response?.Order || rawData?.order;
+  const order = rawData?.Response?.Order || rawData?.Order || rawData?.order;
   const orderItems = normalizeToArray(order?.OrderItem);
   const paymentInfo = rawData?.Response?.PaymentInfo || rawData?.PaymentInfo;
 
@@ -557,8 +561,9 @@ export function transformBookingData(rawData: any) {
     journeys: transformFlightJourneys(rawData),
     passengers: transformPassengers(rawData),
     payment: transformPaymentData(rawData),
-    pnr: rawData?.order?.OrderID ||
-         rawData?.Response?.Order?.OrderID ||
+    pnr: rawData?.Response?.Order?.OrderID ||
+         rawData?.Order?.OrderID ||
+         rawData?.order?.OrderID ||
          rawData?.orderId || '',
     contactInfo: extractContactInfo(rawData),
   };
