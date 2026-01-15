@@ -40,13 +40,25 @@ export function ManageBookingPage() {
 
     try {
       const response = await orderRetrieve({ pnr: pnr.trim() });
-      console.log('[ManageBooking] OrderRetrieve response:', response);
-      setBooking(response.data || response.parsed || response);
+      console.log('[ManageBooking] Full response:', JSON.stringify(response, null, 2));
+
+      // Try different response structures
+      const bookingData = response.data || response.parsed || response.Response || response;
+      console.log('[ManageBooking] Booking data:', bookingData);
+
+      if (!bookingData) {
+        throw new Error('No booking data received');
+      }
+
+      setBooking(bookingData);
       toast.success('Booking found');
     } catch (err: any) {
       console.error('[ManageBooking] Search error:', err);
-      setError(err.response?.data?.error || err.response?.data?.message || err.message || 'Booking not found');
-      toast.error('Search failed', 'Booking not found');
+      console.error('[ManageBooking] Error response:', err.response);
+
+      const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Booking not found';
+      setError(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
+      toast.error('Booking not found');
     } finally {
       setIsLoading(false);
     }
