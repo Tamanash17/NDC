@@ -39,6 +39,11 @@ This document serves as a knowledge base for the Navitaire NDC Gateway (IATA NDC
 29. [Full Order Cancellation](#full-order-cancellation)
 30. [Partial Order Cancellation](#partial-order-cancellation)
 31. [Reshop for Flight Changes](#reshop-for-flight-changes)
+32. [ServiceList Request/Response](#servicelist-requestresponse)
+33. [SeatAvailability Request/Response](#seatavailability-requestresponse)
+34. [OrderReshop Response Details](#orderreshop-response-details)
+35. [PriceDifferential Structure](#pricedifferential-structure)
+36. [Penalty and Spoilage Fees](#penalty-and-spoilage-fees)
 
 ---
 
@@ -1861,6 +1866,444 @@ In OrderViewRS, check change eligibility:
 
 ---
 
+## ServiceList Request/Response
+
+ServiceList retrieves available ancillary services for a shopping offer or existing order.
+
+### ServiceListRQ for Shopping Offer
+
+```xml
+<IATA_ServiceListRQ xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersMessage">
+  <DistributionChain>...</DistributionChain>
+  <PayloadAttributes>
+    <VersionNumber xmlns="...">21.3</VersionNumber>
+  </PayloadAttributes>
+  <Request>
+    <ServiceListCoreRequest xmlns="...">
+      <OfferRequest>
+        <Offer>
+          <OfferID>OFFER-123</OfferID>
+          <OwnerCode>JQ</OwnerCode>
+        </Offer>
+      </OfferRequest>
+    </ServiceListCoreRequest>
+  </Request>
+</IATA_ServiceListRQ>
+```
+
+### ServiceListRQ for Existing Order
+
+Uses a different endpoint (Servicing endpoint):
+
+```xml
+<IATA_ServiceListRQ xmlns="...">
+  <Request>
+    <ServiceListCoreRequest xmlns="...">
+      <OrderRequest>
+        <Order>
+          <OrderID>ABC123</OrderID>
+          <OwnerCode>JQ</OwnerCode>
+        </Order>
+      </OrderRequest>
+    </ServiceListCoreRequest>
+  </Request>
+</IATA_ServiceListRQ>
+```
+
+### ServiceListRS Structure
+
+| Element | Description |
+|---------|-------------|
+| `ALaCarteOffer/OfferID` | Unique offer ID for ancillaries |
+| `ALaCarteOffer/OwnerCode` | Carrier code |
+| `ALaCarteOffer/OfferExpirationTimeLimitDateTime` | When offer expires |
+| `ALaCarteOffer/OfferItem` | Individual ancillary services |
+
+### OfferItem Fields
+
+| Field | Description |
+|-------|-------------|
+| `OfferItemID` | Unique ID for the a la carte item |
+| `Eligibility/PaxRefID` | Passengers eligible for this service |
+| `Eligibility/OfferFlightAssociations` | Flight associations (segment/journey/leg) |
+| `Service/ServiceDefinitionRefID` | Reference to service details |
+| `Service/ServiceID` | Unique service identifier |
+| `UnitPrice/BaseAmount` | Base price (per passenger) |
+| `UnitPrice/TaxSummary` | Tax breakdown |
+| `UnitPrice/TotalAmount` | Total including taxes |
+
+### DataLists in ServiceListRS
+
+| List | Description |
+|------|-------------|
+| `BaggageAllowanceList` | Baggage service details |
+| `DatedMarketingSegmentList` | Marketing segment info |
+| `DatedOperatingLegList` | Leg information |
+| `DatedOperatingSegmentList` | Operating segment info |
+| `DisclosureList` | Wet-lease flight disclosures |
+| `PaxJourneyList` | Journey-segment associations |
+| `PaxList` | Passenger references |
+| `PaxSegmentList` | Segment details |
+| `ServiceDefinitionList` | Service descriptions |
+
+### Flight Association Types in ServiceList
+
+| Level | Element | Use Case |
+|-------|---------|----------|
+| Segment | `PaxSegmentRefID` | Segment-level ancillaries |
+| Journey | `PaxJourneyRefID` | Journey-level ancillaries |
+| Leg | `DatedOperatingLegRefID` | Leg-level ancillaries |
+
+**Note**: Leg-level ancillaries with Standard SSR-type are not returned.
+
+---
+
+## SeatAvailability Request/Response
+
+SeatAvailability retrieves seat maps and pricing for shopping offers or existing orders.
+
+### SeatAvailabilityRQ for Shopping Offer
+
+```xml
+<IATA_SeatAvailabilityRQ xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersMessage">
+  <DistributionChain>...</DistributionChain>
+  <PayloadAttributes>
+    <VersionNumber xmlns="...">21.3</VersionNumber>
+  </PayloadAttributes>
+  <Request>
+    <SeatAvailCoreRequest xmlns="...">
+      <OfferRequest>
+        <Offer>
+          <OfferID>OFFER-123</OfferID>
+          <OwnerCode>JQ</OwnerCode>
+          <OfferItem>
+            <OfferItemID>ITEM-001</OfferItemID>
+            <OwnerCode>JQ</OwnerCode>
+            <PaxSegmentRefID>seg000000001</PaxSegmentRefID>
+          </OfferItem>
+        </Offer>
+      </OfferRequest>
+    </SeatAvailCoreRequest>
+  </Request>
+</IATA_SeatAvailabilityRQ>
+```
+
+### SeatAvailabilityRQ for Existing Order
+
+Uses Servicing endpoint:
+
+```xml
+<IATA_SeatAvailabilityRQ xmlns="...">
+  <Request>
+    <SeatAvailCoreRequest xmlns="...">
+      <OrderRequest>
+        <Order>
+          <OrderID>ABC123</OrderID>
+          <OwnerCode>JQ</OwnerCode>
+          <OrderItem>
+            <OrderItemID>FLIGHT-ITEM-001</OrderItemID>
+            <OwnerCode>JQ</OwnerCode>
+            <PaxSegmentRefID>seg000000001</PaxSegmentRefID>
+          </OrderItem>
+        </Order>
+      </OrderRequest>
+    </SeatAvailCoreRequest>
+  </Request>
+</IATA_SeatAvailabilityRQ>
+```
+
+### Segment Limit
+
+**Important**: Maximum 6 segments per request. If more segments exist, specify `PaxSegmentRefID` to filter.
+
+### SeatAvailabilityRS Structure
+
+| Element | Description |
+|---------|-------------|
+| `ALaCarteOffer/OfferID` | Offer ID for seats |
+| `ALaCarteOffer/OwnerCode` | Carrier code |
+| `ALaCarteOffer/OfferItem` | Individual seat offers |
+| `SeatMap` | Cabin layout and seat details |
+
+### Seat OfferItem Fields
+
+| Field | Description |
+|-------|-------------|
+| `OfferItemID` | Unique seat offer ID |
+| `Eligibility/PaxRefID` | Eligible passengers |
+| `Eligibility/OfferFlightAssociations` | Segment/leg association |
+| `UnitPrice/BaseAmount` | Seat fee |
+| `UnitPrice/TaxSummary` | Tax breakdown |
+| `UnitPrice/TotalAmount` | Total price |
+| `Service/ServiceDefinitionRefID` | Seat service reference |
+
+### SeatMap Structure
+
+```xml
+<SeatMap>
+  <Cabin>
+    <CabinTypeCode>5</CabinTypeCode>  <!-- Economy -->
+    <Row>
+      <RowNumber>12</RowNumber>
+      <Seat>
+        <ColumnID>A</ColumnID>
+        <SeatCharacteristicCode>W</SeatCharacteristicCode>  <!-- Window -->
+        <OfferItemRefID>SEAT-ITEM-001</OfferItemRefID>
+        <SeatStatus>F</SeatStatus>  <!-- Available -->
+      </Seat>
+      <Seat>
+        <ColumnID>B</ColumnID>
+        <SeatCharacteristicCode>M</SeatCharacteristicCode>  <!-- Middle -->
+        <SeatStatus>X</SeatStatus>  <!-- Unavailable -->
+      </Seat>
+    </Row>
+  </Cabin>
+</SeatMap>
+```
+
+### Seat Status Codes
+
+| Code | Description |
+|------|-------------|
+| `F` | Available (Free) |
+| `X` | Unavailable/Blocked |
+| `O` | Occupied |
+
+### Seat Characteristic Codes
+
+| Code | Description |
+|------|-------------|
+| `W` | Window |
+| `A` | Aisle |
+| `M` | Middle |
+| `E` | Exit row |
+| `L` | Leg room |
+| `B` | Bulkhead |
+
+---
+
+## OrderReshop Response Details
+
+OrderReshopRS provides detailed pricing for modifications and cancellations.
+
+### Response Structure Overview
+
+```xml
+<IATA_OrderReshopRS>
+  <Response>
+    <Order>
+      <OrderID>ABC123</OrderID>
+      <OwnerCode>JQ</OwnerCode>
+    </Order>
+    <ReshopResults>
+      <ReshopOffers>
+        <RequotedOffer>...</RequotedOffer>  <!-- For adding services -->
+        <Offer>...</Offer>  <!-- For cancellation/change -->
+      </ReshopOffers>
+    </ReshopResults>
+    <DataLists>...</DataLists>
+  </Response>
+</IATA_OrderReshopRS>
+```
+
+### RequotedOffer (Adding Services)
+
+Used when pricing additional seats/ancillaries:
+
+| Field | Description |
+|-------|-------------|
+| `OfferID` | Unique offer ID |
+| `OwnerCode` | Carrier code |
+| `OfferExpirationTimeLimitDateTime` | Offer expiry |
+| `TotalPrice/TotalAmount` | Sum of all AddedOfferItem amounts |
+| `AddedOfferItem` | Items to be added |
+| `JourneyOverview` | Price class per journey |
+
+### AddedOfferItem Types
+
+| Type | Suffix | Description |
+|------|--------|-------------|
+| Seat | Per segment | Seat for passenger in segment |
+| Ancillary | Per service | SSR for passenger |
+
+### Seat AddedOfferItem Fields
+
+| Field | Description |
+|-------|-------------|
+| `OfferItemID` | Unique item ID |
+| `ReshopPrice/PriceAndFareDetails/Price/BaseAmount` | Seat fee |
+| `ReshopPrice/PriceAndFareDetails/Price/TaxSummary` | Tax breakdown |
+| `ReshopPrice/PriceAndFareDetails/Price/TotalAmount` | Total price |
+| `Service/OfferServiceAssociation/SeatAssignment/Seat/RowNumber` | Row |
+| `Service/OfferServiceAssociation/SeatAssignment/Seat/ColumnID` | Column |
+| `Service/PaxRefID` | Passenger reference |
+
+### Ancillary AddedOfferItem Fields
+
+| Field | Description |
+|-------|-------------|
+| `OfferItemID` | Unique item ID |
+| `ReshopPrice/PriceAndFareDetails/Price/BaseAmount` | Ancillary fee |
+| `Service/OfferServiceAssociation/ServiceDefinitionRef` | Service details |
+| `Service/OfferServiceAssociation/OfferFlightAssociations` | Flight association |
+| `Service/PaxRefID` | Passenger reference |
+
+---
+
+## PriceDifferential Structure
+
+PriceDifferential shows the price change between old and new states.
+
+### Structure
+
+```xml
+<PriceDifferential>
+  <DifferentialTypeCode>Refund</DifferentialTypeCode>
+  <DiffPrice>
+    <Price>
+      <DueByAirlineAmount CurCode="AUD">150.00</DueByAirlineAmount>
+      <DueToAirlineAmount CurCode="AUD">0.00</DueToAirlineAmount>
+      <TotalAmount CurCode="AUD">-150.00</TotalAmount>
+    </Price>
+  </DiffPrice>
+  <NewPrice>...</NewPrice>
+  <OldPrice>...</OldPrice>
+</PriceDifferential>
+```
+
+### DifferentialTypeCode Values
+
+| Code | Condition | Action |
+|------|-----------|--------|
+| `Refund` | TotalAmount is negative | Airline owes customer |
+| `AddCol` | TotalAmount is positive | Customer owes airline |
+| `EvenExchange` | TotalAmount is zero | No payment required |
+
+### DiffPrice Calculation
+
+```
+TotalAmount = (NewPrice/TotalAmount + Penalties) - OldPrice/TotalAmount
+```
+
+### DueByAirlineAmount vs DueToAirlineAmount
+
+| Field | When Populated |
+|-------|----------------|
+| `DueByAirlineAmount` | Absolute value if TotalAmount < 0 (refund) |
+| `DueToAirlineAmount` | Absolute value if TotalAmount > 0 (collect) |
+
+### NewPrice Structure (Cancellation)
+
+For cancellation, NewPrice contains zero amounts:
+
+```xml
+<NewPrice>
+  <Price>
+    <BaseAmount CurCode="AUD">0.00</BaseAmount>
+    <TotalAmount CurCode="AUD">50.00</TotalAmount>  <!-- Penalty only -->
+  </Price>
+</NewPrice>
+```
+
+### OldPrice Structure
+
+Contains original pricing before change:
+
+| Field | Description |
+|-------|-------------|
+| `Price/BaseAmount` | Original base fare |
+| `Price/Fee` | Refundable fees (e.g., Travel Fee) |
+| `Price/Surcharge` | Surcharge breakdown |
+| `Price/TaxSummary` | Tax breakdown |
+| `Price/TotalAmount` | Original total |
+
+**Note**: Convenience Fees and Non-Flight Service Fees are NOT included in OldPrice computation.
+
+---
+
+## Penalty and Spoilage Fees
+
+Penalties are referenced via `PenaltyRefID` and defined in `DataLists/PenaltyList`.
+
+### Penalty Association Rules
+
+#### Full Cancellation
+
+| Penalty Type | Associated To |
+|--------------|---------------|
+| Per Journey | First eligible (non-infant, non-passive) flight order item |
+| Per Booking Spoilage | First eligible flight order item |
+| Per Passenger Per Journey | First eligible flight order item of respective PTC |
+
+#### Partial Cancellation
+
+| Penalty Type | Associated To |
+|--------------|---------------|
+| Per Journey | First eligible **active** (non-infant, non-passive) flight order item |
+| Per Booking Spoilage | First eligible **active** flight order item |
+| Per Passenger Per Journey | First eligible **active** flight order item of respective PTC |
+
+### PenaltyList Structure
+
+```xml
+<PenaltyList>
+  <Penalty>
+    <PenaltyID>PENALTY-001</PenaltyID>
+    <Amount CurCode="AUD">50.00</Amount>
+    <DescText>Cancellation Fee</DescText>
+    <TypeCode>Cancellation</TypeCode>
+  </Penalty>
+</PenaltyList>
+```
+
+### DeleteOrderItem Types
+
+For cancellation reshop, three types of DeleteOrderItems exist:
+
+| Type | OrderItemID Suffix | Description |
+|------|-------------------|-------------|
+| Flight | `FLIGHT` | Flight services |
+| Ancillary | ServiceCode | SSR services |
+| Seat | `SEAT` | Seat assignments |
+
+### Flight DeleteOrderItem
+
+Contains `FareDetail` with full fare breakdown:
+
+| Field | Description |
+|-------|-------------|
+| `PaxRefID` | Passengers this applies to |
+| `Price/BaseAmount` | Base fare (0 for NewPrice) |
+| `Price/Discount` | Promotional discounts (OldPrice only) |
+| `Price/Fee` | Fee breakdown |
+| `Price/Surcharge` | Surcharge breakdown |
+| `Price/TaxSummary` | Tax breakdown |
+| `Price/TotalAmount` | Total amount |
+
+### Seat/Ancillary DeleteOrderItem
+
+Simpler structure without FareDetail:
+
+| Field | Description |
+|-------|-------------|
+| `ExistingOrderItem/OrderItemRefID` | Reference to order item |
+| `PriceDifferential/OldPrice/Price/BaseAmount` | Original fee |
+| `PriceDifferential/OldPrice/Price/TaxSummary` | Original taxes |
+| `PriceDifferential/NewPrice/Price/TotalAmount` | Always 0 for cancellation |
+
+### Tax Fields in Response
+
+| Field | Description |
+|-------|-------------|
+| `Tax/Amount` | Tax amount with CurCode |
+| `Tax/DescText` | Tax name from New Skies |
+| `Tax/FiledTaxCode` | Internal New Skies tax code |
+| `Tax/TaxCode` | NDC TaxCode mapping (or Ticket Code if unmapped) |
+| `Tax/TaxName` | Tax name from configuration |
+| `TotalTaxAmount` | Sum of all tax amounts |
+
+---
+
 ## Quick Reference: Request Types
 
 | Request | Root Element | Purpose |
@@ -1892,6 +2335,7 @@ Related builder files in this project:
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-01-15 | 1.4 | Added ServiceList, SeatAvailability, OrderReshop details, PriceDifferential, Penalty sections |
 | 2026-01-15 | 1.3 | Added OrderChange, OrderReshop, cancellation, seat/ancillary modification sections |
 | 2026-01-15 | 1.2 | Added OrderCreate, OrderViewRS, 3DS, Delivery Status sections |
 | 2026-01-15 | 1.1 | Added OfferPrice, FareComponent, Baggage, A La Carte, RBD codes sections |
