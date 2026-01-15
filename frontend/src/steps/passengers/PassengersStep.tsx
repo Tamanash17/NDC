@@ -6,7 +6,7 @@ import { useXmlViewer } from '@/core/context/XmlViewerContext';
 import { useDistributionContext } from '@/core/context/SessionStore';
 import { orderCreate } from '@/lib/ndc-api';
 import { Card, Input, Select, Alert } from '@/components/ui';
-import { User, Mail, Phone, ArrowLeft, ChevronRight, Wand2, CreditCard, Plane, Loader2, CheckCircle, Wallet, Clock, Calendar, AlertTriangle } from 'lucide-react';
+import { User, Mail, Phone, ArrowLeft, ChevronRight, Wand2, CreditCard, Plane, Loader2, CheckCircle, Wallet, Clock, Calendar, AlertTriangle, Search } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 
 // Test passenger data for auto-populate feature
