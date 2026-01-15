@@ -39,7 +39,10 @@ export function ManageBookingPage() {
     setError(null);
 
     try {
-      const response = await orderRetrieve({ pnr: pnr.trim() });
+      const response = await orderRetrieve({
+        orderId: pnr.trim(),
+        ownerCode: 'JQ'
+      });
       console.log('[ManageBooking] Full response:', JSON.stringify(response, null, 2));
 
       // Try different response structures
