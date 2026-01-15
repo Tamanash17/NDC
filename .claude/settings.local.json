@@ -141,7 +141,9 @@
       "Bash(git revert:*)",
       "Bash(git log:*)",
       "Bash(git show:*)",
-      "Bash(tr:*)"
+      "Bash(tr:*)",
+      "Bash(ls:*)",
+      "Bash(copy:*)"
     ]
   }
 }

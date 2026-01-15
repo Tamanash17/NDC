@@ -9,9 +9,15 @@ import type {
   FlightSegment, PaxJourney, OrderStatus 
 } from "../types/ndc.types.js";
 
+export interface OrderWarning {
+  code?: string;
+  message: string;
+}
+
 export interface OrderParseResult {
   success: boolean;
   errors?: Array<{ code: string; message: string }>;
+  warnings?: OrderWarning[];
   order?: Order;
 }
 
@@ -19,14 +25,17 @@ export class OrderParser extends BaseXmlParser {
   parse(xml: string): OrderParseResult {
     const doc = this.parseXml(xml);
 
-    if (this.hasErrors(doc)) {
+    // Try to get Order element first - even if there are "errors", the order may be present
+    const orderEl = this.getElement(doc, "Order");
+
+    // Only fail if there are errors AND no Order element
+    if (this.hasErrors(doc) && !orderEl) {
       return {
         success: false,
         errors: this.extractErrors(doc),
       };
     }
 
-    const orderEl = this.getElement(doc, "Order");
     if (!orderEl) {
       return {
         success: false,
@@ -34,10 +43,42 @@ export class OrderParser extends BaseXmlParser {
       };
     }
 
+    // Parse warnings (e.g., "Order is underpaid") and also treat some errors as warnings
+    const warnings = this.parseWarnings(doc);
+
+    // Some "errors" from Jetstar are informational (like "Order has no order items")
+    // Include them as warnings if we still have a valid order
+    if (this.hasErrors(doc)) {
+      const errors = this.extractErrors(doc);
+      errors.forEach(err => {
+        warnings.push({ code: err.code, message: err.message });
+      });
+    }
+
     return {
       success: true,
+      warnings: warnings.length > 0 ? warnings : undefined,
       order: this.parseOrder(orderEl, doc),
     };
+  }
+
+  private parseWarnings(doc: Document): OrderWarning[] {
+    const warnings: OrderWarning[] = [];
+    const warningElements = this.getElements(doc, "Warning");
+
+    for (const warnEl of warningElements) {
+      const message = this.getText(warnEl, "DescText") ||
+                      this.getText(warnEl, "Message") ||
+                      warnEl.textContent?.trim() || "";
+      if (message) {
+        warnings.push({
+          code: this.getText(warnEl, "TypeCode") || this.getText(warnEl, "Code") || undefined,
+          message,
+        });
+      }
+    }
+
+    return warnings;
   }
 
   private parseOrder(orderEl: Element, doc: Document): Order {
@@ -128,6 +169,8 @@ export class OrderParser extends BaseXmlParser {
       "TICKETED": "TICKETED",
       "CANCELLED": "CANCELLED",
       "REFUNDED": "REFUNDED",
+      "OPENED": "OPENED",  // Hold booking - payment required
+      "ACTIVE": "CONFIRMED",  // OrderItem status
       "OK": "CONFIRMED",
       "HK": "CONFIRMED",
       "TK": "TICKETED",
