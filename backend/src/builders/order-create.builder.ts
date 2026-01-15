@@ -135,7 +135,17 @@ ${pax.loyalty ? buildLoyalty(pax.loyalty) : ""}
 }
 
 function buildPassiveSegments(segments: any[]): string {
-  return `<PaxJourneyList>
+  // Validate segments array
+  if (!segments || !Array.isArray(segments) || segments.length === 0) {
+    console.warn('[OrderCreate] buildPassiveSegments called with invalid segments:', segments);
+    return '';
+  }
+
+  try {
+    console.log('[OrderCreate] Building passive segments for', segments.length, 'segment(s)');
+    console.log('[OrderCreate] Passive segments data:', JSON.stringify(segments, null, 2));
+
+    return `<PaxJourneyList>
 ${segments.map(seg => `<PaxJourney>
 <Duration>PT${Math.floor((new Date(seg.arrivalDateTime).getTime() - new Date(seg.departureDateTime).getTime()) / 60000)}M</Duration>
 <PaxJourneyID>${escapeXml(seg.journeyId)}</PaxJourneyID>
@@ -162,6 +172,12 @@ ${segments.map(seg => `<PaxSegment>
 <PaxSegmentID>${escapeXml(seg.segmentId)}</PaxSegmentID>
 </PaxSegment>`).join("\n")}
 </PaxSegmentList>`;
+  } catch (error) {
+    console.error('[OrderCreate] Error building passive segments:', error);
+    console.error('[OrderCreate] Segments that caused error:', JSON.stringify(segments, null, 2));
+    // Return empty string to not break the entire XML
+    return '';
+  }
 }
 
 function buildIdentityDoc(doc: NonNullable<Passenger["identityDoc"]>, pax: Passenger): string {
