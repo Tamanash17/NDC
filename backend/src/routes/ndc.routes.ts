@@ -875,13 +875,13 @@ router.post("/order-retrieve", async (req: any, res: any) => {
     // Parse XML response (assuming parser exists)
     try {
       const { orderParser } = await import("../parsers/order.parser.js");
-      const parsed = orderParser.parseOrderView(xmlResponse);
+      const parsed = orderParser.parse(xmlResponse);
 
       console.log("[NDC] OrderRetrieve parsed successfully");
 
       res.json({
-        success: true,
-        data: parsed,
+        success: parsed.success,
+        data: parsed.order || parsed,
         requestXml: xmlRequest,
         responseXml: xmlResponse,
       });
