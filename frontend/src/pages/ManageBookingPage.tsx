@@ -62,6 +62,24 @@ export function ManageBookingPage() {
       });
       console.log('[ManageBooking] Full response:', JSON.stringify(response, null, 2));
 
+      // Check if the response indicates an error
+      if (response.success === false) {
+        // Capture failed transaction
+        addCapture({
+          operation: 'OrderRetrieve',
+          request: response.requestXml || '',
+          response: response.responseXml || '',
+          duration: Date.now() - startTime,
+          status: 'error',
+          userAction: `Failed to retrieve booking ${pnr.trim()}`,
+        });
+
+        const errorMsg = response.error || response.errors?.[0]?.message || 'Booking retrieval failed';
+        setError(errorMsg);
+        toast.error(errorMsg);
+        return;
+      }
+
       // Capture XML transaction
       addCapture({
         operation: 'OrderRetrieve',

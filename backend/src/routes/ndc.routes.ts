@@ -877,11 +877,23 @@ router.post("/order-retrieve", async (req: any, res: any) => {
       const { orderParser } = await import("../parsers/order.parser.js");
       const parsed = orderParser.parse(xmlResponse);
 
+      // Check if parsing found errors in the response
+      if (!parsed.success) {
+        console.log("[NDC] OrderRetrieve returned errors:", parsed.errors);
+        return res.status(400).json({
+          success: false,
+          errors: parsed.errors,
+          error: parsed.errors?.[0]?.message || 'Order retrieval failed',
+          requestXml: xmlRequest,
+          responseXml: xmlResponse,
+        });
+      }
+
       console.log("[NDC] OrderRetrieve parsed successfully");
 
       res.json({
-        success: parsed.success,
-        data: parsed.order || parsed,
+        success: true,
+        data: parsed.order,
         requestXml: xmlRequest,
         responseXml: xmlResponse,
       });
