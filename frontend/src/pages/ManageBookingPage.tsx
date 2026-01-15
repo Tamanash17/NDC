@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '@/core/context/ToastContext';
+import { useXmlViewer } from '@/core/context/XmlViewerContext';
 import { orderRetrieve } from '@/lib/ndc-api';
 import { Card, Button, Input, Alert, Badge } from '@/components/ui';
 import { AppLayout } from '@/components/layout';
@@ -12,6 +13,7 @@ import {
 export function ManageBookingPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const { startNewSession, addCapture } = useXmlViewer();
   const [searchParams] = useSearchParams();
 
   // Auto-populate PNR from query parameters (e.g., /manage?pnr=UWYYNG)
@@ -20,6 +22,12 @@ export function ManageBookingPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [booking, setBooking] = useState<any>(null);
+
+  // Start a fresh XML logging session for servicing operations
+  useEffect(() => {
+    startNewSession();
+    console.log('[ManageBooking] Started new XML logging session for servicing');
+  }, [startNewSession]);
 
   // Update PNR when URL changes
   useEffect(() => {
@@ -37,6 +45,7 @@ export function ManageBookingPage() {
 
     setIsLoading(true);
     setError(null);
+    const startTime = Date.now();
 
     try {
       const response = await orderRetrieve({
@@ -44,6 +53,16 @@ export function ManageBookingPage() {
         ownerCode: 'JQ'
       });
       console.log('[ManageBooking] Full response:', JSON.stringify(response, null, 2));
+
+      // Capture XML transaction
+      addCapture({
+        operation: 'OrderRetrieve',
+        request: response.requestXml || '',
+        response: response.responseXml || '',
+        duration: Date.now() - startTime,
+        status: 'success',
+        userAction: `Retrieved booking ${pnr.trim()}`,
+      });
 
       // Try different response structures
       const bookingData = response.data || response.parsed || response.Response || response;
@@ -58,6 +77,16 @@ export function ManageBookingPage() {
     } catch (err: any) {
       console.error('[ManageBooking] Search error:', err);
       console.error('[ManageBooking] Error response:', err.response);
+
+      // Capture failed transaction
+      addCapture({
+        operation: 'OrderRetrieve',
+        request: err.response?.data?.requestXml || '',
+        response: err.response?.data?.responseXml || `<error>${err.message}</error>`,
+        duration: Date.now() - startTime,
+        status: 'error',
+        userAction: `Failed to retrieve booking ${pnr.trim()}`,
+      });
 
       const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Booking not found';
       setError(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
