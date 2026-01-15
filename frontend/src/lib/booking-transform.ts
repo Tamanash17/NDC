@@ -781,3 +781,445 @@ function extractContactInfo(rawData: any) {
     } : undefined,
   };
 }
+
+// ----------------------------------------------------------------------------
+// SERVICES DATA TRANSFORMER (for BookingServicesCard)
+// ----------------------------------------------------------------------------
+
+export interface ServiceItemData {
+  orderItemId: string;
+  serviceDefinitionRefId?: string;
+  serviceName?: string;
+  serviceCode?: string;
+  serviceType: 'BAGGAGE' | 'SEAT' | 'MEAL' | 'BUNDLE' | 'SSR' | 'OTHER';
+  paxRefIds: string[];
+  segmentRefIds: string[];
+  quantity?: number;
+  price?: { value: number; currency: string };
+  seatAssignment?: {
+    paxRefId: string;
+    segmentRefId: string;
+    row: string;
+    column: string;
+    seatCharacteristics?: string[];
+  };
+}
+
+export interface PassengerInfoData {
+  paxId: string;
+  name: string;
+  ptc: string;
+  title?: string;
+  givenName?: string;
+  surname?: string;
+  birthdate?: string;
+  gender?: string;
+  email?: string;
+  phone?: string;
+  identityDoc?: {
+    type: 'PP' | 'NI' | 'DL';
+    number: string;
+    expiryDate: string;
+    issuingCountry?: string;
+    nationality?: string;
+  };
+  loyalty?: {
+    programOwner: string;
+    accountNumber: string;
+    tierLevel?: string;
+  };
+}
+
+export interface SegmentInfoData {
+  segmentId: string;
+  origin: string;
+  destination: string;
+  flightNumber: string;
+  carrierCode: string;
+  departureDateTime: string;
+  arrivalDateTime?: string;
+  duration?: string;
+  cabinCode?: string;
+}
+
+export interface JourneyInfoData {
+  journeyId: string;
+  direction: 'outbound' | 'return' | 'multi';
+  origin: string;
+  destination: string;
+  segmentIds: string[];
+}
+
+export interface ServicesDisplayData {
+  services: ServiceItemData[];
+  passengers: PassengerInfoData[];
+  segments: SegmentInfoData[];
+  journeys: JourneyInfoData[];
+}
+
+/**
+ * Transform raw booking data for BookingServicesCard component
+ * Extracts services, seats, bundles, meals, SSRs with passenger/segment associations
+ */
+export function transformServicesData(rawData: any): ServicesDisplayData | null {
+  if (!rawData) return null;
+
+  // Use backend-parsed data if available (serviceItems, serviceDefinitions, etc.)
+  // Otherwise fallback to parsing from DataLists
+  const services = transformServiceItems(rawData);
+  const passengers = transformPassengersForServices(rawData);
+  const segments = transformSegmentsForServices(rawData);
+  const journeys = transformJourneysForServices(rawData);
+
+  // If no meaningful data, return null
+  if (journeys.length === 0 && segments.length === 0) {
+    return null;
+  }
+
+  return {
+    services,
+    passengers,
+    segments,
+    journeys,
+  };
+}
+
+function transformServiceItems(rawData: any): ServiceItemData[] {
+  const services: ServiceItemData[] = [];
+
+  // Check for backend-parsed serviceItems first
+  const backendServiceItems = normalizeToArray(rawData?.serviceItems);
+  if (backendServiceItems.length > 0) {
+    for (const item of backendServiceItems) {
+      services.push({
+        orderItemId: item.orderItemId || '',
+        serviceDefinitionRefId: item.serviceDefinitionRefId,
+        serviceName: item.serviceName,
+        serviceCode: item.serviceCode,
+        serviceType: item.serviceType || 'OTHER',
+        paxRefIds: normalizeToArray(item.paxRefIds),
+        segmentRefIds: normalizeToArray(item.segmentRefIds),
+        quantity: item.quantity,
+        price: item.price,
+        seatAssignment: item.seatAssignment,
+      });
+    }
+    return services;
+  }
+
+  // Fallback: Parse from raw DataLists and Order
+  const dataLists = rawData?.DataLists || rawData?.Response?.DataLists || {};
+  const serviceDefinitions = normalizeToArray(dataLists?.ServiceDefinitionList?.ServiceDefinition);
+  const seatProfiles = normalizeToArray(dataLists?.SeatProfileList?.SeatProfile);
+
+  // Build service definition lookup
+  const serviceDefMap = new Map<string, any>();
+  for (const def of serviceDefinitions) {
+    const id = def.ServiceDefinitionID || '';
+    serviceDefMap.set(id, {
+      serviceCode: def.ServiceCode || '',
+      serviceName: def.Name || '',
+      description: def.Desc?.[0]?.DescText || '',
+      serviceType: determineServiceTypeFromDef(def),
+    });
+  }
+
+  // Parse Order/OrderItem/Service elements
+  const orderItems = normalizeToArray(
+    rawData?.Order?.OrderItem ||
+    rawData?.Response?.Order?.OrderItem ||
+    rawData?.orderItems
+  );
+
+  for (const item of orderItems) {
+    const itemServices = normalizeToArray(item.Service);
+    const orderItemId = item.OrderItemID || '';
+
+    for (const svc of itemServices) {
+      const serviceDefRefId = svc.ServiceDefinitionRefID;
+      const serviceDef = serviceDefRefId ? serviceDefMap.get(serviceDefRefId) : null;
+
+      // Skip flight services (no ServiceDefinitionRefID usually means flight)
+      const serviceId = svc.ServiceID || '';
+      if (serviceId.includes('-FLT')) continue;
+
+      // Get segment refs
+      const segmentRefIds: string[] = [];
+      const orderServiceAssoc = svc.OrderServiceAssociation;
+      if (orderServiceAssoc) {
+        const paxSegmentRefs = normalizeToArray(orderServiceAssoc.PaxSegmentRef);
+        for (const ref of paxSegmentRefs) {
+          const refId = ref.PaxSegmentRefID;
+          if (refId) segmentRefIds.push(refId);
+        }
+      }
+
+      // Get pax refs
+      const paxRefIds = normalizeToArray(svc.PaxRefID);
+
+      // Check for seat assignment in service ID pattern
+      let seatAssignment: ServiceItemData['seatAssignment'] | undefined;
+      // Pattern: s-AVVSYD-JQ612-A438248714-2D-2D (seat row/col at end)
+      const seatMatch = serviceId.match(/-(\d+)([A-Z])-\d+[A-Z]$/);
+      if (seatMatch) {
+        seatAssignment = {
+          paxRefId: paxRefIds[0] || '',
+          segmentRefId: segmentRefIds[0] || '',
+          row: seatMatch[1],
+          column: seatMatch[2],
+        };
+      }
+
+      services.push({
+        orderItemId,
+        serviceDefinitionRefId: serviceDefRefId,
+        serviceName: serviceDef?.serviceName,
+        serviceCode: serviceDef?.serviceCode,
+        serviceType: seatAssignment ? 'SEAT' : (serviceDef?.serviceType || 'OTHER'),
+        paxRefIds,
+        segmentRefIds,
+        price: undefined, // Price is at OrderItem level, not Service
+        seatAssignment,
+      });
+    }
+  }
+
+  // Also parse seat profiles for seat assignments
+  for (const profile of seatProfiles) {
+    const profileId = profile.SeatProfileID || '';
+    // Pattern: s-AVVSYD-JQ612-A438248714-2D-2D
+    const parts = profileId.split('-');
+    if (parts.length >= 6) {
+      const route = parts[1]; // AVVSYD
+      const origin = route.substring(0, 3);
+      const dest = route.substring(3);
+      const flightNum = parts[2]; // JQ612
+      const paxId = parts[3]; // A438248714
+      const seatCode = parts[4]; // 2D
+      const row = seatCode.replace(/[A-Z]/g, '');
+      const column = seatCode.replace(/\d/g, '');
+
+      // Find corresponding segment
+      const segments = normalizeToArray(dataLists?.PaxSegmentList?.PaxSegment);
+      const marketingSegments = normalizeToArray(dataLists?.DatedMarketingSegmentList?.DatedMarketingSegment);
+
+      let segmentRefId = '';
+      for (const seg of segments) {
+        const mktRef = seg.DatedMarketingSegmentRefId;
+        const mktSeg = marketingSegments.find((ms: any) => ms.DatedMarketingSegmentId === mktRef);
+        if (mktSeg) {
+          const depCode = mktSeg.Dep?.IATA_LocationCode;
+          const arrCode = mktSeg.Arrival?.IATA_LocationCode;
+          const carrierFlight = `${mktSeg.CarrierDesigCode}${mktSeg.MarketingCarrierFlightNumberText}`;
+          if (depCode === origin && arrCode === dest && carrierFlight === flightNum) {
+            segmentRefId = seg.PaxSegmentID || '';
+            break;
+          }
+        }
+      }
+
+      // Only add if we don't already have this seat from service items
+      const exists = services.some(s =>
+        s.seatAssignment?.paxRefId === paxId &&
+        s.seatAssignment?.segmentRefId === segmentRefId
+      );
+
+      if (!exists && segmentRefId) {
+        services.push({
+          orderItemId: profileId,
+          serviceType: 'SEAT',
+          paxRefIds: [paxId],
+          segmentRefIds: [segmentRefId],
+          seatAssignment: {
+            paxRefId: paxId,
+            segmentRefId,
+            row,
+            column,
+          },
+        });
+      }
+    }
+  }
+
+  return services;
+}
+
+function determineServiceTypeFromDef(def: any): ServiceItemData['serviceType'] {
+  const code = (def.ServiceCode || '').toUpperCase();
+  const name = (def.Name || '').toUpperCase();
+  const rfic = (def.RFIC || '').toUpperCase();
+
+  if (rfic === 'C') return 'BAGGAGE';
+  if (rfic === 'G') return 'MEAL';
+
+  if (code.includes('BAG') || code.startsWith('BG') || code.includes('0GO')) return 'BAGGAGE';
+  if (code.includes('SEAT') || code.includes('ST') || code === 'UPFX' || code === 'FXS1') return 'SEAT';
+  if (code.includes('MEAL') || code.startsWith('ML')) return 'MEAL';
+  if (code.includes('BNDL') || code === 'P200' || code === 'STPL') return 'BUNDLE';
+
+  if (name.includes('BAGGAGE') || name.includes('KG')) return 'BAGGAGE';
+  if (name.includes('SEAT') || name.includes('UPFRONT') || name.includes('LEGROOM')) return 'SEAT';
+  if (name.includes('MEAL') || name.includes('FOOD')) return 'MEAL';
+  if (name.includes('BUNDLE') || name.includes('STARTER') || name.includes('PLUS') || name.includes('MAX')) return 'BUNDLE';
+
+  return 'OTHER';
+}
+
+function transformPassengersForServices(rawData: any): PassengerInfoData[] {
+  const passengers: PassengerInfoData[] = [];
+
+  // Check for backend-parsed passengers first
+  const backendPassengers = normalizeToArray(rawData?.passengers);
+
+  // Also check DataLists
+  const dataLists = rawData?.DataLists || rawData?.Response?.DataLists || {};
+  const paxList = normalizeToArray(dataLists?.PaxList?.Pax);
+
+  const paxSource = backendPassengers.length > 0 ? backendPassengers : paxList;
+
+  for (const pax of paxSource) {
+    const individual = pax.Individual || {};
+    const identityDoc = pax.IdentityDoc || pax.identityDoc;
+    const loyalty = pax.LoyaltyProgramAccount || pax.loyalty;
+
+    const paxId = pax.PaxID || pax.paxId || '';
+    const givenName = individual.GivenName || pax.givenName || '';
+    const surname = individual.Surname || pax.surname || '';
+
+    passengers.push({
+      paxId,
+      name: `${givenName} ${surname}`.trim(),
+      ptc: pax.PTC || pax.ptc || 'ADT',
+      title: pax.Title || individual.Title || pax.title,
+      givenName,
+      surname,
+      birthdate: individual.Birthdate || pax.birthdate,
+      gender: individual.GenderCode || pax.gender,
+      email: pax.ContactInfo?.EmailAddress?.EmailAddressText || pax.email,
+      phone: pax.ContactInfo?.Phone?.PhoneNumber || pax.phone,
+      identityDoc: identityDoc ? {
+        type: (identityDoc.IdentityDocTypeCode === 'PT' ? 'PP' : identityDoc.IdentityDocTypeCode || identityDoc.type || 'PP') as 'PP' | 'NI' | 'DL',
+        number: identityDoc.IdentityDocID || identityDoc.number || '',
+        expiryDate: identityDoc.ExpiryDate || identityDoc.expiryDate || '',
+        issuingCountry: identityDoc.IssuingCountryCode || identityDoc.issuingCountry,
+        nationality: identityDoc.CitizenshipCountryCode || identityDoc.nationality,
+      } : undefined,
+      loyalty: loyalty ? {
+        programOwner: loyalty.LoyaltyProgram?.Carrier?.AirlineDesigCode || loyalty.programOwner || '',
+        accountNumber: loyalty.AccountNumber || loyalty.accountNumber || '',
+        tierLevel: loyalty.TierLevel || loyalty.tierLevel,
+      } : undefined,
+    });
+  }
+
+  return passengers;
+}
+
+function transformSegmentsForServices(rawData: any): SegmentInfoData[] {
+  const segments: SegmentInfoData[] = [];
+
+  // Check for backend-parsed marketingSegments first
+  const backendSegments = normalizeToArray(rawData?.marketingSegments);
+  if (backendSegments.length > 0) {
+    for (const seg of backendSegments) {
+      segments.push({
+        segmentId: seg.segmentId || '',
+        origin: seg.origin || '',
+        destination: seg.destination || '',
+        flightNumber: seg.flightNumber || '',
+        carrierCode: seg.carrierCode || '',
+        departureDateTime: seg.departureDateTime || '',
+        arrivalDateTime: seg.arrivalDateTime,
+        duration: seg.duration,
+        cabinCode: seg.cabinCode,
+      });
+    }
+    return segments;
+  }
+
+  // Fallback: Parse from DataLists
+  const dataLists = rawData?.DataLists || rawData?.Response?.DataLists || {};
+  const paxSegments = normalizeToArray(dataLists?.PaxSegmentList?.PaxSegment);
+  const marketingSegments = normalizeToArray(dataLists?.DatedMarketingSegmentList?.DatedMarketingSegment);
+  const operatingSegments = normalizeToArray(dataLists?.DatedOperatingSegmentList?.DatedOperatingSegment);
+
+  // Build marketing segment lookup
+  const mktSegMap = new Map<string, any>();
+  for (const ms of marketingSegments) {
+    mktSegMap.set(ms.DatedMarketingSegmentId, ms);
+  }
+
+  // Build operating segment lookup for duration
+  const oprSegMap = new Map<string, any>();
+  for (const os of operatingSegments) {
+    oprSegMap.set(os.DatedOperatingSegmentId, os);
+  }
+
+  for (const paxSeg of paxSegments) {
+    const paxSegId = paxSeg.PaxSegmentID || '';
+    const mktRef = paxSeg.DatedMarketingSegmentRefId;
+    const mktSeg = mktSegMap.get(mktRef);
+
+    if (mktSeg) {
+      const oprRef = mktSeg.DatedOperatingSegmentRefId;
+      const oprSeg = oprSegMap.get(oprRef);
+
+      segments.push({
+        segmentId: paxSegId,
+        origin: mktSeg.Dep?.IATA_LocationCode || '',
+        destination: mktSeg.Arrival?.IATA_LocationCode || '',
+        flightNumber: mktSeg.MarketingCarrierFlightNumberText || '',
+        carrierCode: mktSeg.CarrierDesigCode || '',
+        departureDateTime: mktSeg.Dep?.AircraftScheduledDateTime || '',
+        arrivalDateTime: mktSeg.Arrival?.AircraftScheduledDateTime,
+        duration: oprSeg?.Duration,
+        cabinCode: paxSeg.CabinTypeAssociationChoice?.SegmentCabinType?.CabinTypeCode,
+      });
+    }
+  }
+
+  return segments;
+}
+
+function transformJourneysForServices(rawData: any): JourneyInfoData[] {
+  const journeys: JourneyInfoData[] = [];
+
+  // Check for backend-parsed journeys
+  const backendJourneys = normalizeToArray(rawData?.journeys);
+
+  // Also check DataLists
+  const dataLists = rawData?.DataLists || rawData?.Response?.DataLists || {};
+  const paxJourneys = normalizeToArray(dataLists?.PaxJourneyList?.PaxJourney);
+
+  const journeySource = backendJourneys.length > 0 ? backendJourneys :
+                        paxJourneys.length > 0 ? paxJourneys : [];
+
+  // Get segments for origin/destination lookup
+  const segments = transformSegmentsForServices(rawData);
+  const segmentMap = new Map<string, SegmentInfoData>();
+  for (const seg of segments) {
+    segmentMap.set(seg.segmentId, seg);
+  }
+
+  for (let idx = 0; idx < journeySource.length; idx++) {
+    const j = journeySource[idx];
+    const journeyId = j.PaxJourneyID || j.paxJourneyId || `journey-${idx + 1}`;
+    const segmentRefIds = normalizeToArray(j.PaxSegmentRefID || j.segmentRefIds);
+
+    // Determine origin/destination from first/last segment
+    const firstSegId = segmentRefIds[0];
+    const lastSegId = segmentRefIds[segmentRefIds.length - 1];
+    const firstSeg = segmentMap.get(firstSegId);
+    const lastSeg = segmentMap.get(lastSegId);
+
+    journeys.push({
+      journeyId,
+      direction: idx === 0 ? 'outbound' : idx === 1 ? 'return' : 'multi',
+      origin: firstSeg?.origin || '',
+      destination: lastSeg?.destination || '',
+      segmentIds: segmentRefIds,
+    });
+  }
+
+  return journeys;
+}

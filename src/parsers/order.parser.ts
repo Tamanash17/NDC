@@ -6,8 +6,66 @@
 import { BaseXmlParser } from "./base.parser.js";
 import type {
   Order, Passenger, BookingReference, OrderItem,
-  FlightSegment, PaxJourney, OrderStatus, PaymentInfo, PaymentType, CardBrand
+  FlightSegment, PaxJourney, OrderStatus, PaymentInfo, PaymentType, CardBrand,
+  Amount
 } from "../types/ndc.types.js";
+
+// Extended types for full booking display
+export interface ServiceDefinitionParsed {
+  serviceDefinitionId: string;
+  serviceCode?: string;
+  serviceName?: string;
+  description?: string;
+  rfic?: string;
+  rfisc?: string;
+  serviceType: 'BAGGAGE' | 'SEAT' | 'MEAL' | 'BUNDLE' | 'SSR' | 'OTHER';
+}
+
+export interface SeatAssignmentParsed {
+  paxRefId: string;
+  segmentRefId: string;
+  row: string;
+  column: string;
+  seatCharacteristics?: string[];
+}
+
+export interface ServiceItemParsed {
+  orderItemId: string;
+  serviceDefinitionRefId?: string;
+  serviceName?: string;
+  serviceCode?: string;
+  serviceType: 'BAGGAGE' | 'SEAT' | 'MEAL' | 'BUNDLE' | 'SSR' | 'OTHER';
+  paxRefIds: string[];
+  segmentRefIds: string[];
+  quantity?: number;
+  price?: Amount;
+  seatAssignment?: SeatAssignmentParsed;
+}
+
+export interface DatedMarketingSegmentParsed {
+  segmentId: string;
+  origin: string;
+  destination: string;
+  departureDateTime: string;
+  arrivalDateTime: string;
+  flightNumber: string;
+  carrierCode: string;
+  duration?: string;
+  equipment?: {
+    aircraftCode: string;
+    aircraftName?: string;
+  };
+  cabinCode?: string;
+  classOfService?: string;
+}
+
+// Extended Order with full DataLists
+export interface OrderExtended extends Order {
+  serviceDefinitions?: ServiceDefinitionParsed[];
+  serviceItems?: ServiceItemParsed[];
+  marketingSegments?: DatedMarketingSegmentParsed[];
+  seatAssignments?: SeatAssignmentParsed[];
+}
 
 export interface OrderWarning {
   code?: string;
@@ -18,7 +76,7 @@ export interface OrderParseResult {
   success: boolean;
   errors?: Array<{ code: string; message: string }>;
   warnings?: OrderWarning[];
-  order?: Order;
+  order?: OrderExtended;
 }
 
 export class OrderParser extends BaseXmlParser {
@@ -95,7 +153,7 @@ export class OrderParser extends BaseXmlParser {
     return null;
   }
 
-  private parseOrder(orderEl: Element, doc: Document): Order {
+  private parseOrder(orderEl: Element, doc: Document): OrderExtended {
     const orderId = this.getAttribute(orderEl, "OrderID") ||
                     this.getText(orderEl, "OrderID") || "";
     const ownerCode = this.getAttribute(orderEl, "Owner") ||
@@ -165,6 +223,12 @@ export class OrderParser extends BaseXmlParser {
     const payments = this.parseAllPayments(doc);
     const paymentInfo = payments.length > 0 ? payments[0] : undefined;
 
+    // Parse extended DataLists
+    const serviceDefinitions = this.parseServiceDefinitions(doc);
+    const serviceItems = this.parseServiceItems(orderEl, serviceDefinitions);
+    const marketingSegments = this.parseMarketingSegments(doc);
+    const seatAssignments = this.parseSeatAssignments(orderEl);
+
     // Derive effective order status from payment info
     // If payment is SUCCESSFUL but XML has OPENED, the booking is actually CONFIRMED
     let effectiveStatus = status;
@@ -186,6 +250,11 @@ export class OrderParser extends BaseXmlParser {
       segments: segments.length > 0 ? segments : undefined,
       paymentInfo,
       payments: payments.length > 0 ? payments : undefined,
+      // Extended data
+      serviceDefinitions: serviceDefinitions.length > 0 ? serviceDefinitions : undefined,
+      serviceItems: serviceItems.length > 0 ? serviceItems : undefined,
+      marketingSegments: marketingSegments.length > 0 ? marketingSegments : undefined,
+      seatAssignments: seatAssignments.length > 0 ? seatAssignments : undefined,
     };
   }
 
@@ -365,6 +434,235 @@ export class OrderParser extends BaseXmlParser {
     }
 
     return segments;
+  }
+
+  /**
+   * Parse ServiceDefinitionList from DataLists
+   */
+  private parseServiceDefinitions(doc: Document): ServiceDefinitionParsed[] {
+    const definitions: ServiceDefinitionParsed[] = [];
+    const serviceDefElements = this.getElements(doc, "ServiceDefinition");
+
+    for (const defEl of serviceDefElements) {
+      const serviceCode = this.getText(defEl, "ServiceCode") || "";
+      const serviceName = this.getText(defEl, "Name") || this.getText(defEl, "ServiceName") || "";
+      const description = this.getText(defEl, "DescText") || this.getText(defEl, "Description") || undefined;
+      const rfic = this.getText(defEl, "RFIC") || undefined;
+      const rfisc = this.getText(defEl, "RFISC") || undefined;
+
+      // Determine service type from code/name
+      const serviceType = this.determineServiceType(serviceCode, serviceName, rfic);
+
+      definitions.push({
+        serviceDefinitionId: this.getAttribute(defEl, "ServiceDefinitionID") ||
+                            this.getText(defEl, "ServiceDefinitionID") || "",
+        serviceCode: serviceCode || undefined,
+        serviceName: serviceName || undefined,
+        description,
+        rfic,
+        rfisc,
+        serviceType,
+      });
+    }
+
+    return definitions;
+  }
+
+  /**
+   * Determine service type from code and name
+   */
+  private determineServiceType(
+    code: string,
+    name: string,
+    rfic?: string
+  ): ServiceDefinitionParsed['serviceType'] {
+    const upperCode = (code || "").toUpperCase();
+    const upperName = (name || "").toUpperCase();
+    const upperRfic = (rfic || "").toUpperCase();
+
+    // Check RFIC codes
+    if (upperRfic === "C") return "BAGGAGE"; // Cargo/Baggage
+    if (upperRfic === "G") return "MEAL";    // In-flight services
+
+    // Check code patterns
+    if (upperCode.includes("BAG") || upperCode.includes("0GO") || upperCode.includes("0GP")) return "BAGGAGE";
+    if (upperCode.includes("SEAT") || upperCode.includes("ST")) return "SEAT";
+    if (upperCode.includes("MEAL") || upperCode.includes("ML")) return "MEAL";
+    if (upperCode.includes("BNDL") || upperCode.includes("BDL")) return "BUNDLE";
+
+    // Check name patterns
+    if (upperName.includes("BAGGAGE") || upperName.includes("LUGGAGE") || upperName.includes("KG")) return "BAGGAGE";
+    if (upperName.includes("SEAT") || upperName.includes("LEGROOM")) return "SEAT";
+    if (upperName.includes("MEAL") || upperName.includes("FOOD") || upperName.includes("SNACK")) return "MEAL";
+    if (upperName.includes("BUNDLE") || upperName.includes("STARTER") || upperName.includes("PLUS") ||
+        upperName.includes("FLEX") || upperName.includes("MAX")) return "BUNDLE";
+
+    // SSR patterns
+    if (upperCode.length === 4 && /^[A-Z]{4}$/.test(upperCode)) return "SSR";
+
+    return "OTHER";
+  }
+
+  /**
+   * Parse service items from OrderItems that have Service elements
+   */
+  private parseServiceItems(
+    orderEl: Element,
+    serviceDefinitions: ServiceDefinitionParsed[]
+  ): ServiceItemParsed[] {
+    const serviceItems: ServiceItemParsed[] = [];
+    const orderItemElements = this.getElements(orderEl, "OrderItem");
+
+    for (const itemEl of orderItemElements) {
+      const serviceEl = this.getElement(itemEl, "Service");
+      if (!serviceEl) continue; // Skip flight-only items
+
+      const orderItemId = this.getAttribute(itemEl, "OrderItemID") ||
+                         this.getText(itemEl, "OrderItemID") || "";
+
+      // Get service definition reference
+      const serviceDefRefId = this.getText(serviceEl, "ServiceDefinitionRefID") ||
+                              this.getText(serviceEl, "ServiceRefID") || undefined;
+
+      // Look up service definition
+      const serviceDef = serviceDefinitions.find(sd => sd.serviceDefinitionId === serviceDefRefId);
+
+      // Get passenger and segment references
+      const paxRefIds = this.getElements(itemEl, "PaxRefID")
+        .map(el => el.textContent?.trim() || "")
+        .filter(id => id.length > 0);
+
+      const segmentRefIds = this.getElements(serviceEl, "PaxSegmentRefID")
+        .map(el => el.textContent?.trim() || "")
+        .filter(id => id.length > 0);
+
+      // Parse price
+      const priceEl = this.getElement(itemEl, "Price") || this.getElement(itemEl, "TotalAmount");
+      const price = this.parseAmount(priceEl) || undefined;
+
+      // Check for seat assignment
+      let seatAssignment: SeatAssignmentParsed | undefined;
+      const seatEl = this.getElement(serviceEl, "SeatAssignment") || this.getElement(serviceEl, "Seat");
+      if (seatEl) {
+        const row = this.getText(seatEl, "RowNumber") || this.getText(seatEl, "Row") || "";
+        const column = this.getText(seatEl, "ColumnID") || this.getText(seatEl, "Column") || "";
+        if (row && column) {
+          seatAssignment = {
+            paxRefId: paxRefIds[0] || "",
+            segmentRefId: segmentRefIds[0] || "",
+            row,
+            column,
+            seatCharacteristics: this.getElements(seatEl, "SeatCharacteristicCode")
+              .map(el => el.textContent?.trim() || "")
+              .filter(c => c.length > 0),
+          };
+        }
+      }
+
+      // Determine service type
+      let serviceType: ServiceItemParsed['serviceType'] = serviceDef?.serviceType || "OTHER";
+      if (seatAssignment) serviceType = "SEAT";
+
+      serviceItems.push({
+        orderItemId,
+        serviceDefinitionRefId: serviceDefRefId,
+        serviceName: serviceDef?.serviceName,
+        serviceCode: serviceDef?.serviceCode,
+        serviceType,
+        paxRefIds,
+        segmentRefIds,
+        quantity: parseInt(this.getText(serviceEl, "Quantity") || "1") || 1,
+        price,
+        seatAssignment,
+      });
+    }
+
+    return serviceItems;
+  }
+
+  /**
+   * Parse DatedMarketingSegmentList for detailed flight info
+   */
+  private parseMarketingSegments(doc: Document): DatedMarketingSegmentParsed[] {
+    const segments: DatedMarketingSegmentParsed[] = [];
+    const segmentElements = this.getElements(doc, "DatedMarketingSegment");
+
+    for (const segEl of segmentElements) {
+      const depEl = this.getElement(segEl, "Dep");
+      const arrEl = this.getElement(segEl, "Arrival") || this.getElement(segEl, "Arr");
+
+      const equipmentEl = this.getElement(segEl, "DatedOperatingLeg");
+      let equipment: DatedMarketingSegmentParsed['equipment'] | undefined;
+      if (equipmentEl) {
+        const aircraftCode = this.getText(equipmentEl, "AircraftTypeCode") || "";
+        if (aircraftCode) {
+          equipment = {
+            aircraftCode,
+            aircraftName: this.getText(equipmentEl, "AircraftTypeName") || undefined,
+          };
+        }
+      }
+
+      segments.push({
+        segmentId: this.getAttribute(segEl, "DatedMarketingSegmentId") ||
+                  this.getText(segEl, "DatedMarketingSegmentID") || "",
+        origin: this.getText(depEl, "IATA_LocationCode") || "",
+        destination: this.getText(arrEl, "IATA_LocationCode") || "",
+        departureDateTime: this.getText(depEl, "AircraftScheduledDateTime") ||
+                          this.getText(depEl, "DateTime") || "",
+        arrivalDateTime: this.getText(arrEl, "AircraftScheduledDateTime") ||
+                        this.getText(arrEl, "DateTime") || "",
+        flightNumber: this.getText(segEl, "MarketingCarrierFlightNumberText") || "",
+        carrierCode: this.getText(segEl, "CarrierDesigCode") || "",
+        duration: this.getText(segEl, "Duration") || undefined,
+        equipment,
+        cabinCode: this.getText(segEl, "CabinTypeCode") || undefined,
+        classOfService: this.getText(segEl, "ClassOfService") ||
+                       this.getText(segEl, "RBD") || undefined,
+      });
+    }
+
+    return segments;
+  }
+
+  /**
+   * Parse all seat assignments from OrderItems
+   */
+  private parseSeatAssignments(orderEl: Element): SeatAssignmentParsed[] {
+    const seats: SeatAssignmentParsed[] = [];
+    const orderItemElements = this.getElements(orderEl, "OrderItem");
+
+    for (const itemEl of orderItemElements) {
+      const serviceEl = this.getElement(itemEl, "Service");
+      if (!serviceEl) continue;
+
+      const seatEl = this.getElement(serviceEl, "SeatAssignment") || this.getElement(serviceEl, "Seat");
+      if (!seatEl) continue;
+
+      const row = this.getText(seatEl, "RowNumber") || this.getText(seatEl, "Row") || "";
+      const column = this.getText(seatEl, "ColumnID") || this.getText(seatEl, "Column") || "";
+      if (!row || !column) continue;
+
+      const paxRefIds = this.getElements(itemEl, "PaxRefID")
+        .map(el => el.textContent?.trim() || "")
+        .filter(id => id.length > 0);
+
+      const segmentRefIds = this.getElements(serviceEl, "PaxSegmentRefID")
+        .map(el => el.textContent?.trim() || "")
+        .filter(id => id.length > 0);
+
+      seats.push({
+        paxRefId: paxRefIds[0] || "",
+        segmentRefId: segmentRefIds[0] || "",
+        row,
+        column,
+        seatCharacteristics: this.getElements(seatEl, "SeatCharacteristicCode")
+          .map(el => el.textContent?.trim() || "")
+          .filter(c => c.length > 0),
+      });
+    }
+
+    return seats;
   }
 }
 

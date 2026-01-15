@@ -4,7 +4,7 @@ import { useToast } from '@/core/context/ToastContext';
 import { useXmlViewer } from '@/core/context/XmlViewerContext';
 import { useSessionStore } from '@/core/context/SessionStore';
 import { orderRetrieve } from '@/lib/ndc-api';
-import { transformBookingData } from '@/lib/booking-transform';
+import { transformBookingData, transformServicesData } from '@/lib/booking-transform';
 import { Card, Button, Alert } from '@/components/ui';
 import { AppLayout } from '@/components/layout';
 import {
@@ -12,6 +12,7 @@ import {
   FlightJourneyTimeline,
   PassengerDetailsCard,
   PaymentSummaryCard,
+  BookingServicesCard,
 } from '@/components/booking';
 import {
   Search, RefreshCw, XCircle, Luggage, Armchair, Plane,
@@ -39,6 +40,17 @@ export function ManageBookingPage() {
       return transformBookingData(booking);
     } catch (err) {
       console.error('[ManageBooking] Transform error:', err);
+      return null;
+    }
+  }, [booking]);
+
+  // Transform services data for BookingServicesCard
+  const servicesData = useMemo(() => {
+    if (!booking) return null;
+    try {
+      return transformServicesData(booking);
+    } catch (err) {
+      console.error('[ManageBooking] Services transform error:', err);
       return null;
     }
   }, [booking]);
@@ -262,15 +274,17 @@ export function ManageBookingPage() {
         {/* Booking Details Display */}
         {booking && transformedData && (
           <div className="space-y-6">
-            {/* New Search Button */}
-            <Button
-              variant="outline"
-              onClick={() => setBooking(null)}
-              className="mb-2"
-            >
-              <Search className="w-4 h-4 mr-2" />
-              New Search
-            </Button>
+            {/* New Search Button - Right aligned */}
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setBooking(null)}
+                className="bg-white hover:bg-gray-50 border-gray-300 text-gray-700 shadow-sm"
+              >
+                <Search className="w-4 h-4 mr-2" />
+                New Search
+              </Button>
+            </div>
 
             {/* Status Banner - The WOW Header */}
             {/* Note: actionRequired removed - Complete Payment button is now in Manage Your Booking section */}
@@ -356,6 +370,16 @@ export function ManageBookingPage() {
               transactions={transformedData.payment.transactions}
               showBreakdown={true}
             />
+
+            {/* Complete Booking Details - Services, Seats, Baggage, Meals per Journey/Segment/Passenger */}
+            {servicesData && servicesData.journeys.length > 0 && (
+              <BookingServicesCard
+                services={servicesData.services}
+                passengers={servicesData.passengers}
+                segments={servicesData.segments}
+                journeys={servicesData.journeys}
+              />
+            )}
 
             {/* Quick Actions */}
             <Card className="p-6 bg-white shadow-lg border border-gray-100">

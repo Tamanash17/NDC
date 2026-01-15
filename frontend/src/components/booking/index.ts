@@ -4,3 +4,4 @@ export * from './BookingStatusBanner';
 export * from './FlightJourneyTimeline';
 export * from './PassengerDetailsCard';
 export * from './PaymentSummaryCard';
+export * from './BookingServicesCard';
