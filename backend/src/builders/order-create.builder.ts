@@ -27,6 +27,19 @@ export function buildOrderCreateXml(
 ): string {
   const chain = options?.distributionChain || input.distributionChain;
 
+  // Log input for debugging bundle issues
+  console.log('[OrderCreateBuilder] Building XML with:', {
+    selectedOffersCount: input.selectedOffers?.length || 0,
+    passengersCount: input.passengers?.length || 0,
+    passengers: input.passengers?.map(p => `${p.paxId}:${p.ptc}`),
+    offerItems: input.selectedOffers?.flatMap(o =>
+      o.offerItems?.map(i => ({
+        offerItemId: i.offerItemId,
+        paxRefIds: i.paxRefIds,
+      })) || []
+    ),
+  });
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <IATA_OrderCreateRQ xmlns="${JETSTAR_NS.main}">
 ${buildDistributionChain(chain)}
@@ -88,10 +101,14 @@ function buildSelectedOffers(input: OrderCreateRequest): string {
       return `<SelectedPricedOffer>
 <OfferRefID>${escapeXml(offer.offerId)}</OfferRefID>
 <OwnerCode>${escapeXml(offer.ownerCode)}</OwnerCode>
-${offer.offerItems.map(item => `<SelectedOfferItem>
+${offer.offerItems.map(item => {
+  // Ensure paxRefIds is an array (defensive check)
+  const paxIds = item.paxRefIds || [];
+  return `<SelectedOfferItem>
 <OfferItemRefID>${escapeXml(item.offerItemId)}</OfferItemRefID>
-${item.paxRefIds.map(paxId => `<PaxRefID>${escapeXml(paxId)}</PaxRefID>`).join("")}
-</SelectedOfferItem>`).join("")}
+${paxIds.map(paxId => `<PaxRefID>${escapeXml(paxId)}</PaxRefID>`).join("")}
+</SelectedOfferItem>`;
+}).join("")}
 </SelectedPricedOffer>`;
     }
     // Legacy fallback
