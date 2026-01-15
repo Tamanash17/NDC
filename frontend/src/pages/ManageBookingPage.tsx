@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '@/core/context/ToastContext';
 import { useXmlViewer } from '@/core/context/XmlViewerContext';
+import { useSessionStore } from '@/core/context/SessionStore';
 import { orderRetrieve } from '@/lib/ndc-api';
 import { Card, Button, Input, Alert, Badge } from '@/components/ui';
 import { AppLayout } from '@/components/layout';
@@ -14,6 +15,7 @@ export function ManageBookingPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { startNewSession, addCapture } = useXmlViewer();
+  const { getDistributionContext } = useSessionStore();
   const [searchParams] = useSearchParams();
 
   // Auto-populate PNR from query parameters (e.g., /manage?pnr=UWYYNG)
@@ -48,9 +50,15 @@ export function ManageBookingPage() {
     const startTime = Date.now();
 
     try {
+      // Get distribution context from session
+      const distributionContext = getDistributionContext();
+
       const response = await orderRetrieve({
         orderId: pnr.trim(),
-        ownerCode: 'JQ'
+        ownerCode: 'JQ',
+        distributionChain: distributionContext ? {
+          links: distributionContext.links
+        } : undefined
       });
       console.log('[ManageBooking] Full response:', JSON.stringify(response, null, 2));
 
