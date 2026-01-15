@@ -761,9 +761,9 @@ router.post("/seat-availability", async (req: any, res: any) => {
 });
 // OrderCreate - accepts JSON and builds XML
 router.post("/order-create", async (req: any, res: any) => {
-  try {
-    let xmlRequest: string;
+  let xmlRequest: string | undefined;
 
+  try {
     // If body has xml property, use it directly
     if (req.body.xml) {
       xmlRequest = req.body.xml;
@@ -832,7 +832,7 @@ router.post("/order-create", async (req: any, res: any) => {
       error: errorMessage,
       message: errorMessage,
       status: statusCode,
-      requestXml: error.config?.data,
+      requestXml: xmlRequest,  // FIXED: Use xmlRequest variable instead of error.config?.data
       responseXml: typeof error.response?.data === 'string' ? error.response.data : undefined,
     });
   }
