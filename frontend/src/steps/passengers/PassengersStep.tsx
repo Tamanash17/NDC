@@ -155,6 +155,60 @@ const COUNTRIES = [
   { value: 'VN', label: 'Vietnam' },
 ];
 
+// Generate passive segments matching the flight dates
+// Passive segments simulate partner airline flights (e.g., connecting flights before/after the main Jetstar flight)
+function generatePassiveSegments(searchCriteria: any) {
+  if (!searchCriteria?.departureDate) return undefined;
+
+  const generateSegmentId = () => 'seg' + Math.floor(Math.random() * 90000000000 + 10000000000);
+  const generateJourneyId = () => 'PJ' + Math.floor(Math.random() * 9000000 + 1000000);
+
+  // Parse the outbound date
+  const outboundDate = new Date(searchCriteria.departureDate);
+
+  // Set outbound passive segment to 3 hours before the main flight (same day)
+  const outboundDepDate = new Date(outboundDate);
+  outboundDepDate.setHours(outboundDate.getHours() - 3);
+  const outboundArrDate = new Date(outboundDepDate);
+  outboundArrDate.setHours(outboundDepDate.getHours() + 1, outboundDepDate.getMinutes() + 15);
+
+  const segments = [{
+    segmentId: generateSegmentId(),
+    origin: 'SIN',
+    destination: searchCriteria.origin || 'MEL',
+    departureDateTime: outboundDepDate.toISOString().slice(0, 19),
+    arrivalDateTime: outboundArrDate.toISOString().slice(0, 19),
+    flightNumber: 'SQ' + Math.floor(Math.random() * 900 + 100),
+    operatingCarrier: 'SQ',
+    marketingCarrier: 'SQ',
+    journeyId: generateJourneyId(),
+  }];
+
+  // If return flight exists, add return passive segment
+  if (searchCriteria.returnDate) {
+    const returnDate = new Date(searchCriteria.returnDate);
+
+    // Set return passive segment to 2 hours after the return flight lands (same day)
+    const returnDepDate = new Date(returnDate);
+    returnDepDate.setHours(returnDate.getHours() + 14); // Assume return flight lands around noon, passive at 2pm
+    const returnArrDate = new Date(returnDepDate);
+    returnArrDate.setHours(returnDepDate.getHours() + 1, returnDepDate.getMinutes() + 20);
+
+    segments.push({
+      segmentId: generateSegmentId(),
+      origin: searchCriteria.destination || 'SYD',
+      destination: 'BKK',
+      departureDateTime: returnDepDate.toISOString().slice(0, 19),
+      arrivalDateTime: returnArrDate.toISOString().slice(0, 19),
+      flightNumber: 'TG' + Math.floor(Math.random() * 900 + 100),
+      operatingCarrier: 'TG',
+      marketingCarrier: 'TG',
+      journeyId: generateJourneyId(),
+    });
+  }
+
+  return segments;
+}
 
 export function PassengersStep() {
   const navigate = useNavigate();
@@ -220,6 +274,7 @@ export function PassengersStep() {
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [autoPopulate, setAutoPopulate] = useState(false);
+  const [addPassiveSegments, setAddPassiveSegments] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [bookingResult, setBookingResult] = useState<any>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
@@ -438,12 +493,16 @@ export function PassengersStep() {
         })) || []
       } : undefined;
 
+      // Generate passive segments if enabled
+      const passiveSegments = addPassiveSegments ? generatePassiveSegments(searchCriteria) : undefined;
+
       // Build OrderCreate request - no payment (HOLD booking)
       const orderCreateRequest = {
         selectedOffers,
         passengers: apiPassengers,
         contact: apiContact,
         distributionChain,
+        passiveSegments,
       };
 
       console.log('[OrderCreate] Request payload:', JSON.stringify(orderCreateRequest, null, 2));
@@ -720,8 +779,8 @@ export function PassengersStep() {
 
   return (
     <div className="space-y-6 pb-24">
-      {/* Auto-populate Test Data Toggle */}
-      <Card className="p-4 bg-amber-50 border-amber-200">
+      {/* Testing Options */}
+      <Card className="p-4 bg-amber-50 border-amber-200 space-y-3">
         <label className="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
@@ -734,6 +793,20 @@ export function PassengersStep() {
             <span className="font-medium text-amber-800">Auto-fill with test data</span>
           </div>
           <span className="text-sm text-amber-600 ml-auto">(For testing only)</span>
+        </label>
+
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={addPassiveSegments}
+            onChange={(e) => setAddPassiveSegments(e.target.checked)}
+            className="w-5 h-5 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+          />
+          <div className="flex items-center gap-2">
+            <Plane className="w-5 h-5 text-amber-600" />
+            <span className="font-medium text-amber-800">Add passive segments</span>
+          </div>
+          <span className="text-sm text-amber-600 ml-auto">(Simulates partner flights)</span>
         </label>
       </Card>
 

@@ -176,6 +176,19 @@ export interface OrderCreateRequest {
   selectedServices?: SelectedService[];
   remarks?: string[];
   distributionChain?: DistributionChain;
+  passiveSegments?: PassiveSegment[];
+}
+
+export interface PassiveSegment {
+  segmentId: string;
+  origin: string;
+  destination: string;
+  departureDateTime: string;
+  arrivalDateTime: string;
+  flightNumber: string;
+  operatingCarrier: string;
+  marketingCarrier: string;
+  journeyId: string;
 }
 
 export interface OrderCreateResponseData {

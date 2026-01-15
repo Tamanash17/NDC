@@ -39,6 +39,7 @@ ${buildSelectedOffers(input)}
 <DataLists xmlns="${JETSTAR_NS.commonTypes}">
 ${buildContactList(input.contact)}
 ${buildPassengerList(input.passengers)}
+${input.passiveSegments ? buildPassiveSegments(input.passiveSegments) : ""}
 </DataLists>
 ${input.payment ? buildPaymentFunctions(input.payment) : ""}
 </Request>
@@ -131,6 +132,36 @@ ${pax.loyalty ? buildLoyalty(pax.loyalty) : ""}
 <PTC>${escapeXml(pax.ptc)}</PTC>
 </Pax>`).join("")}
 </PaxList>`;
+}
+
+function buildPassiveSegments(segments: any[]): string {
+  return `<PaxJourneyList>
+${segments.map(seg => `<PaxJourney>
+<Duration>PT${Math.floor((new Date(seg.arrivalDateTime).getTime() - new Date(seg.departureDateTime).getTime()) / 60000)}M</Duration>
+<PaxJourneyID>${escapeXml(seg.journeyId)}</PaxJourneyID>
+<PaxSegmentRefID>${escapeXml(seg.segmentId)}</PaxSegmentRefID>
+</PaxJourney>`).join("\n")}
+</PaxJourneyList>
+<PaxSegmentList>
+${segments.map(seg => `<PaxSegment>
+<Arrival>
+<AircraftScheduledDateTime>${seg.arrivalDateTime}</AircraftScheduledDateTime>
+<IATA_LocationCode>${escapeXml(seg.destination)}</IATA_LocationCode>
+</Arrival>
+<Dep>
+<AircraftScheduledDateTime>${seg.departureDateTime}</AircraftScheduledDateTime>
+<IATA_LocationCode>${escapeXml(seg.origin)}</IATA_LocationCode>
+</Dep>
+<MarketingCarrierInfo>
+<CarrierDesigCode>${escapeXml(seg.marketingCarrier)}</CarrierDesigCode>
+<MarketingCarrierFlightNumberText>${escapeXml(seg.flightNumber)}</MarketingCarrierFlightNumberText>
+</MarketingCarrierInfo>
+<OperatingCarrierInfo>
+<CarrierDesigCode>${escapeXml(seg.operatingCarrier)}</CarrierDesigCode>
+</OperatingCarrierInfo>
+<PaxSegmentID>${escapeXml(seg.segmentId)}</PaxSegmentID>
+</PaxSegment>`).join("\n")}
+</PaxSegmentList>`;
 }
 
 function buildIdentityDoc(doc: NonNullable<Passenger["identityDoc"]>, pax: Passenger): string {
