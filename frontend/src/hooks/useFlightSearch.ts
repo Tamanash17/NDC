@@ -312,7 +312,11 @@ export function useFlightSearch(): UseFlightSearchResult {
         } else if (responseData.message) {
           errorMessage = responseData.message;
         } else if (responseData.errors && Array.isArray(responseData.errors)) {
-          errorMessage = responseData.errors.map((e: any) => e.message || e).join('; ');
+          errorMessage = responseData.errors.map((e: any) => {
+            if (typeof e === 'string') return e;
+            if (e.code && e.message) return `${e.code}: ${e.message}`;
+            return e.message || e;
+          }).join('; ');
         } else if (responseData.parsed?.errors) {
           errorMessage = responseData.parsed.errors.map((e: any) => e.message || e).join('; ');
         } else {
