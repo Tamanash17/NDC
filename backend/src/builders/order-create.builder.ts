@@ -30,6 +30,9 @@ export function buildOrderCreateXml(
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <IATA_OrderCreateRQ xmlns="${JETSTAR_NS.main}">
 ${buildDistributionChain(chain)}
+<PayloadAttributes>
+<VersionNumber xmlns="${JETSTAR_NS.commonTypes}">21.3</VersionNumber>
+</PayloadAttributes>
 <Request>
 <CreateOrder xmlns="${JETSTAR_NS.commonTypes}">
 <AcceptSelectedQuotedOfferList>
