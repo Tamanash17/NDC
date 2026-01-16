@@ -473,7 +473,7 @@ export class OfferPriceParser extends BaseXmlParser {
         });
 
       console.log(`[OfferPriceParser] Flight ${flightNumber} (${route}):`, {
-        segRef,
+        journeyKey,
         itemCount: segItems.length,
         passengerBreakdown: passengerBreakdown.map(p => `${p.ptc}(${p.paxCount}): base=${p.baseFare}, total=${p.total}`),
         flightTotal,
@@ -483,7 +483,7 @@ export class OfferPriceParser extends BaseXmlParser {
       breakdowns.push({
         flightNumber,
         route,
-        segmentIds: segment ? [segment.id] : [],
+        segmentIds: segmentIds,
         publishedFare: {
           label: "Published Fare",
           baseFare: flightBaseFare,
