@@ -330,10 +330,80 @@ export class OfferPriceParser extends BaseXmlParser {
       }
     }
 
-    console.log("[OfferPriceParser] Items grouped by journey:", {
+    console.log("[OfferPriceParser] Items grouped by journey (before merge):", {
       journeyGroups: Array.from(itemsByJourney.keys()),
       itemsWithoutSegment: itemsWithoutSegment.length,
     });
+
+    // MERGE CONSECUTIVE SEGMENTS INTO JOURNEYS
+    // If we have separate groups for consecutive segments (e.g., seg1, seg2 for ADL→MEL→AYQ),
+    // merge them into a single journey. This is detected by finding segments where
+    // one segment's destination matches another segment's origin.
+    if (itemsByJourney.size > 1 && segments.length > 1) {
+      // Build a map of segment destination → segment ID for quick lookup
+      const destToSegId = new Map<string, string>();
+      const segIdToOrigin = new Map<string, string>();
+      const segIdToDest = new Map<string, string>();
+      for (const seg of segments) {
+        destToSegId.set(seg.destination, seg.id);
+        segIdToOrigin.set(seg.id, seg.origin);
+        segIdToDest.set(seg.id, seg.destination);
+      }
+
+      // Find chains of consecutive segments
+      const mergedJourneys = new Map<string, OfferItem[]>();
+      const processedKeys = new Set<string>();
+
+      for (const [key, items] of itemsByJourney) {
+        if (processedKeys.has(key)) continue;
+
+        const segIds = key.split('|');
+        const chainSegIds = [...segIds];
+        let foundConnection = true;
+
+        // Follow the chain forward (find segments whose origin matches our destination)
+        while (foundConnection) {
+          foundConnection = false;
+          const lastSegId = chainSegIds[chainSegIds.length - 1];
+          const lastDest = segIdToDest.get(lastSegId);
+
+          if (lastDest) {
+            // Look for another journey group whose segment origin matches our destination
+            for (const [otherKey, otherItems] of itemsByJourney) {
+              if (processedKeys.has(otherKey) || otherKey === key) continue;
+
+              const otherSegIds = otherKey.split('|');
+              const firstOtherSegId = otherSegIds[0];
+              const firstOtherOrigin = segIdToOrigin.get(firstOtherSegId);
+
+              if (firstOtherOrigin === lastDest) {
+                // Found a connecting segment! Merge it
+                chainSegIds.push(...otherSegIds);
+                items.push(...otherItems);
+                processedKeys.add(otherKey);
+                foundConnection = true;
+                console.log(`[OfferPriceParser] Merged segment ${otherKey} into journey (connection: ${lastDest})`);
+                break;
+              }
+            }
+          }
+        }
+
+        processedKeys.add(key);
+        const mergedKey = chainSegIds.sort().join('|');
+        mergedJourneys.set(mergedKey, items);
+      }
+
+      // Replace itemsByJourney with merged version
+      itemsByJourney.clear();
+      for (const [key, items] of mergedJourneys) {
+        itemsByJourney.set(key, items);
+      }
+
+      console.log("[OfferPriceParser] Items grouped by journey (after merge):", {
+        journeyGroups: Array.from(itemsByJourney.keys()),
+      });
+    }
 
     // Alias for backward compatibility with rest of code
     const itemsBySegment = itemsByJourney;
@@ -396,10 +466,13 @@ export class OfferPriceParser extends BaseXmlParser {
         console.log(`[OfferPriceParser] Found ${journeySegments.length} matching segments`);
 
         if (journeySegments.length > 0) {
-          // First segment origin → Last segment destination
-          const firstSeg = journeySegments[0];
-          const lastSeg = journeySegments[journeySegments.length - 1];
-          route = `${firstSeg.origin} → ${lastSeg.destination}`;
+          // Build full route showing all stops: ADL → MEL → AYQ
+          // Start with first segment's origin, then add each destination
+          const routeParts = [journeySegments[0].origin];
+          for (const seg of journeySegments) {
+            routeParts.push(seg.destination);
+          }
+          route = routeParts.join(' → ');
 
           console.log(`[OfferPriceParser] Journey route: ${route} (${journeySegments.length} segments: ${segmentIds.join(', ')})`);
         } else {
