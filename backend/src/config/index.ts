@@ -125,13 +125,13 @@ const ndcEnvConfigs = {
     baseUrl: env.NDC_UAT_BASE_URL,
     authUrl: env.NDC_UAT_AUTH_URL,
     header: env.NDC_UAT_HEADER,
-    headerName: "X-NDC-UAT",
+    headerName: "NDCUAT",
   },
   PROD: {
     baseUrl: env.NDC_PROD_BASE_URL,
     authUrl: env.NDC_PROD_AUTH_URL,
     header: env.NDC_PROD_HEADER,
-    headerName: "X-NDC-PROD",
+    headerName: "NDCPROD",
   },
 } as const;
 
