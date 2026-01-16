@@ -569,6 +569,73 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
     return !isSynthetic && !!selectionItem.bundle.journeyRefId;
   };
 
+  // Helper to get route from journey segments - shows full journey route (e.g., ADL → MEL → AYQ)
+  // PROD FIX: For multi-segment journeys, the segments array may only have the first leg
+  // Use searchCriteria origin/destination as the canonical source of the journey endpoints
+  const getJourneyRoute = useCallback((
+    selectionItem: typeof flightStore.selection.outbound,
+    direction: 'outbound' | 'inbound' = 'outbound'
+  ): string => {
+    const searchCriteria = flightStore.searchCriteria;
+    const segments = selectionItem?.journey?.segments;
+    console.log('[OfferPriceStep] getJourneyRoute direction:', direction, 'segments:', segments?.length, segments?.map(s => `${s?.origin}→${s?.destination}`));
+
+    // Get journey endpoints from searchCriteria (most reliable)
+    const journeyOrigin = direction === 'outbound'
+      ? searchCriteria?.origin
+      : searchCriteria?.destination;  // For inbound, origin is where we're returning from
+    const journeyDestination = direction === 'outbound'
+      ? searchCriteria?.destination
+      : searchCriteria?.origin;  // For inbound, destination is where we started
+
+    console.log('[OfferPriceStep] getJourneyRoute using searchCriteria:', journeyOrigin, '→', journeyDestination);
+
+    if (segments && segments.length > 1) {
+      // We have multiple segments - show all stops
+      const routeParts: string[] = [];
+      for (const seg of segments) {
+        if (seg?.origin && routeParts.length === 0) {
+          routeParts.push(seg.origin);
+        }
+        if (seg?.destination) {
+          routeParts.push(seg.destination);
+        }
+      }
+      console.log('[OfferPriceStep] getJourneyRoute multi-segment routeParts:', routeParts);
+      if (routeParts.length > 1) {
+        return routeParts.join(' → ');
+      }
+    } else if (segments && segments.length === 1) {
+      // PROD FIX: Only one segment stored, but journey might have multiple legs
+      // Check if segment endpoints match journey endpoints (searchCriteria)
+      const seg = segments[0];
+      const segOrigin = seg?.origin;
+      const segDest = seg?.destination;
+
+      console.log('[OfferPriceStep] getJourneyRoute single segment check:',
+        'segOrigin:', segOrigin, 'journeyOrigin:', journeyOrigin,
+        'segDest:', segDest, 'journeyDest:', journeyDestination);
+
+      // If segment destination doesn't match journey destination, it's a connecting flight
+      // Show: segOrigin → segDest → journeyDestination (e.g., ADL → MEL → AYQ)
+      if (segOrigin && segDest && journeyOrigin && journeyDestination) {
+        if (segOrigin === journeyOrigin && segDest !== journeyDestination) {
+          // This is a multi-leg journey where we only have the first segment
+          console.log('[OfferPriceStep] getJourneyRoute PROD FIX: detected multi-leg with missing segments');
+          return `${segOrigin} → ${segDest} → ${journeyDestination}`;
+        }
+        // Normal single-segment journey
+        return `${segOrigin} → ${segDest}`;
+      }
+    }
+
+    // Fallback to searchCriteria endpoints
+    if (journeyOrigin && journeyDestination) {
+      return `${journeyOrigin} → ${journeyDestination}`;
+    }
+    return 'Unknown Route';
+  }, [flightStore.searchCriteria]);
+
   // Build AirShopping prices for comparison using actual per-pax pricing
   // NOTE: Jetstar NDC AirShopping API does NOT provide separate base/tax breakdown
   // The offer.totalPrice is the TOTAL including taxes for ALL passengers
@@ -777,37 +844,10 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
       outboundBundleSwap.serviceCode === inboundBundleSwap.serviceCode &&
       outboundBundleSwap.price === inboundBundleSwap.price;
 
-    // Helper to get route from journey segments - shows all stops (e.g., ADL → MEL → AYQ)
-    const getJourneyRoute = (selectionItem: typeof selection.outbound): string => {
-      const segments = selectionItem?.journey?.segments;
-      console.log('[OfferPriceStep] getJourneyRoute segments:', segments?.length, segments?.map(s => `${s?.origin}→${s?.destination}`));
-      if (segments && segments.length > 0) {
-        // Build route showing all stops: origin → stop1 → stop2 → destination
-        const routeParts: string[] = [];
-        for (const seg of segments) {
-          if (seg?.origin && routeParts.length === 0) {
-            routeParts.push(seg.origin);
-          }
-          if (seg?.destination) {
-            routeParts.push(seg.destination);
-          }
-        }
-        console.log('[OfferPriceStep] getJourneyRoute routeParts:', routeParts);
-        if (routeParts.length > 1) {
-          return routeParts.join(' → ');
-        }
-      }
-      // Fallback to searchCriteria if segments not available
-      if (searchCriteria?.origin && searchCriteria?.destination) {
-        return `${searchCriteria.origin} → ${searchCriteria.destination}`;
-      }
-      return 'Unknown Route';
-    };
-
     // Outbound - use swapped bundle if available
     if (selection.outbound) {
       // Use journey segments to show all stops (multi-segment routes)
-      const route = getJourneyRoute(selection.outbound);
+      const route = getJourneyRoute(selection.outbound, 'outbound');
       const bundleSel = buildBundleSelection(
         selection.outbound,
         1,
@@ -820,7 +860,7 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
           // Don't show it twice - combine both journeys into one display row
           const roundTripRoute = searchCriteria?.origin && searchCriteria?.destination
             ? `${searchCriteria.origin} ↔ ${searchCriteria.destination} (Round Trip)`
-            : `${getJourneyRoute(selection.outbound).replace(' → ', ' ↔ ')} (Round Trip)`;
+            : `${getJourneyRoute(selection.outbound, 'outbound').replace(' → ', ' ↔ ')} (Round Trip)`;
           bundleSel.route = roundTripRoute;
           bundleSel.flightNumber = 0;  // Indicate it's for both flights
           console.log('[OfferPriceStep] Same bundle for both journeys - showing as single round-trip bundle');
@@ -833,7 +873,7 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
     // SKIP if same bundle already added for round trip
     if (selection.inbound && !sameBundle) {
       // Use journey segments to show all stops (multi-segment routes)
-      const route = getJourneyRoute(selection.inbound);
+      const route = getJourneyRoute(selection.inbound, 'inbound');
       const bundleSel = buildBundleSelection(
         selection.inbound,
         2,
@@ -845,7 +885,7 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
 
     console.log('[OfferPriceStep] Built bundleSelections (including swaps):', selections);
     return selections;
-  }, [flightStore.selection, flightStore.searchCriteria, flightStore.selectedServices]);
+  }, [flightStore.selection, flightStore.searchCriteria, flightStore.selectedServices, getJourneyRoute]);
 
   // Calculate pre-OfferPrice total from AirShopping selection
   const preOfferPriceTotal = useMemo(() => {
@@ -1848,8 +1888,8 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
           })),
         });
 
-        const outboundRoute = getJourneyRoute(selection.outbound);
-        const inboundRoute = selection.inbound ? getJourneyRoute(selection.inbound) : null;
+        const outboundRoute = getJourneyRoute(selection.outbound, 'outbound');
+        const inboundRoute = selection.inbound ? getJourneyRoute(selection.inbound, 'inbound') : null;
 
         console.log('[OfferPriceStep] Overriding flightBreakdowns routes:', {
           outboundRoute,
