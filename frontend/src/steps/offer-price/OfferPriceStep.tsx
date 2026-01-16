@@ -780,6 +780,7 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
     // Helper to get route from journey segments - shows all stops (e.g., ADL → MEL → AYQ)
     const getJourneyRoute = (selectionItem: typeof selection.outbound): string => {
       const segments = selectionItem?.journey?.segments;
+      console.log('[OfferPriceStep] getJourneyRoute segments:', segments?.length, segments?.map(s => `${s?.origin}→${s?.destination}`));
       if (segments && segments.length > 0) {
         // Build route showing all stops: origin → stop1 → stop2 → destination
         const routeParts: string[] = [];
@@ -791,19 +792,22 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
             routeParts.push(seg.destination);
           }
         }
+        console.log('[OfferPriceStep] getJourneyRoute routeParts:', routeParts);
         if (routeParts.length > 1) {
           return routeParts.join(' → ');
         }
+      }
+      // Fallback to searchCriteria if segments not available
+      if (searchCriteria?.origin && searchCriteria?.destination) {
+        return `${searchCriteria.origin} → ${searchCriteria.destination}`;
       }
       return 'Unknown Route';
     };
 
     // Outbound - use swapped bundle if available
     if (selection.outbound) {
-      // Prefer searchCriteria, fallback to journey segment data
-      const route = searchCriteria?.origin && searchCriteria?.destination
-        ? `${searchCriteria.origin} → ${searchCriteria.destination}`
-        : getJourneyRoute(selection.outbound);
+      // Use journey segments to show all stops (multi-segment routes)
+      const route = getJourneyRoute(selection.outbound);
       const bundleSel = buildBundleSelection(
         selection.outbound,
         1,
@@ -828,10 +832,8 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
     // Inbound (return flight) - use swapped bundle if available
     // SKIP if same bundle already added for round trip
     if (selection.inbound && !sameBundle) {
-      // Prefer searchCriteria, fallback to journey segment data
-      const route = searchCriteria?.destination && searchCriteria?.origin
-        ? `${searchCriteria.destination} → ${searchCriteria.origin}`
-        : getJourneyRoute(selection.inbound);
+      // Use journey segments to show all stops (multi-segment routes)
+      const route = getJourneyRoute(selection.inbound);
       const bundleSel = buildBundleSelection(
         selection.inbound,
         2,
