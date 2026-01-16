@@ -325,13 +325,19 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
     // PROD FIX: For multi-segment journeys, offer items may only reference the first segment
     // Look up ALL segment refs from paxJourneyList using the journey ID
     // This ensures we capture all stops (e.g., ADL → MEL → AYQ)
+    console.log(`[Parser] Offer segment refs from items: ${uniqueSegmentRefs.join(', ')} (count: ${uniqueSegmentRefs.length})`);
+    console.log(`[Parser] paxJourneyList count: ${response.dataLists?.paxJourneyList?.length || 0}`);
+
     if (uniqueSegmentRefs.length > 0) {
-      const segmentKey = uniqueSegmentRefs.sort().join('|');
       // Check if this partial segment key matches any journey's segments
       for (const journey of response.dataLists?.paxJourneyList || []) {
         const journeySegRefs = journey.segmentRefIds || [];
+        console.log(`[Parser] Checking journey ${journey.paxJourneyId}: refs=${journeySegRefs.join(', ')}`);
+
         // If our segment refs are a subset of this journey's refs, use the full journey refs
         const isSubset = uniqueSegmentRefs.every(ref => journeySegRefs.includes(ref));
+        console.log(`[Parser]   isSubset=${isSubset}, journeyRefsLength=${journeySegRefs.length}, offerRefsLength=${uniqueSegmentRefs.length}`);
+
         if (isSubset && journeySegRefs.length > uniqueSegmentRefs.length) {
           console.log(`[Parser] PROD FIX: Expanding segment refs from ${uniqueSegmentRefs.length} to ${journeySegRefs.length} using paxJourneyList`);
           console.log(`[Parser]   Offer refs: ${uniqueSegmentRefs.join(', ')}`);
@@ -341,6 +347,8 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
         }
       }
     }
+
+    console.log(`[Parser] Final segment refs: ${uniqueSegmentRefs.join(', ')} (count: ${uniqueSegmentRefs.length})`);
 
     // Build segments for this journey
     const segments: FlightSegment[] = uniqueSegmentRefs
