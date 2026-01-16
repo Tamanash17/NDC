@@ -340,8 +340,17 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
     setError(null);
     const startTime = Date.now();
 
-    const origin = searchCriteria?.origin || 'XXX';
-    const destination = searchCriteria?.destination || 'XXX';
+    // PROD FIX: Use segments as primary source since searchCriteria may not be populated
+    const outboundSegments = selection.outbound?.journey?.segments;
+    const inboundSegments = selection.inbound?.journey?.segments;
+
+    // Primary origin/destination from segments (more reliable)
+    const origin = outboundSegments?.[0]?.origin || searchCriteria?.origin || 'XXX';
+    const destination = outboundSegments?.[outboundSegments?.length - 1]?.destination || searchCriteria?.destination || 'XXX';
+
+    // Inbound endpoints (for route labels)
+    const inboundOrigin = inboundSegments?.[0]?.origin || destination;
+    const inboundDest = inboundSegments?.[inboundSegments?.length - 1]?.destination || origin;
 
     try {
       const distributionChain = distributionContext.isValid ? {
@@ -416,7 +425,7 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       });
 
       const routeLabel = selection.inbound
-        ? `${origin}-${destination} + ${destination}-${origin}`
+        ? `${origin}-${destination} + ${inboundOrigin}-${inboundDest}`
         : `${origin}-${destination}`;
 
       const opName = `ServiceList (${routeLabel})`;
@@ -445,7 +454,7 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
           bundleId: selection.inbound.bundleId,
           bundleName: selection.inbound.bundle?.bundleName,
           bundleCode: selection.inbound.bundle?.bundleCode,
-          route: `${destination} → ${origin}`,
+          route: `${inboundOrigin} → ${inboundDest}`,
           direction: 'inbound',
         } : undefined,
         shoppingResponseId: flightStore.shoppingResponseId || undefined,
