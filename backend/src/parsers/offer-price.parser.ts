@@ -151,21 +151,31 @@ export class OfferPriceParser extends BaseXmlParser {
   private parseSegments(doc: Document): Array<{ id: string; origin: string; destination: string }> {
     const segments: Array<{ id: string; origin: string; destination: string }> = [];
 
-    // Try DatedMarketingSegmentList first
-    const segmentElements = this.getElements(doc, "DatedMarketingSegment");
+    // Try DatedMarketingSegment first (common in AirShopping responses)
+    let segmentElements = this.getElements(doc, "DatedMarketingSegment");
     console.log("[OfferPriceParser] parseSegments: found", segmentElements.length, "DatedMarketingSegment elements");
 
-    for (const segEl of segmentElements) {
-      const id = this.getText(segEl, "DatedMarketingSegmentId") ||
-                 this.getAttribute(segEl, "SegmentID") || "";
+    // Fallback: Try PaxSegment (common in OfferPrice responses)
+    if (segmentElements.length === 0) {
+      segmentElements = this.getElements(doc, "PaxSegment");
+      console.log("[OfferPriceParser] parseSegments: fallback - found", segmentElements.length, "PaxSegment elements");
+    }
 
-      // Get origin from Dep element
-      const depEl = this.getElement(segEl, "Dep");
-      const origin = depEl ? this.getText(depEl, "IATA_LocationCode") || "" : "";
+    for (const segEl of segmentElements) {
+      // Try multiple ID field names
+      const id = this.getText(segEl, "DatedMarketingSegmentId") ||
+                 this.getText(segEl, "PaxSegmentID") ||
+                 this.getAttribute(segEl, "SegmentID") ||
+                 this.getAttribute(segEl, "ObjectKey") || "";
+
+      // Get origin from Dep element (or Departure)
+      let depEl = this.getElement(segEl, "Dep");
+      if (!depEl) depEl = this.getElement(segEl, "Departure");
+      const origin = depEl ? (this.getText(depEl, "IATA_LocationCode") || this.getText(depEl, "AirportCode") || "") : "";
 
       // Get destination from Arrival element
       const arrEl = this.getElement(segEl, "Arrival");
-      const destination = arrEl ? this.getText(arrEl, "IATA_LocationCode") || "" : "";
+      const destination = arrEl ? (this.getText(arrEl, "IATA_LocationCode") || this.getText(arrEl, "AirportCode") || "") : "";
 
       console.log("[OfferPriceParser] parseSegments: segment", { id, origin, destination });
 
@@ -394,6 +404,28 @@ export class OfferPriceParser extends BaseXmlParser {
           console.log(`[OfferPriceParser] Journey route: ${route} (${journeySegments.length} segments: ${segmentIds.join(', ')})`);
         } else {
           console.log(`[OfferPriceParser] WARNING: Could not find matching segments for journey`);
+          // FALLBACK: If we have segments but IDs don't match, use segment order instead
+          // Use flightNumber-1 as index (flightNumber is 1-based)
+          const segmentIndex = flightNumber - 1;
+          if (segments.length > segmentIndex && segments[segmentIndex]) {
+            const seg = segments[segmentIndex];
+            route = `${seg.origin} → ${seg.destination}`;
+            console.log(`[OfferPriceParser] Using fallback route from segment index ${segmentIndex}: ${route}`);
+          } else if (segments.length > 0) {
+            // Last resort: use first segment's origin and last segment's destination
+            const firstSeg = segments[0];
+            const lastSeg = segments[segments.length - 1];
+            route = `${firstSeg.origin} → ${lastSeg.destination}`;
+            console.log(`[OfferPriceParser] Using last-resort route from all segments: ${route}`);
+          }
+        }
+      } else if (segments.length > 0) {
+        // No segment IDs at all - use segment order
+        const segmentIndex = flightNumber - 1;
+        if (segments[segmentIndex]) {
+          const seg = segments[segmentIndex];
+          route = `${seg.origin} → ${seg.destination}`;
+          console.log(`[OfferPriceParser] No segment refs - using segment index ${segmentIndex}: ${route}`);
         }
       }
 
