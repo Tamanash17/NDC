@@ -3316,29 +3316,36 @@ function CompactServiceSection({
                 </span>
               )}
               {/* Association type badge for API team */}
-              <span className={cn(
-                "text-xs font-medium px-2 py-0.5 rounded",
-                service.associationType === 'segment' && "bg-blue-100 text-blue-700",
-                service.associationType === 'journey' && "bg-purple-100 text-purple-700",
-                service.associationType === 'leg' && "bg-amber-100 text-amber-700",
-                service.associationType === 'unknown' && "bg-gray-100 text-gray-600"
-              )}>
-                {service.associationType.toUpperCase()}
-              </span>
+              {service.associationType && (
+                <span className={cn(
+                  "text-xs font-medium px-2 py-0.5 rounded",
+                  service.associationType === 'segment' && "bg-blue-100 text-blue-700",
+                  service.associationType === 'journey' && "bg-purple-100 text-purple-700",
+                  service.associationType === 'leg' && "bg-amber-100 text-amber-700",
+                  (service.associationType === 'unknown' || !service.associationType) && "bg-gray-100 text-gray-600"
+                )}>
+                  {(service.associationType || 'unknown').toUpperCase()}
+                </span>
+              )}
             </div>
             {service.description && (
               <div className="text-xs text-neutral-600 mb-1">{service.description}</div>
             )}
             {/* Refs display for API team */}
-            <div className="text-[10px] text-neutral-500 font-mono space-x-2">
+            <div className="text-[10px] text-neutral-400 font-mono">
               {service.segmentRefs && service.segmentRefs.length > 0 && (
-                <span>Seg: {service.segmentRefs.join(', ')}</span>
+                <span className="mr-2">Seg: {service.segmentRefs.join(', ')}</span>
               )}
               {service.journeyRefs && service.journeyRefs.length > 0 && (
-                <span>Jrn: {service.journeyRefs.join(', ')}</span>
+                <span className="mr-2">Jrn: {service.journeyRefs.join(', ')}</span>
               )}
               {service.legRefs && service.legRefs.length > 0 && (
-                <span>Leg: {service.legRefs.join(', ')}</span>
+                <span className="mr-2">Leg: {service.legRefs.join(', ')}</span>
+              )}
+              {(!service.segmentRefs || service.segmentRefs.length === 0) &&
+               (!service.journeyRefs || service.journeyRefs.length === 0) &&
+               (!service.legRefs || service.legRefs.length === 0) && (
+                <span className="text-neutral-300">(no refs)</span>
               )}
             </div>
           </div>
