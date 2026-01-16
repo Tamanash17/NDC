@@ -682,7 +682,11 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
     };
 
     if (selection.outbound) {
-      const route = `${searchCriteria?.origin || 'XXX'} - ${searchCriteria?.destination || 'XXX'}`;
+      // Use segments as primary source for route
+      const outSegs = selection.outbound.journey?.segments;
+      const outOrigin = outSegs?.[0]?.origin || searchCriteria?.origin || 'XXX';
+      const outDest = outSegs?.[outSegs?.length - 1]?.destination || searchCriteria?.destination || 'XXX';
+      const route = `${outOrigin} - ${outDest}`;
       const fareTotal = calculateFlightFareTotal(selection.outbound);
       const bundleTotal = calculateBundleTotal(selection.outbound);
       const bundleIncluded = isBundleIncludedInOfferPrice(selection.outbound);
@@ -699,7 +703,11 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
     }
 
     if (selection.inbound) {
-      const route = `${searchCriteria?.destination || 'XXX'} - ${searchCriteria?.origin || 'XXX'}`;
+      // Use segments as primary source for route
+      const inSegs = selection.inbound.journey?.segments;
+      const inOrigin = inSegs?.[0]?.origin || searchCriteria?.destination || 'XXX';
+      const inDest = inSegs?.[inSegs?.length - 1]?.destination || searchCriteria?.origin || 'XXX';
+      const route = `${inOrigin} - ${inDest}`;
       const fareTotal = calculateFlightFareTotal(selection.inbound);
       const bundleTotal = calculateBundleTotal(selection.inbound);
       const bundleIncluded = isBundleIncludedInOfferPrice(selection.inbound);
