@@ -1052,12 +1052,15 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
     const outboundSegments = selection.outbound?.journey?.segments;
     const inboundSegments = selection.inbound?.journey?.segments;
 
-    const outboundOrigin = outboundSegments?.[0]?.origin || searchCriteria?.origin || 'XXX';
-    const outboundDest = outboundSegments?.[outboundSegments.length - 1]?.destination || searchCriteria?.destination || 'XXX';
-    const inboundOrigin = inboundSegments?.[0]?.origin || searchCriteria?.destination || 'XXX';
-    const inboundDest = inboundSegments?.[inboundSegments.length - 1]?.destination || searchCriteria?.origin || 'XXX';
+    // Primary origin/destination from segments (more reliable)
+    const origin = outboundSegments?.[0]?.origin || searchCriteria?.origin || 'XXX';
+    const destination = outboundSegments?.[outboundSegments?.length - 1]?.destination || searchCriteria?.destination || 'XXX';
 
-    const outboundRouteLabel = `${outboundOrigin}-${outboundDest}`;
+    // Inbound endpoints (for route labels)
+    const inboundOrigin = inboundSegments?.[0]?.origin || destination;
+    const inboundDest = inboundSegments?.[inboundSegments?.length - 1]?.destination || origin;
+
+    const outboundRouteLabel = `${origin}-${destination}`;
     const inboundRouteLabel = `${inboundOrigin}-${inboundDest}`;
 
     // Helper function to build annotation context for OfferPrice
