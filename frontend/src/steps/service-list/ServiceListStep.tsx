@@ -1927,6 +1927,16 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
     other: otherServices.length,
   });
 
+  // Debug: Log other services to verify JCON appears
+  if (otherServices.length > 0) {
+    console.log('[ServiceListStep] Other services:', otherServices.map(s => ({
+      code: s.serviceCode,
+      name: s.serviceName,
+      price: s.price,
+      direction: s.direction,
+    })));
+  }
+
   // Log any services that weren't categorized
   const uncategorized = services.filter(s => !seenServiceIds.has(s.serviceId));
   if (uncategorized.length > 0) {
