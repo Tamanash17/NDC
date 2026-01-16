@@ -1,6 +1,6 @@
 import axios from "axios";
 import { Router } from "express";
-import { config } from "../config/index.js";
+import { config, setNdcEnvironment, type NDCEnvironment } from "../config/index.js";
 
 const router = Router();
 
@@ -15,12 +15,18 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // Set environment BEFORE making auth call if provided
+    const targetEnv: NDCEnvironment = environment === 'PROD' ? 'PROD' : 'UAT';
+    setNdcEnvironment(targetEnv);
+    console.log(`[Auth] Environment set to: ${targetEnv}`);
+
     const authUrl = config.ndc.authUrl + config.ndc.endpoints.auth;
     const credentials = `${domain}\\${apiId}:${password}`;
     const basicAuth = Buffer.from(credentials).toString("base64");
 
     console.log(`[Auth] Authenticating: ${domain}\\${apiId}`);
     console.log(`[Auth] URL: ${authUrl}`);
+    console.log(`[Auth] Header: ${config.ndc.envHeaderName} = ${config.ndc.envHeader}`);
 
     const response = await axios.post(
       authUrl,
