@@ -572,20 +572,29 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
   // Helper to get route from journey segments - shows full journey route (e.g., ADL → MEL → AYQ)
   // PROD FIX: For multi-segment journeys, the segments array may only have the first leg
   // Use searchCriteria origin/destination as the canonical source of the journey endpoints
+  // PROD FIX 2: Also use journey.origin/destination as fallback for inbound flights
   const getJourneyRoute = useCallback((
     selectionItem: typeof flightStore.selection.outbound,
     direction: 'outbound' | 'inbound' = 'outbound'
   ): string => {
     const searchCriteria = flightStore.searchCriteria;
     const segments = selectionItem?.journey?.segments;
+    const journey = selectionItem?.journey;
 
-    // Get journey endpoints from searchCriteria (most reliable)
-    const journeyOrigin = direction === 'outbound'
+    // Get journey endpoints from searchCriteria (most reliable for outbound)
+    const searchOrigin = direction === 'outbound'
       ? searchCriteria?.origin
       : searchCriteria?.destination;
-    const journeyDestination = direction === 'outbound'
+    const searchDestination = direction === 'outbound'
       ? searchCriteria?.destination
       : searchCriteria?.origin;
+
+    // PROD FIX: For inbound, also try journey.origin/destination directly
+    // These are populated from AirShopping response and are more reliable for return flights
+    const journeyOrigin = journey?.origin || searchOrigin;
+    const journeyDestination = journey?.destination || searchDestination;
+
+    console.log(`[getJourneyRoute] direction=${direction}, searchOrigin=${searchOrigin}, searchDest=${searchDestination}, journeyOrigin=${journeyOrigin}, journeyDest=${journeyDestination}, segments=${segments?.length || 0}`);
 
     if (segments && segments.length > 1) {
       // We have multiple segments - show all stops
@@ -615,9 +624,13 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
         }
         return `${segOrigin} → ${segDest}`;
       }
+      // Fallback: just show segment origin → destination
+      if (segOrigin && segDest) {
+        return `${segOrigin} → ${segDest}`;
+      }
     }
 
-    // Fallback to searchCriteria endpoints
+    // Fallback to journey-level origin/destination (populated from AirShopping)
     if (journeyOrigin && journeyDestination) {
       return `${journeyOrigin} → ${journeyDestination}`;
     }
