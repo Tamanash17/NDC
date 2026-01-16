@@ -328,7 +328,7 @@ export class OfferPriceParser extends BaseXmlParser {
         // Find all segments in this journey
         const journeySegments = segmentIds
           .map(id => segments.find(s => s.id === id))
-          .filter((s): s is { id: string; origin: string; destination: string } => s !== null);
+          .filter((s): s is { id: string; origin: string; destination: string } => s != null && typeof s.origin === 'string');
 
         if (journeySegments.length > 0) {
           // First segment origin → Last segment destination

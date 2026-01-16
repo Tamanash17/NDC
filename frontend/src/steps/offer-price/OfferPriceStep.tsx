@@ -783,7 +783,10 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
       if (segments && segments.length > 0) {
         const firstSeg = segments[0];
         const lastSeg = segments[segments.length - 1];
-        return `${firstSeg.origin} → ${lastSeg.destination}`;
+        // Defensive check: ensure segments have origin/destination properties
+        if (firstSeg?.origin && lastSeg?.destination) {
+          return `${firstSeg.origin} → ${lastSeg.destination}`;
+        }
       }
       return 'Unknown Route';
     };
