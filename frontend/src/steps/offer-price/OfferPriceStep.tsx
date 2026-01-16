@@ -1048,10 +1048,17 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
     const startTime = Date.now();
 
     // Build route labels for descriptive operation names
-    const origin = searchCriteria?.origin || 'XXX';
-    const destination = searchCriteria?.destination || 'XXX';
-    const outboundRouteLabel = `${origin}-${destination}`;
-    const inboundRouteLabel = `${destination}-${origin}`;
+    // PROD FIX: Use segments as primary source since searchCriteria may not be populated
+    const outboundSegments = selection.outbound?.journey?.segments;
+    const inboundSegments = selection.inbound?.journey?.segments;
+
+    const outboundOrigin = outboundSegments?.[0]?.origin || searchCriteria?.origin || 'XXX';
+    const outboundDest = outboundSegments?.[outboundSegments.length - 1]?.destination || searchCriteria?.destination || 'XXX';
+    const inboundOrigin = inboundSegments?.[0]?.origin || searchCriteria?.destination || 'XXX';
+    const inboundDest = inboundSegments?.[inboundSegments.length - 1]?.destination || searchCriteria?.origin || 'XXX';
+
+    const outboundRouteLabel = `${outboundOrigin}-${outboundDest}`;
+    const inboundRouteLabel = `${inboundOrigin}-${inboundDest}`;
 
     // Helper function to build annotation context for OfferPrice
     const buildOfferPriceAnnotation = (
