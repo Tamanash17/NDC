@@ -860,6 +860,8 @@ export class AirShoppingParser extends BaseXmlParser {
           .filter(id => id.length > 0);
       }
 
+      console.log(`[AirShoppingParser] PaxJourney: ${journeyId} → ${segmentRefs.length} segments: ${segmentRefs.join(', ')}`);
+
       journeys.push({
         paxJourneyId: journeyId,
         segmentRefIds: segmentRefs,
@@ -867,6 +869,7 @@ export class AirShoppingParser extends BaseXmlParser {
       });
     }
 
+    console.log(`[AirShoppingParser] Total PaxJourneys: ${journeys.length}`);
     return journeys;
   }
 
