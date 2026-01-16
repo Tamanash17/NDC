@@ -320,7 +320,27 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
         segmentRefs.push(...item.segmentRefIds);
       }
     }
-    const uniqueSegmentRefs = [...new Set(segmentRefs)];
+    let uniqueSegmentRefs = [...new Set(segmentRefs)];
+
+    // PROD FIX: For multi-segment journeys, offer items may only reference the first segment
+    // Look up ALL segment refs from paxJourneyList using the journey ID
+    // This ensures we capture all stops (e.g., ADL → MEL → AYQ)
+    if (uniqueSegmentRefs.length > 0) {
+      const segmentKey = uniqueSegmentRefs.sort().join('|');
+      // Check if this partial segment key matches any journey's segments
+      for (const journey of response.dataLists?.paxJourneyList || []) {
+        const journeySegRefs = journey.segmentRefIds || [];
+        // If our segment refs are a subset of this journey's refs, use the full journey refs
+        const isSubset = uniqueSegmentRefs.every(ref => journeySegRefs.includes(ref));
+        if (isSubset && journeySegRefs.length > uniqueSegmentRefs.length) {
+          console.log(`[Parser] PROD FIX: Expanding segment refs from ${uniqueSegmentRefs.length} to ${journeySegRefs.length} using paxJourneyList`);
+          console.log(`[Parser]   Offer refs: ${uniqueSegmentRefs.join(', ')}`);
+          console.log(`[Parser]   Journey refs: ${journeySegRefs.join(', ')}`);
+          uniqueSegmentRefs = [...journeySegRefs];
+          break;
+        }
+      }
+    }
 
     // Build segments for this journey
     const segments: FlightSegment[] = uniqueSegmentRefs
