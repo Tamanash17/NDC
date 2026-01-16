@@ -112,7 +112,6 @@ export function AirShoppingStep({ workflowOptions, onComplete }: AirShoppingStep
     selection,
     selectOutbound,
     selectInbound,
-    clearSelection,
     totalPrice,
     currency,
     setRoundTrip,
@@ -411,7 +410,9 @@ export function AirShoppingStep({ workflowOptions, onComplete }: AirShoppingStep
     };
 
     updateContext({ searchParams: searchParamsData });
-    clearSelection();
+    // Reset the entire flight selection store to clear ALL stale data from previous searches
+    // This includes: selection, shoppingResponseId, searchCriteria, offerPriceData, pricing, etc.
+    useFlightSelectionStore.getState().reset();
     setSelectionStep('search');
     setOutboundOffers([]);
     setReturnOffers([]);
@@ -683,8 +684,8 @@ export function AirShoppingStep({ workflowOptions, onComplete }: AirShoppingStep
   const handleNewSearch = () => {
     // Clear XML captures for fresh transaction log
     clearCaptures();
-    reset();
-    clearSelection();
+    // Reset the entire flight selection store (reset() includes everything clearSelection() does)
+    useFlightSelectionStore.getState().reset();
     setSelectionStep('search');
     setCurrentSearchDirection('outbound');
     setOutboundOffers([]);
