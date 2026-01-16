@@ -777,15 +777,22 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
       outboundBundleSwap.serviceCode === inboundBundleSwap.serviceCode &&
       outboundBundleSwap.price === inboundBundleSwap.price;
 
-    // Helper to get route from journey segments (fallback when searchCriteria missing)
+    // Helper to get route from journey segments - shows all stops (e.g., ADL → MEL → AYQ)
     const getJourneyRoute = (selectionItem: typeof selection.outbound): string => {
       const segments = selectionItem?.journey?.segments;
       if (segments && segments.length > 0) {
-        const firstSeg = segments[0];
-        const lastSeg = segments[segments.length - 1];
-        // Defensive check: ensure segments have origin/destination properties
-        if (firstSeg?.origin && lastSeg?.destination) {
-          return `${firstSeg.origin} → ${lastSeg.destination}`;
+        // Build route showing all stops: origin → stop1 → stop2 → destination
+        const routeParts: string[] = [];
+        for (const seg of segments) {
+          if (seg?.origin && routeParts.length === 0) {
+            routeParts.push(seg.origin);
+          }
+          if (seg?.destination) {
+            routeParts.push(seg.destination);
+          }
+        }
+        if (routeParts.length > 1) {
+          return routeParts.join(' → ');
         }
       }
       return 'Unknown Route';
@@ -1823,6 +1830,36 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
       });
 
       TransactionLogger.completeStep('completed');
+
+      // Override flightBreakdowns route labels using the correct route from flight selection store
+      // The backend parser may not correctly build the route for multi-segment journeys
+      if (finalData.flightBreakdowns && finalData.flightBreakdowns.length > 0) {
+        const outboundRoute = getJourneyRoute(selection.outbound);
+        const inboundRoute = selection.inbound ? getJourneyRoute(selection.inbound) : null;
+
+        console.log('[OfferPriceStep] Overriding flightBreakdowns routes:', {
+          outboundRoute,
+          inboundRoute,
+          currentRoutes: finalData.flightBreakdowns.map(fb => fb.route),
+        });
+
+        // Override routes based on flight number (1 = outbound, 2 = inbound)
+        finalData.flightBreakdowns = finalData.flightBreakdowns.map((breakdown, idx) => {
+          // flightNumber 1 is outbound, flightNumber 2 is inbound
+          // Or if only one breakdown, it's outbound
+          const isOutbound = breakdown.flightNumber === 1 || finalData.flightBreakdowns!.length === 1;
+          const correctRoute = isOutbound ? outboundRoute : (inboundRoute || outboundRoute);
+
+          return {
+            ...breakdown,
+            route: correctRoute,
+          };
+        });
+
+        console.log('[OfferPriceStep] Updated flightBreakdowns routes:',
+          finalData.flightBreakdowns.map(fb => `Flight ${fb.flightNumber}: ${fb.route}`)
+        );
+      }
 
       // Only update state if still mounted
       if (isMountedRef.current) {
