@@ -143,7 +143,10 @@
       "Bash(git show:*)",
       "Bash(tr:*)",
       "Bash(ls:*)",
-      "Bash(copy:*)"
+      "Bash(copy:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(echo:*)"
     ]
   }
 }

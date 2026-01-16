@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSessionStore } from '@/core/context/SessionStore';
 import { login, airlineProfile } from '@/lib/ndc-api';
 import { TransactionLogger } from '@/lib/transaction-logger';
-import { Lock, Key, User, Server, ChevronRight, AlertTriangle, Zap } from 'lucide-react';
+import { Lock, Key, User, Server, ChevronRight, AlertTriangle, Zap, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import testCredentialsData from '@/config/test-credentials.json';
 
@@ -73,6 +73,8 @@ export function LoginPage() {
   const [testCreds, setTestCreds] = useState<TestCredentials | null>(null);
   const [useTestCreds, setUseTestCreds] = useState(false);
   const [selectedCredType, setSelectedCredType] = useState<'direct' | 'bob'>('direct');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showSubscriptionKey, setShowSubscriptionKey] = useState(false);
 
   const [form, setForm] = useState({
     environment: 'UAT' as 'UAT' | 'PROD',
@@ -411,13 +413,21 @@ export function LoginPage() {
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     placeholder="Enter your password"
                     value={form.password}
                     onChange={updateForm('password')}
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 focus:bg-white transition-all text-sm"
+                    className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 focus:bg-white transition-all text-sm"
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -426,13 +436,21 @@ export function LoginPage() {
                 <div className="relative">
                   <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
-                    type="password"
+                    type={showSubscriptionKey ? 'text' : 'password'}
                     placeholder="Ocp-Apim-Subscription-Key"
                     value={form.subscriptionKey}
                     onChange={updateForm('subscriptionKey')}
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 focus:bg-white transition-all font-mono text-sm"
+                    className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 focus:bg-white transition-all font-mono text-sm"
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowSubscriptionKey(!showSubscriptionKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showSubscriptionKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
             </div>
