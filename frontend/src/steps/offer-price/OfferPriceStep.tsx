@@ -1836,6 +1836,18 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
       // Override flightBreakdowns route labels using the correct route from flight selection store
       // The backend parser may not correctly build the route for multi-segment journeys
       if (finalData.flightBreakdowns && finalData.flightBreakdowns.length > 0) {
+        // Debug: log the full selection to see what journey segments we have
+        console.log('[OfferPriceStep] DEBUG selection.outbound:', {
+          offerId: selection.outbound?.offerId,
+          journeyId: selection.outbound?.journey?.journeyId,
+          segmentsCount: selection.outbound?.journey?.segments?.length,
+          segments: selection.outbound?.journey?.segments?.map(s => ({
+            segmentId: s.segmentId,
+            origin: s.origin,
+            destination: s.destination,
+          })),
+        });
+
         const outboundRoute = getJourneyRoute(selection.outbound);
         const inboundRoute = selection.inbound ? getJourneyRoute(selection.inbound) : null;
 
