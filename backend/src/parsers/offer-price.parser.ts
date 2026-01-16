@@ -326,9 +326,14 @@ export class OfferPriceParser extends BaseXmlParser {
 
       if (segmentIds.length > 0) {
         // Find all segments in this journey
+        console.log(`[OfferPriceParser] Looking for segment IDs: ${segmentIds.join(', ')}`);
+        console.log(`[OfferPriceParser] Available segments:`, segments.map(s => `${s.id}: ${s.origin}-${s.destination}`));
+
         const journeySegments = segmentIds
           .map(id => segments.find(s => s.id === id))
-          .filter((s): s is { id: string; origin: string; destination: string } => s != null && typeof s.origin === 'string');
+          .filter((s): s is { id: string; origin: string; destination: string } => s != null && s.origin && s.origin.length > 0);
+
+        console.log(`[OfferPriceParser] Found ${journeySegments.length} matching segments`);
 
         if (journeySegments.length > 0) {
           // First segment origin → Last segment destination
@@ -337,6 +342,8 @@ export class OfferPriceParser extends BaseXmlParser {
           route = `${firstSeg.origin} → ${lastSeg.destination}`;
 
           console.log(`[OfferPriceParser] Journey route: ${route} (${journeySegments.length} segments: ${segmentIds.join(', ')})`);
+        } else {
+          console.log(`[OfferPriceParser] WARNING: Could not find matching segments for journey`);
         }
       }
 
