@@ -906,6 +906,34 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
         }
       }
 
+      // STRATEGY 5: Match leg refs to stored flight segments (leg IDs contain segment IDs)
+      // Leg refs like "seg1799359779-leg1" should match segment "seg1799359779"
+      if (legRefs.length > 0) {
+        const outboundSegIds = flightStore.selection.outbound?.journey?.segments?.map(s => s.segmentId) || [];
+        const inboundSegIds = flightStore.selection.inbound?.journey?.segments?.map(s => s.segmentId) || [];
+
+        // Extract numeric portion, stripping leg suffix (e.g., "seg1799359779-leg1" -> "1799359779")
+        const extractNumWithoutLeg = (id: string) => {
+          const withoutLeg = id.replace(/-leg\d+$/i, '');
+          return (withoutLeg.match(/\d+/g) || []).join('');
+        };
+
+        let matchesOutbound = false;
+        let matchesInbound = false;
+
+        for (const ref of legRefs) {
+          const refNum = extractNumWithoutLeg(ref);
+          if (outboundSegIds.some(s => extractNumWithoutLeg(s) === refNum)) matchesOutbound = true;
+          if (inboundSegIds.some(s => extractNumWithoutLeg(s) === refNum)) matchesInbound = true;
+        }
+
+        if (matchesOutbound || matchesInbound) {
+          const direction = matchesOutbound && matchesInbound ? 'both' : matchesOutbound ? 'outbound' : 'inbound';
+          console.log(`[detectDirection] From leg matching: ${direction} (legRefs: ${legRefs.join(', ')})`);
+          return direction;
+        }
+      }
+
       // Fallback: if no matches, default to 'both' for visibility
       console.log(`[detectDirection] No match found - defaulting to 'both'`);
       return 'both';
@@ -1022,6 +1050,17 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
         const segmentRefs = offer.segmentRefIds || [];
         const legRefs = offer.legRefIds || [];
         const offerId = offer.offerId || offer.OfferID;
+
+        // Debug: Log leg-based services like JCON
+        if (legRefs.length > 0) {
+          console.log(`[ServiceListStep] Leg-based service: ${serviceCode} "${friendlyName}"`, {
+            legRefs,
+            segmentRefs,
+            journeyRefs,
+            price: offer.price?.value,
+            associationType,
+          });
+        }
 
         // Determine direction for this service using segment origin/destination from API
         const serviceDirection = detectDirection(segmentRefs, journeyRefs, legRefs);
