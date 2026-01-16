@@ -44,7 +44,30 @@ router.post("/login", async (req, res) => {
     );
 
     const token = response.data.access_token || response.data.token;
-    const expiresIn = response.data.expires_in || 1800;
+
+    // Parse expires_in - handle both numeric (UAT) and string format (PROD: "00:18:59.9589815s")
+    let expiresIn = 1800; // Default 30 mins
+    const rawExpiresIn = response.data.expires_in;
+
+    if (typeof rawExpiresIn === 'number') {
+      expiresIn = rawExpiresIn;
+    } else if (typeof rawExpiresIn === 'string') {
+      // Parse time string format: "HH:MM:SS.fraction" or "HH:MM:SS.fractions"
+      const timeMatch = rawExpiresIn.match(/^(\d+):(\d+):(\d+)/);
+      if (timeMatch) {
+        const hours = parseInt(timeMatch[1], 10);
+        const minutes = parseInt(timeMatch[2], 10);
+        const seconds = parseInt(timeMatch[3], 10);
+        expiresIn = (hours * 3600) + (minutes * 60) + seconds;
+        console.log(`[Auth] Parsed time string "${rawExpiresIn}" to ${expiresIn} seconds`);
+      } else {
+        // Try parsing as plain number string
+        const parsed = parseInt(rawExpiresIn, 10);
+        if (!isNaN(parsed)) {
+          expiresIn = parsed;
+        }
+      }
+    }
 
     if (!token) {
       return res.status(401).json({
