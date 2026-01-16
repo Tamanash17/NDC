@@ -749,20 +749,6 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
     const serviceDefinitions = data.services || data.Services || [];
     const ancillaryOffers = data.ancillaryOffers || data.AncillaryOffers || [];
 
-    // JCON DEBUGGING: Check if JCON exists in serviceDefinitions
-    const jconInDefs = serviceDefinitions.filter((s: any) =>
-      (s.serviceCode || s.ServiceCode || '').toUpperCase() === 'JCON'
-    );
-    console.log(`[ServiceListStep] ===== JCON IN SERVICE DEFINITIONS =====`);
-    console.log(`[ServiceListStep] Total serviceDefinitions: ${serviceDefinitions.length}`);
-    console.log(`[ServiceListStep] JCON found in serviceDefinitions: ${jconInDefs.length}`);
-    if (jconInDefs.length > 0) {
-      jconInDefs.forEach((jcon: any, i: number) => {
-        console.log(`[ServiceListStep] JCON Def[${i}]:`, jcon);
-      });
-    }
-    console.log(`[ServiceListStep] =====================================`);
-
     // DEBUG: Log raw ancillary offers to verify offerId is present from API
     console.log('[ServiceListStep] ===== RAW ANCILLARY OFFERS FROM API =====');
     console.log('[ServiceListStep] Total offers:', ancillaryOffers.length);
@@ -776,30 +762,6 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       });
     });
 
-    // JCON DEBUGGING: Check if JCON exists in raw ancillary offers from API
-    const jconInRawOffers = ancillaryOffers.filter((o: any) =>
-      (o.serviceCode || '').toUpperCase() === 'JCON'
-    );
-    console.log(`[ServiceListStep] ===== JCON IN RAW API DATA =====`);
-    console.log(`[ServiceListStep] JCON found in raw ancillaryOffers: ${jconInRawOffers.length}`);
-    if (jconInRawOffers.length > 0) {
-      jconInRawOffers.forEach((jcon: any, i: number) => {
-        console.log(`[ServiceListStep] Raw JCON[${i}]:`, {
-          offerId: jcon.offerId,
-          offerItemId: jcon.offerItemId,
-          serviceCode: jcon.serviceCode,
-          serviceName: jcon.serviceName,
-          price: jcon.price,
-          legRefIds: jcon.legRefIds,
-          segmentRefIds: jcon.segmentRefIds,
-          journeyRefIds: jcon.journeyRefIds,
-          associationType: jcon.associationType,
-        });
-      });
-    } else {
-      console.warn(`[ServiceListStep] ⚠️ JCON NOT FOUND IN RAW API DATA - Backend issue?`);
-    }
-    console.log(`[ServiceListStep] =================================`);
     console.log('[ServiceListStep] ==============================================');
 
     // NEW: Get segment and journey data from ServiceList response for direction detection
@@ -1003,19 +965,6 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       const serviceCode = serviceDef?.serviceCode || serviceDef?.ServiceCode || offer.serviceCode || '';
       const rawName = serviceDef?.serviceName || serviceDef?.ServiceName || offer.serviceName || 'Service';
 
-      // JCON DEBUGGING: Track if JCON offer is being processed in the loop
-      if (serviceCode.toUpperCase() === 'JCON' || (offer.serviceCode || '').toUpperCase() === 'JCON') {
-        console.log(`[ServiceListStep] ===== PROCESSING JCON OFFER IN LOOP =====`);
-        console.log(`[ServiceListStep] offer.serviceCode: ${offer.serviceCode}`);
-        console.log(`[ServiceListStep] serviceRefId: ${serviceRefId}`);
-        console.log(`[ServiceListStep] serviceDef found: ${!!serviceDef}`);
-        console.log(`[ServiceListStep] serviceDef?.serviceCode: ${serviceDef?.serviceCode}`);
-        console.log(`[ServiceListStep] final serviceCode: ${serviceCode}`);
-        console.log(`[ServiceListStep] rawName: ${rawName}`);
-        console.log(`[ServiceListStep] isBundleCode result: ${isBundleCode(serviceCode)}`);
-        console.log(`[ServiceListStep] ===========================================`);
-      }
-
       const associationType = offer.associationType || 'unknown';
       const journeyRefs = offer.journeyRefIds || [];
       const segmentRefs = offer.segmentRefIds || [];
@@ -1112,29 +1061,6 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
         const legRefs = offer.legRefIds || [];
         const offerId = offer.offerId || offer.OfferID;
 
-        // Debug: Log leg-based services like JCON
-        if (legRefs.length > 0) {
-          console.log(`[ServiceListStep] Leg-based service: ${serviceCode} "${friendlyName}"`, {
-            legRefs,
-            segmentRefs,
-            journeyRefs,
-            price: offer.price?.value,
-            associationType,
-          });
-        }
-
-        // JCON DEBUGGING: Track JCON specifically
-        if (serviceCode.toUpperCase() === 'JCON') {
-          console.log(`[ServiceListStep] ========== JCON FOUND IN RAW DATA ==========`);
-          console.log(`[ServiceListStep] JCON serviceCode: ${serviceCode}`);
-          console.log(`[ServiceListStep] JCON friendlyName: ${friendlyName}`);
-          console.log(`[ServiceListStep] JCON price: ${offer.price?.value}`);
-          console.log(`[ServiceListStep] JCON legRefs: ${JSON.stringify(legRefs)}`);
-          console.log(`[ServiceListStep] JCON associationType: ${associationType}`);
-          console.log(`[ServiceListStep] JCON detectServiceType result: ${detectServiceType(serviceCode, rawName, serviceDef?.rfic)}`);
-          console.log(`[ServiceListStep] ==============================================`);
-        }
-
         // Determine direction for this service using segment origin/destination from API
         const serviceDirection = detectDirection(segmentRefs, journeyRefs, legRefs);
 
@@ -1161,24 +1087,6 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
         });
       }
     }
-
-    // JCON DEBUGGING: Check if JCON is in the services array before processing
-    const jconInServices = services.filter(s => s.serviceCode.toUpperCase() === 'JCON');
-    console.log(`[ServiceListStep] ===== JCON CHECK BEFORE PROCESSING =====`);
-    console.log(`[ServiceListStep] Total services before processing: ${services.length}`);
-    console.log(`[ServiceListStep] JCON count in services array: ${jconInServices.length}`);
-    if (jconInServices.length > 0) {
-      jconInServices.forEach((jcon, i) => {
-        console.log(`[ServiceListStep] JCON[${i}]:`, {
-          serviceId: jcon.serviceId,
-          serviceType: jcon.serviceType,
-          price: jcon.price,
-          direction: jcon.direction,
-          legRefs: jcon.legRefs,
-        });
-      });
-    }
-    console.log(`[ServiceListStep] ========================================`);
 
     // FOR ROUND TRIPS: Split "both" services into separate outbound/inbound options
     // This allows users to select services per-flight (e.g., different baggage each way)
@@ -1221,29 +1129,6 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       // Include all SSRs (even $0 priced) + paid services
       processedServices = services.filter(s => (s.price > 0 || s.serviceType === 'ssr') && !isBundleInclusion(s.serviceCode));
     }
-
-    // JCON DEBUGGING: Check if JCON survived the processing/filtering
-    const jconInProcessed = processedServices.filter(s => s.serviceCode.toUpperCase() === 'JCON');
-    console.log(`[ServiceListStep] ===== JCON CHECK AFTER PROCESSING =====`);
-    console.log(`[ServiceListStep] Total processedServices: ${processedServices.length}`);
-    console.log(`[ServiceListStep] JCON count in processedServices: ${jconInProcessed.length}`);
-    if (jconInProcessed.length === 0 && jconInServices.length > 0) {
-      console.error(`[ServiceListStep] 🚨 JCON WAS FILTERED OUT DURING PROCESSING!`);
-      // Log the original JCON to see why it was filtered
-      jconInServices.forEach((jcon, i) => {
-        const wouldBeFiltered = jcon.price <= 0 && jcon.serviceType !== 'ssr';
-        const isBundleInc = isBundleInclusion(jcon.serviceCode);
-        console.error(`[ServiceListStep] JCON[${i}] filter reasons:`, {
-          price: jcon.price,
-          serviceType: jcon.serviceType,
-          'price <= 0': jcon.price <= 0,
-          'serviceType !== ssr': jcon.serviceType !== 'ssr',
-          'wouldBeFiltered (price)': wouldBeFiltered,
-          'isBundleInclusion': isBundleInc,
-        });
-      });
-    }
-    console.log(`[ServiceListStep] ======================================`);
 
     // VISUAL GROUPING: Group duplicate services for display while keeping all segment services internally
     // Key: serviceCode + direction + serviceName (for grouping identical services)
@@ -2029,24 +1914,6 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
     }
     return false;
   });
-
-  // JCON DEBUGGING: Final check for JCON in services and otherServices
-  const jconInFinalServices = services.filter(s => s.serviceCode.toUpperCase() === 'JCON');
-  const jconInOtherServices = otherServices.filter(s => s.serviceCode.toUpperCase() === 'JCON');
-  console.log(`[ServiceListStep] ===== JCON FINAL CHECK =====`);
-  console.log(`[ServiceListStep] JCON in final services array: ${jconInFinalServices.length}`);
-  console.log(`[ServiceListStep] JCON in otherServices array: ${jconInOtherServices.length}`);
-  if (jconInFinalServices.length > 0) {
-    jconInFinalServices.forEach((jcon, i) => {
-      console.log(`[ServiceListStep] JCON[${i}] final state:`, {
-        serviceId: jcon.serviceId,
-        serviceType: jcon.serviceType,
-        price: jcon.price,
-        direction: jcon.direction,
-      });
-    });
-  }
-  console.log(`[ServiceListStep] ============================`);
 
   // Debug: Log service distribution
   console.log('[ServiceListStep] Service distribution:', {
