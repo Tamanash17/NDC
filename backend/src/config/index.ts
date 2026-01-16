@@ -29,7 +29,7 @@ const envSchema = z.object({
   // NDC Gateway - PROD Environment
   NDC_PROD_BASE_URL: z.string().url().default("https://ndc-api-prod.jetstar.com/ndc"),
   NDC_PROD_AUTH_URL: z.string().url().default("https://ndc-api-prod.jetstar.com/jq/ndc/api"),
-  NDC_PROD_HEADER: z.string().default("Jet$tar3.x"),
+  NDC_PROD_HEADER: z.string().default("e9c04fe5-8e72-4326-b542-d57e3e2b4fd5"),
 
   // Default NDC Environment (can be overridden at runtime)
   NDC_DEFAULT_ENV: z.enum(["UAT", "PROD"]).default("UAT"),
