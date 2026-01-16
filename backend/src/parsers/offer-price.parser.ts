@@ -104,8 +104,12 @@ export class OfferPriceParser extends BaseXmlParser {
     const segments = this.parseSegments(doc);
     console.log("[OfferPriceParser] Found segments:", segments.length);
 
+    // Parse journeys to map journey IDs to their segment IDs
+    const journeyToSegments = this.parseJourneys(doc);
+    console.log("[OfferPriceParser] Found journeys:", journeyToSegments.size);
+
     // Parse detailed flight-level breakdown from OfferItems
-    const flightBreakdowns = this.buildFlightBreakdownsFromOfferItems(pricedOffers, segments);
+    const flightBreakdowns = this.buildFlightBreakdownsFromOfferItems(pricedOffers, segments, journeyToSegments);
     console.log("[OfferPriceParser] Built flight breakdowns:", flightBreakdowns.length);
 
     // Collect errors
@@ -173,6 +177,33 @@ export class OfferPriceParser extends BaseXmlParser {
     return segments;
   }
 
+  // Parse journeys and map their IDs to segment IDs
+  private parseJourneys(doc: Document): Map<string, string[]> {
+    const journeyMap = new Map<string, string[]>();
+
+    // Try PaxJourney elements
+    const journeyElements = this.getElements(doc, "PaxJourney");
+    console.log("[OfferPriceParser] parseJourneys: found", journeyElements.length, "PaxJourney elements");
+
+    for (const journeyEl of journeyElements) {
+      const journeyId = this.getText(journeyEl, "PaxJourneyID") ||
+                        this.getAttribute(journeyEl, "JourneyID") || "";
+
+      // Get all segment references for this journey
+      const segmentRefs = this.getElements(journeyEl, "PaxSegmentRefID")
+        .map(el => el.textContent?.trim() || "")
+        .filter(id => id.length > 0);
+
+      console.log("[OfferPriceParser] parseJourneys: journey", { journeyId, segmentRefs });
+
+      if (journeyId && segmentRefs.length > 0) {
+        journeyMap.set(journeyId, segmentRefs);
+      }
+    }
+
+    return journeyMap;
+  }
+
   /**
    * Build flight breakdowns from parsed OfferItems
    * Groups items by segment/flight and passenger type
@@ -183,7 +214,8 @@ export class OfferPriceParser extends BaseXmlParser {
    */
   private buildFlightBreakdownsFromOfferItems(
     offers: Offer[],
-    segments: Array<{ id: string; origin: string; destination: string }>
+    segments: Array<{ id: string; origin: string; destination: string }>,
+    journeyToSegments: Map<string, string[]> = new Map()
   ): FlightPriceBreakdown[] {
     const breakdowns: FlightPriceBreakdown[] = [];
 
@@ -256,15 +288,33 @@ export class OfferPriceParser extends BaseXmlParser {
     const itemsByJourney = new Map<string, OfferItem[]>();
     const itemsWithoutSegment: OfferItem[] = [];
 
+    // Helper to resolve journey ID to segment IDs
+    const resolveToSegmentIds = (refs: string[]): string[] => {
+      const resolvedSegments: string[] = [];
+      for (const ref of refs) {
+        // Check if this ref is a journey ID that maps to segments
+        if (journeyToSegments.has(ref)) {
+          resolvedSegments.push(...journeyToSegments.get(ref)!);
+        } else {
+          // Treat it as a segment ID directly
+          resolvedSegments.push(ref);
+        }
+      }
+      return resolvedSegments;
+    };
+
     for (const item of fareItems) {
       const segRefs = item.segmentRefIds || [];
       if (segRefs.length > 0) {
+        // Resolve journey IDs to segment IDs if needed
+        const resolvedSegRefs = resolveToSegmentIds(segRefs);
         // Use ALL segment refs as the key (sorted for consistency)
-        const journeyKey = [...segRefs].sort().join('|');
+        const journeyKey = [...resolvedSegRefs].sort().join('|');
         if (!itemsByJourney.has(journeyKey)) {
           itemsByJourney.set(journeyKey, []);
         }
         itemsByJourney.get(journeyKey)!.push(item);
+        console.log(`[OfferPriceParser] Item ${item.offerItemId}: refs=${segRefs.join(',')} -> resolved=${resolvedSegRefs.join(',')}`);
       } else {
         itemsWithoutSegment.push(item);
       }
@@ -792,13 +842,29 @@ export class OfferPriceParser extends BaseXmlParser {
         const itemBase = this.parseTotalPrice(baseAmountEl);
 
         // Get segment references from Service element
+        // Try multiple possible reference elements - Jetstar may use different formats
         let segmentRefIds: string[] = [];
         const serviceEl = this.getElement(itemEl, "Service");
         if (serviceEl) {
-          const journeyRefEl = this.getElement(serviceEl, "PaxJourneyRefID");
-          if (journeyRefEl) {
-            segmentRefIds.push(journeyRefEl.textContent?.trim() || "");
+          // Try PaxSegmentRefID first (direct segment reference)
+          const segRefEl = this.getElement(serviceEl, "PaxSegmentRefID");
+          if (segRefEl && segRefEl.textContent?.trim()) {
+            segmentRefIds.push(segRefEl.textContent.trim());
           }
+          // Fallback to PaxJourneyRefID (journey reference - may need mapping)
+          if (segmentRefIds.length === 0) {
+            const journeyRefEl = this.getElement(serviceEl, "PaxJourneyRefID");
+            if (journeyRefEl && journeyRefEl.textContent?.trim()) {
+              segmentRefIds.push(journeyRefEl.textContent.trim());
+            }
+          }
+        }
+        // Also try direct SegmentRef elements under OfferItem
+        if (segmentRefIds.length === 0) {
+          const directSegRefs = this.getElements(itemEl, "SegmentRef")
+            .map(el => el.textContent?.trim() || "")
+            .filter(id => id.length > 0);
+          segmentRefIds.push(...directSegRefs);
         }
 
         console.log("[OfferPriceParser] OfferItem:", {
