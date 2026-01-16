@@ -1,7 +1,8 @@
 import { useState, useEffect, ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useSession, useWizardSession } from '@/core/context/SessionStore';
+import { useSession, useWizardSession, useSessionStore } from '@/core/context/SessionStore';
 import { cn } from '@/lib/cn';
+import { setEnvironment, type NDCEnvironment } from '@/lib/ndc-api';
 import {
   Plane,
   Clock,
@@ -13,7 +14,8 @@ import {
   User,
   LogOut,
   ChevronDown,
-  Home
+  Home,
+  Settings
 } from 'lucide-react';
 
 // Format time remaining in human readable format
@@ -83,6 +85,8 @@ export function AppLayout({
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [showSessionExpiredBanner, setShowSessionExpiredBanner] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showEnvDropdown, setShowEnvDropdown] = useState(false);
+  const [switchingEnv, setSwitchingEnv] = useState(false);
 
   // Determine if we're on dashboard (no back button needed)
   const isDashboard = location.pathname === '/dashboard';
@@ -141,6 +145,25 @@ export function AppLayout({
 
     setShowSessionExpiredBanner(false);
     navigate('/login');
+  };
+
+  const handleEnvSwitch = async (newEnv: NDCEnvironment) => {
+    if (newEnv === environment || switchingEnv) return;
+
+    setSwitchingEnv(true);
+    try {
+      const result = await setEnvironment(newEnv);
+      if (result.success) {
+        // Update local session store
+        useSessionStore.getState().setEnvironment(newEnv);
+        console.log(`[ENV] Switched to ${newEnv}:`, result);
+      }
+    } catch (err) {
+      console.error('[ENV] Switch failed:', err);
+    } finally {
+      setSwitchingEnv(false);
+      setShowEnvDropdown(false);
+    }
   };
 
   const tokenStatus = getTokenStatus(timeRemaining);
@@ -220,20 +243,68 @@ export function AppLayout({
               )}
             </div>
 
-            {/* Center: Environment Badge */}
-            <div className="absolute left-1/2 transform -translate-x-1/2">
-              <div className={cn(
-                'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold',
-                environment === 'PROD'
-                  ? 'bg-red-100 text-red-700 border border-red-200'
-                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-              )}>
-                <span className={cn(
-                  'w-2 h-2 rounded-full animate-pulse',
-                  environment === 'PROD' ? 'bg-red-500' : 'bg-emerald-500'
-                )} />
+            {/* Center: Environment Badge with Dropdown */}
+            <div className="absolute left-1/2 transform -translate-x-1/2 relative">
+              <button
+                onClick={() => setShowEnvDropdown(!showEnvDropdown)}
+                disabled={switchingEnv}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold cursor-pointer transition-all hover:shadow-md',
+                  environment === 'PROD'
+                    ? 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-200'
+                    : 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200',
+                  switchingEnv && 'opacity-50'
+                )}
+              >
+                {switchingEnv ? (
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                ) : (
+                  <span className={cn(
+                    'w-2 h-2 rounded-full animate-pulse',
+                    environment === 'PROD' ? 'bg-red-500' : 'bg-emerald-500'
+                  )} />
+                )}
                 {environment}
-              </div>
+                <ChevronDown className={cn('w-3 h-3 transition-transform', showEnvDropdown && 'rotate-180')} />
+              </button>
+
+              {/* Environment Dropdown */}
+              {showEnvDropdown && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowEnvDropdown(false)}
+                  />
+                  <div className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-20 min-w-[140px]">
+                    <button
+                      onClick={() => handleEnvSwitch('UAT')}
+                      className={cn(
+                        'w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors',
+                        environment === 'UAT'
+                          ? 'bg-emerald-50 text-emerald-700 font-semibold'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      )}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      UAT
+                      {environment === 'UAT' && <span className="ml-auto text-emerald-500">✓</span>}
+                    </button>
+                    <button
+                      onClick={() => handleEnvSwitch('PROD')}
+                      className={cn(
+                        'w-full flex items-center gap-2 px-4 py-2 text-sm transition-colors',
+                        environment === 'PROD'
+                          ? 'bg-red-50 text-red-700 font-semibold'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      )}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-red-500" />
+                      PROD
+                      {environment === 'PROD' && <span className="ml-auto text-red-500">✓</span>}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Right: Session Info & User Menu */}

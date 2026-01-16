@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useDistributionContext } from '@/core/context/SessionStore';
+import { useDistributionContext, useSession } from '@/core/context/SessionStore';
 import { useXmlViewer } from '@/core/context/XmlViewerContext';
 import { processPayment } from '@/lib/ndc-api';
 import { formatCurrency } from '@/lib/format';
@@ -15,6 +15,7 @@ import {
   Shield,
   Sparkles,
   AlertCircle,
+  AlertTriangle,
   Plane,
   Info,
 } from 'lucide-react';
@@ -58,6 +59,10 @@ export function ServicePaymentPage() {
   const [searchParams] = useSearchParams();
   const distributionContext = useDistributionContext();
   const { addCapture } = useXmlViewer();
+  const { environment } = useSession();
+
+  // Check if we're in PROD environment - payment is not allowed in PROD
+  const isProdEnvironment = environment === 'PROD';
 
   // Get booking details from URL params ONLY
   const orderId = searchParams.get('orderId') || '';
@@ -375,6 +380,22 @@ export function ServicePaymentPage() {
               : "Choose your preferred payment method to complete your booking."}
           </p>
         </div>
+
+        {/* PROD Environment Warning */}
+        {isProdEnvironment && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 mb-6">
+            <div className="flex gap-3">
+              <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0" />
+              <div>
+                <p className="font-bold text-red-900">Payment Not Allowed in PROD</p>
+                <p className="text-sm text-red-700 mt-1">
+                  You are connected to the <strong>PRODUCTION</strong> environment. Payment processing is disabled in PROD to prevent real financial transactions.
+                  Only hold bookings are permitted. Switch to UAT environment to test payments.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
@@ -823,13 +844,22 @@ export function ServicePaymentPage() {
 
               <button
                 onClick={handleSubmit}
-                disabled={!canSubmit() || isProcessing}
-                className="w-full mt-6 flex items-center justify-center gap-2 px-6 py-4 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl transition-colors"
+                disabled={!canSubmit() || isProcessing || isProdEnvironment}
+                className={`w-full mt-6 flex items-center justify-center gap-2 px-6 py-4 font-bold rounded-xl transition-colors ${
+                  isProdEnvironment
+                    ? 'bg-red-100 text-red-400 cursor-not-allowed border-2 border-red-200'
+                    : 'bg-orange-500 hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 text-white'
+                }`}
               >
                 {isProcessing ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     Processing...
+                  </>
+                ) : isProdEnvironment ? (
+                  <>
+                    <AlertTriangle className="w-5 h-5" />
+                    Payment Disabled in PROD
                   </>
                 ) : (
                   <>

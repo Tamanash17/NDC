@@ -21,10 +21,18 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   PRETTY_LOGS: z.coerce.boolean().default(false),
 
-  // NDC Gateway - FIXED: Separate URLs
-  NDC_BASE_URL: z.string().url().default("https://ndc-api-uat.jetstar.com/ndc"),
-  NDC_AUTH_URL: z.string().url().default("https://ndc-api-uat.jetstar.com/jq/ndc/api"),
+  // NDC Gateway - UAT Environment
+  NDC_UAT_BASE_URL: z.string().url().default("https://ndc-api-uat.jetstar.com/ndc"),
+  NDC_UAT_AUTH_URL: z.string().url().default("https://ndc-api-uat.jetstar.com/jq/ndc/api"),
   NDC_UAT_HEADER: z.string().default("Jetstar3.12"),
+
+  // NDC Gateway - PROD Environment
+  NDC_PROD_BASE_URL: z.string().url().default("https://ndc-api-prod.jetstar.com/ndc"),
+  NDC_PROD_AUTH_URL: z.string().url().default("https://ndc-api-prod.jetstar.com/jq/ndc/api"),
+  NDC_PROD_HEADER: z.string().default("Jet$tar3.x"),
+
+  // Default NDC Environment (can be overridden at runtime)
+  NDC_DEFAULT_ENV: z.enum(["UAT", "PROD"]).default("UAT"),
 
   // Token Lifecycle
   TOKEN_DEFAULT_VALIDITY_MS: z.coerce.number().default(1800000),
@@ -102,6 +110,52 @@ const env = loadConfig();
 // STRUCTURED CONFIG EXPORT - FIXED: Separate Auth URL
 // ----------------------------------------------------------------------------
 
+// ----------------------------------------------------------------------------
+// RUNTIME ENVIRONMENT STATE
+// ----------------------------------------------------------------------------
+
+export type NDCEnvironment = "UAT" | "PROD";
+
+// Runtime state for current NDC environment (can be changed without restart)
+let currentNdcEnv: NDCEnvironment = env.NDC_DEFAULT_ENV;
+
+// Environment-specific configurations
+const ndcEnvConfigs = {
+  UAT: {
+    baseUrl: env.NDC_UAT_BASE_URL,
+    authUrl: env.NDC_UAT_AUTH_URL,
+    header: env.NDC_UAT_HEADER,
+    headerName: "X-NDC-UAT",
+  },
+  PROD: {
+    baseUrl: env.NDC_PROD_BASE_URL,
+    authUrl: env.NDC_PROD_AUTH_URL,
+    header: env.NDC_PROD_HEADER,
+    headerName: "X-NDC-PROD",
+  },
+} as const;
+
+/**
+ * Get current NDC environment
+ */
+export function getNdcEnvironment(): NDCEnvironment {
+  return currentNdcEnv;
+}
+
+/**
+ * Set NDC environment at runtime
+ */
+export function setNdcEnvironment(newEnv: NDCEnvironment): void {
+  currentNdcEnv = newEnv;
+}
+
+/**
+ * Get NDC config for current environment
+ */
+export function getNdcConfig() {
+  return ndcEnvConfigs[currentNdcEnv];
+}
+
 export const config = {
   app: {
     name: env.APP_NAME,
@@ -124,10 +178,15 @@ export const config = {
   },
 
   ndc: {
-    // FIXED: Separate base URLs for different endpoints
-    baseUrl: env.NDC_BASE_URL,           // For NDC operations: /ndc/...
-    authUrl: env.NDC_AUTH_URL,           // For Auth: /jq/ndc/api/...
-    uatHeader: env.NDC_UAT_HEADER,
+    // Dynamic getters that return current environment's config
+    get baseUrl() { return ndcEnvConfigs[currentNdcEnv].baseUrl; },
+    get authUrl() { return ndcEnvConfigs[currentNdcEnv].authUrl; },
+    get envHeader() { return ndcEnvConfigs[currentNdcEnv].header; },
+    get envHeaderName() { return ndcEnvConfigs[currentNdcEnv].headerName; },
+    get currentEnv() { return currentNdcEnv; },
+    // All environment configs for reference
+    environments: ndcEnvConfigs,
+    defaultEnv: env.NDC_DEFAULT_ENV,
     requestTimeout: env.NDC_REQUEST_TIMEOUT_MS,
     endpoints: {
       // Auth endpoint (uses authUrl)

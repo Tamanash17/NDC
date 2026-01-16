@@ -97,7 +97,8 @@ async function callNDC(
     headers: {
       Authorization: `Bearer ${token}`,
       "Ocp-Apim-Subscription-Key": subscriptionKey,
-      NDCUAT: config.ndc.uatHeader,
+      // Dynamic environment header (X-NDC-UAT or X-NDC-PROD)
+      [config.ndc.envHeaderName]: config.ndc.envHeader,
       "Content-Type": "application/xml",
       Accept: "application/xml",
     },

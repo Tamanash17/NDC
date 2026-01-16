@@ -5,6 +5,7 @@ import healthRoutes from "./health.routes.js";
 import transactionsRoutes from "./transactions.routes.js";
 import { promises as fs } from "fs";
 import path from "path";
+import { config, getNdcEnvironment, setNdcEnvironment, type NDCEnvironment } from "../config/index.js";
 
 const router = Router();
 
@@ -56,6 +57,50 @@ router.post("/debug/log", async (req: any, res: any) => {
   }
 });
 
+// NDC Environment switching endpoints
+router.get("/environment", (_req, res) => {
+  const currentEnv = getNdcEnvironment();
+  const envConfig = config.ndc.environments[currentEnv];
+  res.json({
+    current: currentEnv,
+    baseUrl: envConfig.baseUrl,
+    authUrl: envConfig.authUrl,
+    headerName: envConfig.headerName,
+    headerValue: envConfig.header,
+    available: ["UAT", "PROD"],
+  });
+});
+
+router.post("/environment", (req, res) => {
+  const { environment } = req.body;
+
+  if (!environment || !["UAT", "PROD"].includes(environment)) {
+    return res.status(400).json({
+      error: "Invalid environment",
+      message: "Environment must be 'UAT' or 'PROD'",
+      current: getNdcEnvironment(),
+    });
+  }
+
+  const previousEnv = getNdcEnvironment();
+  setNdcEnvironment(environment as NDCEnvironment);
+
+  const newConfig = config.ndc.environments[environment as NDCEnvironment];
+
+  console.log(`[ENV SWITCH] Changed from ${previousEnv} to ${environment}`);
+
+  res.json({
+    success: true,
+    previous: previousEnv,
+    current: environment,
+    baseUrl: newConfig.baseUrl,
+    authUrl: newConfig.authUrl,
+    headerName: newConfig.headerName,
+    headerValue: newConfig.header,
+    message: `Switched to ${environment} environment`,
+  });
+});
+
 router.use("/ndc", ndcRoutes);
 router.use("/auth", authRoutes);
 router.use("/", healthRoutes);
@@ -64,9 +109,11 @@ router.use("/transactions", transactionsRoutes);
 router.get("/", (_req, res) => {
   res.json({
     name: "NDC Booking Tool API",
-    version: "3.1.1",
-    description: "Enterprise NDC booking backend with all 9 operations",
+    version: "3.2.0",
+    description: "Enterprise NDC booking backend with all 9 operations and UAT/PROD switching",
+    currentEnvironment: getNdcEnvironment(),
     endpoints: {
+      environment: { get: "GET /api/environment", set: "POST /api/environment" },
       health: { health: "GET /api/health", ready: "GET /api/ready", status: "GET /api/status" },
       auth: { authenticate: "POST /api/auth/token", status: "GET /api/auth/token/status", invalidate: "DELETE /api/auth/token", cacheStats: "GET /api/auth/cache/stats" },
       primeFlow: { airShopping: "POST /api/ndc/air-shopping", offerPrice: "POST /api/ndc/offer-price", serviceList: "POST /api/ndc/service-list", seatAvailability: "POST /api/ndc/seat-availability" },

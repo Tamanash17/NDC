@@ -29,7 +29,8 @@ router.post("/login", async (req, res) => {
         headers: {
           "Authorization": `Basic ${basicAuth}`,
           "Ocp-Apim-Subscription-Key": subscriptionKey,
-          "ndcuat": config.ndc.uatHeader,
+          // Dynamic environment header (X-NDC-UAT or X-NDC-PROD)
+          [config.ndc.envHeaderName]: config.ndc.envHeader,
           "Content-Type": "application/json",
         },
         timeout: config.ndc.requestTimeout,

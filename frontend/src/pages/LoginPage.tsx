@@ -84,7 +84,8 @@ export function LoginPage() {
     orgName: '',
   });
 
-  const isProdDisabled = form.environment === 'PROD';
+  // PROD is now enabled with proper backend support
+  const isProdDisabled = false;
 
   useEffect(() => {
     sessionStorage.removeItem('ndc-xml-captures');
@@ -103,7 +104,7 @@ export function LoginPage() {
         apiId: saved.apiId || '',
         password: saved.password || '',
         subscriptionKey: saved.subscriptionKey || '',
-        environment: saved.environment === 'PROD' ? 'UAT' : (saved.environment || 'UAT'),
+        environment: saved.environment || 'UAT',
         orgCode: saved.orgCode || '',
         orgName: saved.orgName || '',
       }));
@@ -317,11 +318,11 @@ export function LoginPage() {
                 </button>
               </div>
 
-              {/* PROD Disabled Warning */}
-              {isProdDisabled && (
-                <div className="mt-3 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-700">Production environment is currently disabled. Please use UAT for testing.</p>
+              {/* PROD Warning - informational only */}
+              {form.environment === 'PROD' && (
+                <div className="mt-3 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-700">You are connecting to the <strong>PRODUCTION</strong> environment. All bookings will be real.</p>
                 </div>
               )}
 

@@ -68,11 +68,12 @@ interface SessionState {
   bookingType: 'DIRECT' | 'BOB' | null;
   operationType: 'PRIME' | 'SERVICING' | null;
   selectedScenarioId: string | null;
-  
+
   // Actions - Auth
   setAuth: (auth: AuthSession, credentials: NDCCredentials) => void;
   logout: () => void;
   isTokenExpired: () => boolean;
+  setEnvironment: (env: Environment) => void;
   
   // Actions - Organization
   setSellerOrganization: (org: Organization | null) => void;
@@ -145,6 +146,17 @@ export const useSessionStore = create<SessionState>()(
         const { auth } = get();
         if (!auth) return true;
         return Date.now() >= (auth.tokenExpiry - 30000); // 30 second buffer
+      },
+
+      setEnvironment: (env) => {
+        const { auth, credentials } = get();
+        if (auth) {
+          set({ auth: { ...auth, environment: env } });
+        }
+        if (credentials) {
+          set({ credentials: { ...credentials, environment: env } });
+        }
+        console.log('[SessionStore] Environment changed to:', env);
       },
 
       // Organization actions

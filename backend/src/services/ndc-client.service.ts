@@ -80,7 +80,8 @@ class NDCClientService {
                 "Ocp-Apim-Subscription-Key": credentials.subscriptionKey,
                 "Content-Type": "application/xml",
                 Accept: "application/xml",
-                ...(config.app.isDev ? { "X-NDC-UAT": config.ndc.uatHeader } : {}),
+                // Dynamic environment header (X-NDC-UAT or X-NDC-PROD)
+                [config.ndc.envHeaderName]: config.ndc.envHeader,
               },
               timeout: config.ndc.requestTimeout,
             });

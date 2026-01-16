@@ -201,3 +201,40 @@ export async function fetchAllCCFees(
 
   return results;
 }
+
+// ----------------------------------------------------------------------------
+// ENVIRONMENT SWITCHING API
+// ----------------------------------------------------------------------------
+
+export type NDCEnvironment = 'UAT' | 'PROD';
+
+export interface EnvironmentInfo {
+  current: NDCEnvironment;
+  baseUrl: string;
+  authUrl: string;
+  headerName: string;
+  headerValue: string;
+  available: NDCEnvironment[];
+}
+
+export interface EnvironmentSwitchResult extends EnvironmentInfo {
+  success: boolean;
+  previous: NDCEnvironment;
+  message: string;
+}
+
+/**
+ * Get current NDC environment from backend
+ */
+export async function getEnvironment(): Promise<EnvironmentInfo> {
+  const response = await axios.get(API_BASE_URL + '/environment');
+  return response.data;
+}
+
+/**
+ * Switch NDC environment on backend
+ */
+export async function setEnvironment(environment: NDCEnvironment): Promise<EnvironmentSwitchResult> {
+  const response = await axios.post(API_BASE_URL + '/environment', { environment });
+  return response.data;
+}
