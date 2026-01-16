@@ -111,6 +111,16 @@ export class ServiceListParser extends BaseXmlParser {
 
       const serviceType = this.determineServiceType(serviceCode, serviceName, rfic);
 
+      // JCON DEBUGGING: Log when JCON is found in ServiceDefinitions
+      if (serviceCode.toUpperCase() === 'JCON') {
+        console.log(`[ServiceListParser] ===== JCON FOUND IN ServiceDefinition =====`);
+        console.log(`[ServiceListParser] JCON serviceId: ${serviceId}`);
+        console.log(`[ServiceListParser] JCON serviceCode: ${serviceCode}`);
+        console.log(`[ServiceListParser] JCON serviceName: ${serviceName}`);
+        console.log(`[ServiceListParser] JCON serviceType: ${serviceType}`);
+        console.log(`[ServiceListParser] ============================================`);
+      }
+
       services.push({
         serviceId,
         serviceCode,
@@ -221,6 +231,18 @@ export class ServiceListParser extends BaseXmlParser {
 
       // Find matching service definition
       const serviceDef = serviceDefinitions.find(s => s.serviceId === serviceDefinitionRefId);
+
+      // JCON DEBUGGING: Log when we process an item that might be JCON
+      if (offerItemId.includes('JCON') || serviceDefinitionRefId === 'sv101' ||
+          serviceDef?.serviceCode?.toUpperCase() === 'JCON') {
+        console.log(`[ServiceListParser] ===== PROCESSING POTENTIAL JCON ITEM =====`);
+        console.log(`[ServiceListParser] offerItemId: ${offerItemId}`);
+        console.log(`[ServiceListParser] serviceDefinitionRefId: ${serviceDefinitionRefId}`);
+        console.log(`[ServiceListParser] serviceDef found: ${!!serviceDef}`);
+        console.log(`[ServiceListParser] serviceDef?.serviceCode: ${serviceDef?.serviceCode}`);
+        console.log(`[ServiceListParser] serviceDef?.serviceType: ${serviceDef?.serviceType}`);
+        console.log(`[ServiceListParser] ==========================================`);
+      }
 
       // Parse price from UnitPrice/TotalAmount
       const unitPriceEl = this.getElement(itemEl, "UnitPrice");
@@ -347,6 +369,41 @@ export class ServiceListParser extends BaseXmlParser {
     );
     console.log(`[ServiceListParser] Seat SSRs in nonBundles: ${seatSSRsInNonBundles.length}`,
       seatSSRsInNonBundles.map(i => i.serviceDef?.serviceCode));
+
+    // JCON DEBUGGING: Check if JCON is in nonBundles
+    const jconInNonBundles = nonBundles.filter(item =>
+      (item.serviceDef?.serviceCode || '').toUpperCase() === 'JCON'
+    );
+    console.log(`[ServiceListParser] ===== JCON CHECK IN NON-BUNDLES =====`);
+    console.log(`[ServiceListParser] JCON found in nonBundles: ${jconInNonBundles.length}`);
+    if (jconInNonBundles.length > 0) {
+      jconInNonBundles.forEach((jcon, i) => {
+        console.log(`[ServiceListParser] JCON[${i}]:`, {
+          serviceCode: jcon.serviceDef?.serviceCode,
+          serviceName: jcon.serviceDef?.serviceName,
+          serviceType: jcon.serviceDef?.serviceType,
+          price: jcon.price,
+          legRefIds: jcon.legRefIds,
+          segmentRefIds: jcon.segmentRefIds,
+          associationType: jcon.associationType,
+        });
+      });
+    } else {
+      console.warn(`[ServiceListParser] ⚠️ JCON NOT FOUND in nonBundles - checking allItems...`);
+      const jconInAllItems = allItems.filter(item =>
+        (item.serviceDef?.serviceCode || '').toUpperCase() === 'JCON'
+      );
+      console.log(`[ServiceListParser] JCON in allItems (before bundle/non-bundle split): ${jconInAllItems.length}`);
+      if (jconInAllItems.length > 0) {
+        jconInAllItems.forEach((jcon, i) => {
+          console.log(`[ServiceListParser] JCON allItems[${i}]:`, {
+            serviceCode: jcon.serviceDef?.serviceCode,
+            serviceType: jcon.serviceDef?.serviceType,
+          });
+        });
+      }
+    }
+    console.log(`[ServiceListParser] =====================================`);
 
     for (const item of nonBundles) {
       offers.push({

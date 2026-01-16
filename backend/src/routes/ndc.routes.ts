@@ -606,6 +606,19 @@ router.post("/service-list", async (req: any, res: any) => {
       console.log("[NDC] First ancillary offer:", JSON.stringify(parsed.ancillaryOffers[0], null, 2));
     }
 
+    // JCON DEBUGGING: Check if JCON is in the parsed response
+    const jconServices = parsed.services?.filter((s: any) => s.serviceCode?.toUpperCase() === 'JCON') || [];
+    const jconOffers = parsed.ancillaryOffers?.filter((o: any) => o.serviceCode?.toUpperCase() === 'JCON') || [];
+    console.log(`[NDC] ===== JCON CHECK IN SERVICELIST RESPONSE =====`);
+    console.log(`[NDC] JCON in parsed.services: ${jconServices.length}`);
+    console.log(`[NDC] JCON in parsed.ancillaryOffers: ${jconOffers.length}`);
+    if (jconOffers.length > 0) {
+      console.log(`[NDC] JCON offer details:`, JSON.stringify(jconOffers[0], null, 2));
+    } else {
+      console.warn(`[NDC] ⚠️ JCON NOT FOUND in parsed response!`);
+    }
+    console.log(`[NDC] =================================================`);
+
     res.json({
       success: parsed.success,
       data: parsed,
