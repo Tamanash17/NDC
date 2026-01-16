@@ -297,8 +297,18 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
 
   // Now create FlightOffers for each unique journey
   let journeyIndex = 0;
-  for (const [, relatedOffers] of offersBySegments) {
-    if (relatedOffers.length === 0) continue;
+  for (const [, rawRelatedOffers] of offersBySegments) {
+    if (rawRelatedOffers.length === 0) continue;
+
+    // CRITICAL: Filter to only offers that have bundleOffers attached
+    // In PROD, multiple fare class offers exist for same segments - only some have bundles
+    // We want the offer with bundles (base fare + upgrade options)
+    const offersWithBundles = rawRelatedOffers.filter(o => o.bundleOffers && o.bundleOffers.length > 0);
+
+    // Use offers with bundles if available, otherwise fall back to all offers
+    const relatedOffers = offersWithBundles.length > 0 ? offersWithBundles : rawRelatedOffers;
+
+    console.log('[Parser] Filtered offers:', rawRelatedOffers.length, 'total →', offersWithBundles.length, 'with bundles →', relatedOffers.length, 'using');
 
     const firstOffer = relatedOffers[0];
     console.log('[Parser] Processing offer:', firstOffer.offerId, 'bundleOffers?', !!firstOffer.bundleOffers, 'count:', firstOffer.bundleOffers?.length || 0);
