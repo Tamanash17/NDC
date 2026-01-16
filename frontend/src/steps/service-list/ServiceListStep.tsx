@@ -1090,8 +1090,9 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
 
     // FOR ROUND TRIPS: Split "both" services into separate outbound/inbound options
     // This allows users to select services per-flight (e.g., different baggage each way)
-    // NOTE: We keep the ORIGINAL refs from the API - the backend will use them as-is
+    // NOTE: We keep the ORIGINAL refs from the API - the backend will use them as-as
     // The direction split is only for UI display purposes
+    // API TEAM REQUIREMENT: Show ALL services including $0 priced ones for review
     let processedServices: Service[] = [];
 
     if (isRoundTripSearch) {
@@ -1101,33 +1102,31 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
           console.log('[ServiceListStep] Filtering out bundle inclusion:', svc.serviceCode, svc.serviceName);
           continue;
         }
-        // Include all SSRs (even $0 priced) + paid services
-        if (svc.price > 0 || svc.serviceType === 'ssr') {
-          if (svc.direction === 'both') {
-            // Split into two separate service options for UI
-            // KEEP original refs - the API knows which segments they apply to
-            processedServices.push({
-              ...svc,
-              serviceId: `${svc.serviceId}-outbound`,
-              direction: 'outbound',
-              // Keep original refs unchanged - API will handle them
-            });
-            processedServices.push({
-              ...svc,
-              serviceId: `${svc.serviceId}-inbound`,
-              direction: 'inbound',
-              // Keep original refs unchanged - API will handle them
-            });
-          } else {
-            // Keep as-is (already outbound or inbound)
-            processedServices.push(svc);
-          }
+        // Include ALL services (including $0 priced) for API team review
+        if (svc.direction === 'both') {
+          // Split into two separate service options for UI
+          // KEEP original refs - the API knows which segments they apply to
+          processedServices.push({
+            ...svc,
+            serviceId: `${svc.serviceId}-outbound`,
+            direction: 'outbound',
+            // Keep original refs unchanged - API will handle them
+          });
+          processedServices.push({
+            ...svc,
+            serviceId: `${svc.serviceId}-inbound`,
+            direction: 'inbound',
+            // Keep original refs unchanged - API will handle them
+          });
+        } else {
+          // Keep as-is (already outbound or inbound)
+          processedServices.push(svc);
         }
       }
     } else {
-      // One-way: all services are outbound, filter out bundle inclusions
-      // Include all SSRs (even $0 priced) + paid services
-      processedServices = services.filter(s => (s.price > 0 || s.serviceType === 'ssr') && !isBundleInclusion(s.serviceCode));
+      // One-way: all services are outbound, filter out bundle inclusions only
+      // Include ALL services (including $0 priced) for API team review
+      processedServices = services.filter(s => !isBundleInclusion(s.serviceCode));
     }
 
     // VISUAL GROUPING: Group duplicate services for display while keeping all segment services internally
@@ -3273,10 +3272,32 @@ function CompactServiceSection({
                   {service.serviceCode}
                 </span>
               )}
+              {/* Association type badge for API team */}
+              <span className={cn(
+                "text-xs font-medium px-2 py-0.5 rounded",
+                service.associationType === 'segment' && "bg-blue-100 text-blue-700",
+                service.associationType === 'journey' && "bg-purple-100 text-purple-700",
+                service.associationType === 'leg' && "bg-amber-100 text-amber-700",
+                service.associationType === 'unknown' && "bg-gray-100 text-gray-600"
+              )}>
+                {service.associationType.toUpperCase()}
+              </span>
             </div>
             {service.description && (
               <div className="text-xs text-neutral-600 mb-1">{service.description}</div>
             )}
+            {/* Refs display for API team */}
+            <div className="text-[10px] text-neutral-500 font-mono space-x-2">
+              {service.segmentRefs && service.segmentRefs.length > 0 && (
+                <span>Seg: {service.segmentRefs.join(', ')}</span>
+              )}
+              {service.journeyRefs && service.journeyRefs.length > 0 && (
+                <span>Jrn: {service.journeyRefs.join(', ')}</span>
+              )}
+              {service.legRefs && service.legRefs.length > 0 && (
+                <span>Leg: {service.legRefs.join(', ')}</span>
+              )}
+            </div>
           </div>
           <div className="text-right">
             <div className={cn("text-lg font-bold", colors.priceText)}>
