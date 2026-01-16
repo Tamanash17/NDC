@@ -572,16 +572,21 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
   // Helper to get route from journey segments - shows full journey route (e.g., ADL → MEL → AYQ)
   // PROD FIX: For multi-segment journeys, the segments array may only have the first leg
   // Use searchCriteria origin/destination as the canonical source of the journey endpoints
-  // PROD FIX 2: Also use journey.origin/destination as fallback for inbound flights
+  // PROD FIX 2: Extract origin/destination from segments for inbound flights
   const getJourneyRoute = useCallback((
     selectionItem: typeof flightStore.selection.outbound,
     direction: 'outbound' | 'inbound' = 'outbound'
   ): string => {
     const searchCriteria = flightStore.searchCriteria;
     const segments = selectionItem?.journey?.segments;
-    const journey = selectionItem?.journey;
 
-    // Get journey endpoints from searchCriteria (most reliable for outbound)
+    // Debug: log the full selection item structure
+    console.log(`[getJourneyRoute] direction=${direction}, selectionItem exists=${!!selectionItem}, journey exists=${!!selectionItem?.journey}, segments count=${segments?.length || 0}`);
+    if (segments && segments.length > 0) {
+      console.log(`[getJourneyRoute] First segment:`, JSON.stringify(segments[0], null, 2));
+    }
+
+    // Get journey endpoints from searchCriteria
     const searchOrigin = direction === 'outbound'
       ? searchCriteria?.origin
       : searchCriteria?.destination;
@@ -589,51 +594,47 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
       ? searchCriteria?.destination
       : searchCriteria?.origin;
 
-    // PROD FIX: For inbound, also try journey.origin/destination directly
-    // These are populated from AirShopping response and are more reliable for return flights
-    const journeyOrigin = journey?.origin || searchOrigin;
-    const journeyDestination = journey?.destination || searchDestination;
+    // PRIORITY 1: Try to extract from segments (most reliable)
+    if (segments && segments.length > 0) {
+      const firstSeg = segments[0];
+      const lastSeg = segments[segments.length - 1];
 
-    console.log(`[getJourneyRoute] direction=${direction}, searchOrigin=${searchOrigin}, searchDest=${searchDestination}, journeyOrigin=${journeyOrigin}, journeyDest=${journeyDestination}, segments=${segments?.length || 0}`);
+      if (segments.length > 1) {
+        // Multiple segments - show all stops
+        const routeParts: string[] = [];
+        for (const seg of segments) {
+          if (seg?.origin && routeParts.length === 0) {
+            routeParts.push(seg.origin);
+          }
+          if (seg?.destination) {
+            routeParts.push(seg.destination);
+          }
+        }
+        if (routeParts.length > 1) {
+          return routeParts.join(' → ');
+        }
+      } else {
+        // Single segment - check if multi-leg journey
+        const segOrigin = firstSeg?.origin;
+        const segDest = firstSeg?.destination;
 
-    if (segments && segments.length > 1) {
-      // We have multiple segments - show all stops
-      const routeParts: string[] = [];
-      for (const seg of segments) {
-        if (seg?.origin && routeParts.length === 0) {
-          routeParts.push(seg.origin);
+        if (segOrigin && segDest) {
+          // Check if this is a multi-leg journey (segment doesn't reach final destination)
+          if (searchOrigin && searchDestination && segOrigin === searchOrigin && segDest !== searchDestination) {
+            return `${segOrigin} → ${segDest} → ${searchDestination}`;
+          }
+          return `${segOrigin} → ${segDest}`;
         }
-        if (seg?.destination) {
-          routeParts.push(seg.destination);
-        }
-      }
-      if (routeParts.length > 1) {
-        return routeParts.join(' → ');
-      }
-    } else if (segments && segments.length === 1) {
-      // PROD FIX: Only one segment stored, but journey might have multiple legs
-      const seg = segments[0];
-      const segOrigin = seg?.origin;
-      const segDest = seg?.destination;
-
-      // If segment destination doesn't match journey destination, it's a connecting flight
-      if (segOrigin && segDest && journeyOrigin && journeyDestination) {
-        if (segOrigin === journeyOrigin && segDest !== journeyDestination) {
-          // Multi-leg journey where we only have the first segment
-          return `${segOrigin} → ${segDest} → ${journeyDestination}`;
-        }
-        return `${segOrigin} → ${segDest}`;
-      }
-      // Fallback: just show segment origin → destination
-      if (segOrigin && segDest) {
-        return `${segOrigin} → ${segDest}`;
       }
     }
 
-    // Fallback to journey-level origin/destination (populated from AirShopping)
-    if (journeyOrigin && journeyDestination) {
-      return `${journeyOrigin} → ${journeyDestination}`;
+    // PRIORITY 2: Fallback to searchCriteria (for direction-aware route)
+    if (searchOrigin && searchDestination) {
+      console.log(`[getJourneyRoute] Using searchCriteria fallback: ${searchOrigin} → ${searchDestination}`);
+      return `${searchOrigin} → ${searchDestination}`;
     }
+
+    console.log(`[getJourneyRoute] FAILED - no segments and no searchCriteria`);
     return 'Unknown Route';
   }, [flightStore.searchCriteria]);
 
