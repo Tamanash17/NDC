@@ -14,11 +14,10 @@ router.get("/deploy-info", (_req, res) => {
   res.json({
     deployed: true,
     timestamp: new Date().toISOString(),
-    commit: "e8849da",
-    feature: "requestXml-in-error-responses",
-    message: "This version includes requestXml in ALL AirShopping error responses",
-    testUrl: "/api/ndc/air-shopping",
-    expectedBehavior: "Error responses should include requestXml field (not <request not captured>)"
+    commit: "9132128",
+    feature: "token-expiry-string-parsing",
+    message: "PROD token expiry string format (00:18:59.xxx) now parsed to seconds",
+    fix: "Backend parses HH:MM:SS format to numeric seconds before returning expires_in"
   });
 });
 
