@@ -44,8 +44,13 @@ export function OrderQuoteStep() {
 
       const duration = response.duration || Date.now() - startTime;
 
+      // Build route label from context (order management flow)
+      const origin = context.searchParams?.origin || context.retrievedOrder?.flights?.[0]?.origin || 'XXX';
+      const destination = context.searchParams?.destination || context.retrievedOrder?.flights?.[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OfferPrice (Quote)',
+        operation: `OfferPrice Quote (${routeLabel})`,
         request: response.requestXml || '',
         response: response.responseXml || '',
         duration,
@@ -81,8 +86,13 @@ export function OrderQuoteStep() {
       setError(errorMessage);
       toast.error('Quote failed', errorMessage);
 
+      // Build route label from context (order management flow)
+      const origin = context.searchParams?.origin || context.retrievedOrder?.flights?.[0]?.origin || 'XXX';
+      const destination = context.searchParams?.destination || context.retrievedOrder?.flights?.[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OfferPrice (Quote)',
+        operation: `OfferPrice Quote (${routeLabel})`,
         request: '',
         response: errorResponseXml,
         duration: errorDuration,

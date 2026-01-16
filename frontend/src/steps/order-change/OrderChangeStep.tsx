@@ -76,8 +76,13 @@ export function OrderChangeStep() {
         } : undefined,
       });
 
+      // Build route label from context (order management flow)
+      const origin = context.searchParams?.origin || context.retrievedOrder?.flights?.[0]?.origin || 'XXX';
+      const destination = context.searchParams?.destination || context.retrievedOrder?.flights?.[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OrderChange',
+        operation: `OrderChange (${routeLabel})`,
         request: response.requestXml || '',
         response: response.responseXml || '',
         duration: response.duration || Date.now() - startTime,
@@ -99,8 +104,13 @@ export function OrderChangeStep() {
       setError(errorMessage);
       toast.error('Change failed', errorMessage);
       
+      // Build route label from context (order management flow)
+      const origin = context.searchParams?.origin || context.retrievedOrder?.flights?.[0]?.origin || 'XXX';
+      const destination = context.searchParams?.destination || context.retrievedOrder?.flights?.[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OrderChange',
+        operation: `OrderChange (${routeLabel})`,
         request: '',
         response: err.response?.data?.xml || `<error>${errorMessage}</error>`,
         duration: Date.now() - startTime,

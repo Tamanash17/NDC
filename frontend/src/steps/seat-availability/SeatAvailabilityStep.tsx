@@ -69,8 +69,15 @@ export function SeatAvailabilityStep() {
         distributionChain,
       });
 
+      // Build route label from selected offers
+      const offer = context.selectedOffers?.[0];
+      const segments = offer?.segments || [];
+      const origin = segments[0]?.origin || 'XXX';
+      const destination = segments[segments.length - 1]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'SeatAvailability',
+        operation: `SeatAvailability (${routeLabel})`,
         request: response.requestXml || '',
         response: response.responseXml || '',
         duration: response.duration || Date.now() - startTime,
@@ -84,9 +91,16 @@ export function SeatAvailabilityStep() {
 
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Failed to load seat map');
-      
+
+      // Build route label from selected offers
+      const offer = context.selectedOffers?.[0];
+      const segments = offer?.segments || [];
+      const origin = segments[0]?.origin || 'XXX';
+      const destination = segments[segments.length - 1]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'SeatAvailability',
+        operation: `SeatAvailability (${routeLabel})`,
         request: '',
         response: err.response?.data?.xml || `<error>${err.message}</error>`,
         duration: Date.now() - startTime,

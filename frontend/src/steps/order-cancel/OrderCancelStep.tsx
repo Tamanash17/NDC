@@ -48,8 +48,13 @@ export function OrderCancelStep() {
         changeType: 'ADD_SERVICE', // Would be CANCEL in real implementation
       });
 
+      // Build route label from booking data
+      const origin = booking.flights?.[0]?.origin || 'XXX';
+      const destination = booking.flights?.[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OrderCancel',
+        operation: `OrderCancel (${routeLabel})`,
         request: response.requestXml || '',
         response: response.responseXml || '',
         duration: response.duration || Date.now() - startTime,
@@ -68,8 +73,13 @@ export function OrderCancelStep() {
       setError(errorMessage);
       toast.error('Cancellation failed', errorMessage);
       
+      // Build route label from booking data
+      const origin = booking.flights?.[0]?.origin || 'XXX';
+      const destination = booking.flights?.[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OrderCancel',
+        operation: `OrderCancel (${routeLabel})`,
         request: '',
         response: err.response?.data?.xml || `<error>${errorMessage}</error>`,
         duration: Date.now() - startTime,

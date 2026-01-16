@@ -570,9 +570,18 @@ export function PassengersStep() {
           || result.errors?.[0]?.code
           || 'Booking failed - please check the response';
 
+        // Build route label from flight store segments
+        const outSegs = flightStore.selection.outbound?.journey?.segments;
+        const inSegs = flightStore.selection.inbound?.journey?.segments;
+        const outOrigin = outSegs?.[0]?.origin || searchCriteria?.origin || 'XXX';
+        const outDest = outSegs?.[outSegs?.length - 1]?.destination || searchCriteria?.destination || 'XXX';
+        const routeLabel = inSegs
+          ? `${outOrigin}-${outDest} + ${inSegs[0]?.origin || outDest}-${inSegs[inSegs.length - 1]?.destination || outOrigin}`
+          : `${outOrigin}-${outDest}`;
+
         // Log error XML capture
         addCapture({
-          operation: 'OrderCreate',
+          operation: `OrderCreate (${routeLabel})`,
           request: response.requestXml || '',
           response: response.responseXml || '',
           duration,
@@ -584,9 +593,18 @@ export function PassengersStep() {
         return;
       }
 
+      // Build route label from flight store segments
+      const outSegs = flightStore.selection.outbound?.journey?.segments;
+      const inSegs = flightStore.selection.inbound?.journey?.segments;
+      const outOrigin = outSegs?.[0]?.origin || searchCriteria?.origin || 'XXX';
+      const outDest = outSegs?.[outSegs?.length - 1]?.destination || searchCriteria?.destination || 'XXX';
+      const routeLabel = inSegs
+        ? `${outOrigin}-${outDest} + ${inSegs[0]?.origin || outDest}-${inSegs[inSegs.length - 1]?.destination || outOrigin}`
+        : `${outOrigin}-${outDest}`;
+
       // Log success XML capture
       addCapture({
-        operation: 'OrderCreate',
+        operation: `OrderCreate (${routeLabel})`,
         request: response.requestXml || '',
         response: response.responseXml || '',
         duration,
@@ -627,9 +645,18 @@ export function PassengersStep() {
 
       setBookingError(errorMessage);
 
+      // Build route label from flight store segments
+      const outSegs2 = flightStore.selection.outbound?.journey?.segments;
+      const inSegs2 = flightStore.selection.inbound?.journey?.segments;
+      const outOrigin2 = outSegs2?.[0]?.origin || searchCriteria?.origin || 'XXX';
+      const outDest2 = outSegs2?.[outSegs2?.length - 1]?.destination || searchCriteria?.destination || 'XXX';
+      const routeLabel2 = inSegs2
+        ? `${outOrigin2}-${outDest2} + ${inSegs2[0]?.origin || outDest2}-${inSegs2[inSegs2.length - 1]?.destination || outOrigin2}`
+        : `${outOrigin2}-${outDest2}`;
+
       // Log error XML capture
       addCapture({
-        operation: 'OrderCreate',
+        operation: `OrderCreate (${routeLabel2})`,
         request: requestXml,
         response: responseXml,
         duration: errorDuration,

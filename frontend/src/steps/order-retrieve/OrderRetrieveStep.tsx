@@ -34,8 +34,14 @@ export function OrderRetrieveStep() {
         orderId: searchType === 'orderId' ? orderId : undefined,
       });
 
+      // Build route label from retrieved order data
+      const flights = response.data?.flights || response.data?.order?.flights || [];
+      const origin = flights[0]?.origin || 'XXX';
+      const destination = flights[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OrderRetrieve',
+        operation: `OrderRetrieve (${routeLabel})`,
         request: response.requestXml || '',
         response: response.responseXml || '',
         duration: response.duration || Date.now() - startTime,
@@ -55,8 +61,11 @@ export function OrderRetrieveStep() {
       const errorMessage = err.response?.data?.message || err.message || 'Order not found';
       setError(errorMessage);
       
+      // For error case, use the search value as identifier since we don't have order data
+      const identifier = searchType === 'pnr' ? pnr : orderId;
+
       addCapture({
-        operation: 'OrderRetrieve',
+        operation: `OrderRetrieve (${identifier})`,
         request: '',
         response: err.response?.data?.xml || `<error>${errorMessage}</error>`,
         duration: Date.now() - startTime,

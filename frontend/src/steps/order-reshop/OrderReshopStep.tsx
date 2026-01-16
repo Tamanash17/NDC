@@ -66,8 +66,13 @@ export function OrderReshopStep() {
         segmentId: currentBooking.flights[0]?.segmentId,
       });
 
+      // Build route label from current booking data
+      const origin = currentBooking.flights?.[0]?.origin || 'XXX';
+      const destination = currentBooking.flights?.[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OrderReshop',
+        operation: `OrderReshop (${routeLabel})`,
         request: response.requestXml || '',
         response: response.responseXml || '',
         duration: response.duration || Date.now() - startTime,
@@ -91,8 +96,13 @@ export function OrderReshopStep() {
       setError(errorMessage);
       toast.error('Search failed', errorMessage);
       
+      // Build route label from current booking data
+      const origin = currentBooking.flights?.[0]?.origin || 'XXX';
+      const destination = currentBooking.flights?.[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OrderReshop',
+        operation: `OrderReshop (${routeLabel})`,
         request: '',
         response: err.response?.data?.xml || `<error>${errorMessage}</error>`,
         duration: Date.now() - startTime,

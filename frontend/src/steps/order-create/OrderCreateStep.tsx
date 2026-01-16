@@ -127,8 +127,13 @@ export function OrderCreateStep() {
 
       const annotatedRequest = annotateXml(response.requestXml || '', annotationCtx);
 
+      // Build route label from search params or selected offers
+      const origin = context.searchParams?.origin || context.selectedOffers?.[0]?.segments?.[0]?.origin || 'XXX';
+      const destination = context.searchParams?.destination || context.selectedOffers?.[0]?.segments?.slice(-1)[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OrderCreate',
+        operation: `OrderCreate (${routeLabel})`,
         request: annotatedRequest,
         response: response.responseXml || '',
         duration,
@@ -180,8 +185,13 @@ export function OrderCreateStep() {
 
       const annotatedErrorRequest = annotateXml('', errorAnnotationCtx);
 
+      // Build route label from search params or selected offers
+      const origin = context.searchParams?.origin || context.selectedOffers?.[0]?.segments?.[0]?.origin || 'XXX';
+      const destination = context.searchParams?.destination || context.selectedOffers?.[0]?.segments?.slice(-1)[0]?.destination || 'XXX';
+      const routeLabel = `${origin}-${destination}`;
+
       addCapture({
-        operation: 'OrderCreate',
+        operation: `OrderCreate (${routeLabel})`,
         request: annotatedErrorRequest,
         response: errorResponseXml,
         duration: errorDuration,

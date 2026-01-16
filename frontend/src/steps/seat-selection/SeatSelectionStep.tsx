@@ -452,8 +452,17 @@ export function SeatSelectionStep({ onComplete, onBack }: SeatSelectionStepProps
 
         // Capture XML for XML Logs panel
         if (result.requestXml && result.responseXml) {
+          // Build route label from segments
+          const outSegs = flightStore.selection.outbound?.journey?.segments;
+          const inSegs = flightStore.selection.inbound?.journey?.segments;
+          const outOrigin = outSegs?.[0]?.origin || 'XXX';
+          const outDest = outSegs?.[outSegs?.length - 1]?.destination || 'XXX';
+          const routeLabel = inSegs
+            ? `${outOrigin}-${outDest} + ${inSegs[0]?.origin || outDest}-${inSegs[inSegs.length - 1]?.destination || outOrigin}`
+            : `${outOrigin}-${outDest}`;
+
           addCapture({
-            operation: 'SeatAvailability',
+            operation: `SeatAvailability (${routeLabel})`,
             request: result.requestXml,
             response: result.responseXml,
             duration: Date.now() - startTime,
@@ -535,8 +544,17 @@ export function SeatSelectionStep({ onComplete, onBack }: SeatSelectionStepProps
         const errorResponse = (err as any)?.response?.data?.responseXml || `<error>${errorMessage}</error>`;
         const errorRequest = (err as any)?.response?.data?.requestXml || '<request not captured>';
 
+        // Build route label from segments
+        const outSegs = flightStore.selection.outbound?.journey?.segments;
+        const inSegs = flightStore.selection.inbound?.journey?.segments;
+        const outOrigin = outSegs?.[0]?.origin || 'XXX';
+        const outDest = outSegs?.[outSegs?.length - 1]?.destination || 'XXX';
+        const routeLabel = inSegs
+          ? `${outOrigin}-${outDest} + ${inSegs[0]?.origin || outDest}-${inSegs[inSegs.length - 1]?.destination || outOrigin}`
+          : `${outOrigin}-${outDest}`;
+
         addCapture({
-          operation: 'SeatAvailability',
+          operation: `SeatAvailability (${routeLabel})`,
           request: errorRequest,
           response: errorResponse,
           duration: Date.now() - startTime,
