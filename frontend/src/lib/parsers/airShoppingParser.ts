@@ -543,67 +543,69 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
     const paxRefIds = Array.from(allPaxRefIds);
 
     // Calculate price breakdown from offer items (for OfferPrice comparison)
-    // This aggregates baseAmount and taxAmount from ALL related offers (not just first offer)
-    // Jetstar splits prices into TWO structures:
-    // 1. offer.offerItems - BASE FARES with taxes (from PriceGuaranteeOffer)
-    // 2. offer.bundleOffers - BUNDLE PRICES (from ALaCarteOffer)
-    // WE MUST AGGREGATE BOTH!
+    // IMPORTANT: In PROD, Jetstar returns MULTIPLE fare classes as separate Offers
+    // (e.g., Starter, Plus, Max, Flex) - all with the same segments but different prices.
+    // We must NOT aggregate all of them! We should only use the FIRST (base) offer.
+    //
+    // In UAT, there's typically one Offer with bundle upgrades in bundleOffers (ALaCarteOffer).
+    // In PROD, each fare class is a separate Offer - bundles are still in ALaCarteOffer.
+    //
+    // STRATEGY: Use only the FIRST offer (lowest/base fare) for pricing.
+    // Bundle options are extracted from bundleOffers (ALaCarteOffer) separately.
     let totalBaseAmount = 0;
     let totalTaxAmount = 0;
     let totalBundleAmount = 0;
     const allOfferItems: BackendOfferItem[] = [];
     const allBundleOffers: BackendBundleOffer[] = [];
 
-    for (const offer of relatedOffers) {
-      // Aggregate flight base fares and taxes
-      allOfferItems.push(...offer.offerItems);
-      for (const item of offer.offerItems) {
-        if (item.baseAmount) {
-          totalBaseAmount += item.baseAmount.value;
-        }
-        if (item.taxAmount) {
-          totalTaxAmount += item.taxAmount.value;
-        }
-      }
+    // CRITICAL FIX: Only use the FIRST offer for base pricing
+    // Multiple offers represent different fare classes (Starter, Plus, Max, Flex)
+    // Not items to aggregate! User selects ONE fare class.
+    const baseOffer = firstOffer;
 
-      // CRITICAL FIX: Also aggregate bundle prices!
-      // bundleOffers contain the upgrade prices (e.g., Starter Plus, Flex, etc.)
-      if (offer.bundleOffers && offer.bundleOffers.length > 0) {
-        allBundleOffers.push(...offer.bundleOffers);
-        for (const bundle of offer.bundleOffers) {
-          totalBundleAmount += bundle.price.value;
-        }
+    // Aggregate flight base fares and taxes from FIRST offer only
+    allOfferItems.push(...baseOffer.offerItems);
+    for (const item of baseOffer.offerItems) {
+      if (item.baseAmount) {
+        totalBaseAmount += item.baseAmount.value;
+      }
+      if (item.taxAmount) {
+        totalTaxAmount += item.taxAmount.value;
       }
     }
 
+    // Bundle offers come from ALaCarteOffer - these are OPTIONAL upgrades
+    // Don't add them to the base price - they're selected separately by user
+    if (baseOffer.bundleOffers && baseOffer.bundleOffers.length > 0) {
+      allBundleOffers.push(...baseOffer.bundleOffers);
+      // NOTE: We do NOT add bundle prices to totalBundleAmount here!
+      // Bundle prices are shown as upgrade options, not included in base fare
+    }
+
+    console.log('[Parser] PROD multi-offer handling: Using first offer only, ignoring', relatedOffers.length - 1, 'other fare class offers');
+
     console.log('═══════════════════════════════════════════════════════════════');
-    console.log('[Parser] 💰 PRICE AGGREGATION - Journey:', segments.map(s => s.departureAirport + '→' + s.arrivalAirport).join(', '));
-    console.log('[Parser] Aggregating from', relatedOffers.length, 'related offers');
-    console.log('[Parser]  ✈️  Flight items:', allOfferItems.length, '→ baseAmount:', totalBaseAmount.toFixed(2), ', taxAmount:', totalTaxAmount.toFixed(2));
-    console.log('[Parser]  📦 Bundle offers:', allBundleOffers.length, '→ totalBundleAmount:', totalBundleAmount.toFixed(2));
-    console.log('[Parser]  💵 TOTAL CALCULATED:', (totalBaseAmount + totalTaxAmount + totalBundleAmount).toFixed(2));
-    console.log('[Parser] Detailed offer breakdown:');
+    console.log('[Parser] 💰 PRICE - Journey:', segments.map(s => s.departureAirport + '→' + s.arrivalAirport).join(', '));
+    console.log('[Parser] Found', relatedOffers.length, 'fare class offers for same segments (using FIRST only)');
+    console.log('[Parser]  ✈️  Base fare items:', allOfferItems.length, '→ baseAmount:', totalBaseAmount.toFixed(2), ', taxAmount:', totalTaxAmount.toFixed(2));
+    console.log('[Parser]  📦 Bundle OPTIONS available:', allBundleOffers.length, '(not included in base price)');
+    console.log('[Parser]  💵 BASE FARE TOTAL:', (totalBaseAmount + totalTaxAmount).toFixed(2));
+    console.log('[Parser] All fare class offers (for reference):');
     for (let i = 0; i < relatedOffers.length; i++) {
       const o = relatedOffers[i];
-      console.log(`  Offer [${i}]: ${o.offerId.substring(0, 30)}...`);
-      console.log(`    - offerItems: ${o.offerItems.length}, bundleOffers: ${o.bundleOffers?.length || 0}`);
-      console.log(`    - backend totalPrice: ${o.totalPrice.value}`);
-      if (o.bundleOffers && o.bundleOffers.length > 0) {
-        for (const b of o.bundleOffers) {
-          console.log(`    - 📦 Bundle: ${b.serviceCode} (${b.bundleName}) = $${b.price.value} for ${b.paxRefIds.length} pax`);
-        }
-      }
+      const marker = i === 0 ? '✓ USING' : '  SKIP';
+      console.log(`  ${marker} Offer [${i}]: ${o.offerId.substring(0, 30)}... → $${o.totalPrice.value}`);
     }
     console.log('═══════════════════════════════════════════════════════════════');
 
     // Build price breakdown if we have actual data from the API
-    // CRITICAL: Include bundle amounts in the base calculation!
-    // totalAmount should be: base fares + taxes + bundle upgrades
+    // Base fare = flight price (from first/base offer)
+    // Bundle upgrades are added separately when user selects a bundle
     const priceBreakdown: AirShoppingPriceBreakdown | undefined =
-      (totalBaseAmount > 0 || totalTaxAmount > 0 || totalBundleAmount > 0) ? {
-        baseAmount: totalBaseAmount + totalBundleAmount,  // Include bundles in base
+      (totalBaseAmount > 0 || totalTaxAmount > 0) ? {
+        baseAmount: totalBaseAmount,  // Base fare only (no bundles pre-added)
         taxAmount: totalTaxAmount,
-        totalAmount: totalBaseAmount + totalTaxAmount + totalBundleAmount,  // Total = base + tax + bundles
+        totalAmount: totalBaseAmount + totalTaxAmount,  // Total = base + tax (bundle added on selection)
         currency: firstOffer.totalPrice.currency,
       } : undefined;
 
