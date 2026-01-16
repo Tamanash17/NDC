@@ -958,6 +958,14 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       serviceDefMap.set(id, svc);
     }
 
+    // Collect bundle inclusions by direction (OOCP, MORE, FLEX, etc.)
+    // These are components of bundles, shown inside bundle cards, not as separate services
+    const bundleInclusionsByDirection: Record<'outbound' | 'inbound' | 'both', { code: string; name: string }[]> = {
+      outbound: [],
+      inbound: [],
+      both: [],
+    };
+
     for (const offer of ancillaryOffers) {
       const serviceRefId = offer.serviceRefId || offer.ServiceRefID;
       const serviceDef = serviceDefMap.get(serviceRefId);
@@ -974,6 +982,17 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       // Determine direction using segment origin/destination from API DataLists
       const direction = detectDirection(segmentRefs, journeyRefs, legRefs);
       const bundleDirection: 'outbound' | 'inbound' | 'both' = direction;
+
+      // Check if this is a bundle inclusion (OOCP, MORE, FLEX, etc.)
+      // These are components of bundles, shown inside bundle cards
+      if (isBundleInclusion(serviceCode)) {
+        bundleInclusionsByDirection[bundleDirection].push({
+          code: serviceCode.toUpperCase(),
+          name: rawName,
+        });
+        console.log(`[ServiceListStep] Bundle inclusion detected: ${serviceCode} -> ${rawName}, direction=${bundleDirection}`);
+        continue; // Don't add to services array
+      }
 
       // Check if this is a bundle
       if (isBundleCode(serviceCode)) {
@@ -1097,11 +1116,8 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
 
     if (isRoundTripSearch) {
       for (const svc of services) {
-        // Skip bundle inclusions (OOCP, MORE, FLEX, etc.) - these are not standalone purchasable
-        if (isBundleInclusion(svc.serviceCode)) {
-          console.log('[ServiceListStep] Filtering out bundle inclusion:', svc.serviceCode, svc.serviceName);
-          continue;
-        }
+        // Note: Bundle inclusions (OOCP, MORE, FLEX, etc.) are already filtered in the offer loop
+        // and added to bundleInclusionsByDirection to be shown inside bundle cards
         // Include ALL services (including $0 priced) for API team review
         if (svc.direction === 'both') {
           // Split into two separate service options for UI
@@ -1124,9 +1140,10 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
         }
       }
     } else {
-      // One-way: all services are outbound, filter out bundle inclusions only
+      // One-way: all services are outbound
+      // Note: Bundle inclusions already filtered in offer loop
       // Include ALL services (including $0 priced) for API team review
-      processedServices = services.filter(s => !isBundleInclusion(s.serviceCode));
+      processedServices = services;
     }
 
     // VISUAL GROUPING: Group duplicate services for display while keeping all segment services internally
@@ -1393,6 +1410,32 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
     }
 
     console.log('[ServiceListStep] Complete SSR mappings:', ssrMappings);
+
+    // Add bundle inclusions to each bundle's otherInclusions array
+    // These are codes like OOCP, MORE, FLEX that are components of the bundle
+    console.log('[ServiceListStep] Bundle inclusions collected:', bundleInclusionsByDirection);
+
+    for (const bundle of sortedBundles) {
+      // Get inclusions for this bundle's direction
+      const inclusionsForDirection = bundle.direction === 'both'
+        ? [...bundleInclusionsByDirection.both]
+        : [...bundleInclusionsByDirection[bundle.direction], ...bundleInclusionsByDirection.both];
+
+      if (inclusionsForDirection.length > 0) {
+        // Format inclusions as readable strings for display
+        const otherInclusions = inclusionsForDirection.map(inc =>
+          `${inc.name} (${inc.code})`
+        );
+
+        // Add to bundle inclusions
+        bundle.inclusions = {
+          ...bundle.inclusions,
+          otherInclusions,
+        };
+
+        console.log(`[ServiceListStep] Added ${otherInclusions.length} inclusions to bundle ${bundle.serviceCode} (${bundle.direction}):`, otherInclusions);
+      }
+    }
 
     return {
       services: Array.from(uniqueServices.values()),
