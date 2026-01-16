@@ -328,18 +328,43 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
     console.log(`[Parser] Offer segment refs from items: ${uniqueSegmentRefs.join(', ')} (count: ${uniqueSegmentRefs.length})`);
     console.log(`[Parser] paxJourneyList count: ${response.dataLists?.paxJourneyList?.length || 0}`);
 
+    // First, try to get journey ID from bundle offers (most reliable for PROD)
+    const bundleJourneyRefId = firstOffer.bundleOffers?.[0]?.journeyRefId;
+    console.log(`[Parser] Bundle journeyRefId: ${bundleJourneyRefId || 'none'}`);
+
+    if (bundleJourneyRefId) {
+      // Look up this journey in paxJourneyList - but journeyRefId format (fl01501650519)
+      // differs from paxJourneyId format. We need to match by numeric part.
+      const numericPart = bundleJourneyRefId.replace(/[^0-9]/g, '');
+      console.log(`[Parser] Looking for journey with numeric part: ${numericPart}`);
+
+      for (const journey of response.dataLists?.paxJourneyList || []) {
+        const journeyNumeric = journey.paxJourneyId.replace(/[^0-9]/g, '');
+        console.log(`[Parser]   Checking journey ${journey.paxJourneyId} (numeric: ${journeyNumeric})`);
+
+        if (journeyNumeric === numericPart || journey.paxJourneyId.includes(numericPart)) {
+          const journeySegRefs = journey.segmentRefIds || [];
+          console.log(`[Parser] MATCH! Journey ${journey.paxJourneyId} has ${journeySegRefs.length} segments: ${journeySegRefs.join(', ')}`);
+
+          if (journeySegRefs.length > uniqueSegmentRefs.length) {
+            console.log(`[Parser] PROD FIX: Expanding segment refs from ${uniqueSegmentRefs.length} to ${journeySegRefs.length} using bundle journeyRefId`);
+            uniqueSegmentRefs = [...journeySegRefs];
+          }
+          break;
+        }
+      }
+    }
+
+    // Fallback: check if offer segment refs are a subset of any journey's refs
     if (uniqueSegmentRefs.length > 0) {
-      // Check if this partial segment key matches any journey's segments
       for (const journey of response.dataLists?.paxJourneyList || []) {
         const journeySegRefs = journey.segmentRefIds || [];
-        console.log(`[Parser] Checking journey ${journey.paxJourneyId}: refs=${journeySegRefs.join(', ')}`);
 
         // If our segment refs are a subset of this journey's refs, use the full journey refs
         const isSubset = uniqueSegmentRefs.every(ref => journeySegRefs.includes(ref));
-        console.log(`[Parser]   isSubset=${isSubset}, journeyRefsLength=${journeySegRefs.length}, offerRefsLength=${uniqueSegmentRefs.length}`);
 
         if (isSubset && journeySegRefs.length > uniqueSegmentRefs.length) {
-          console.log(`[Parser] PROD FIX: Expanding segment refs from ${uniqueSegmentRefs.length} to ${journeySegRefs.length} using paxJourneyList`);
+          console.log(`[Parser] PROD FIX: Expanding segment refs from ${uniqueSegmentRefs.length} to ${journeySegRefs.length} using subset match`);
           console.log(`[Parser]   Offer refs: ${uniqueSegmentRefs.join(', ')}`);
           console.log(`[Parser]   Journey refs: ${journeySegRefs.join(', ')}`);
           uniqueSegmentRefs = [...journeySegRefs];
