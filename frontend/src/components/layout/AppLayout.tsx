@@ -13,7 +13,8 @@ import {
   LogOut,
   ChevronDown,
   Home,
-  Settings
+  Settings,
+  RefreshCw
 } from 'lucide-react';
 
 // Format time remaining in human readable format
