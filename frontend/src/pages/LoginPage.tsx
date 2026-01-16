@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSessionStore } from '@/core/context/SessionStore';
+import { useFlightSelectionStore } from '@/hooks/useFlightSelection';
 import { login, airlineProfile } from '@/lib/ndc-api';
 import { TransactionLogger } from '@/lib/transaction-logger';
 import { Lock, Key, User, Server, ChevronRight, AlertTriangle, Zap, Eye, EyeOff } from 'lucide-react';
@@ -25,6 +26,7 @@ interface TestCredentials {
   testCredentials: {
     direct: TestCredential;
     bob: TestCredential;
+    prod?: TestCredential;
   };
   warning: string;
 }
@@ -141,7 +143,7 @@ export function LoginPage() {
         environment: response.environment,
       });
 
-      const expiresIn = response.expires_in || 1800;
+      const expiresIn = response.expiresIn || 1800;
       const tokenExpiry = Date.now() + (expiresIn * 1000);
 
       const authSession = {
@@ -153,6 +155,12 @@ export function LoginPage() {
 
       console.log('[Login] Setting auth session in store...');
       setAuth(authSession, form);
+
+      // Clear any stale flight selection data from previous sessions
+      // This prevents pricing contamination when switching between UAT/PROD or users
+      console.log('[Login] Clearing stale flight selection data...');
+      useFlightSelectionStore.getState().reset();
+
       console.log('[Login] Initializing transaction logger...');
       TransactionLogger.initSession(form.apiId);
 
@@ -246,10 +254,14 @@ export function LoginPage() {
   };
 
   // Auto-populate test credentials
-  const populateTestCredentials = (type: 'direct' | 'bob') => {
+  const populateTestCredentials = (type: 'direct' | 'bob' | 'prod') => {
     if (!testCreds) return;
 
-    const cred = testCreds.testCredentials[type];
+    const cred = type === 'prod'
+      ? testCreds.testCredentials.prod
+      : testCreds.testCredentials[type];
+
+    if (!cred) return;
     setForm({
       environment: cred.environment,
       domain: cred.domain,
@@ -326,6 +338,42 @@ export function LoginPage() {
                   <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-red-700">You are connecting to the <strong>PRODUCTION</strong> environment. All bookings will be real.</p>
                 </div>
+              )}
+
+              {/* Use PROD Test Credentials - Only shown in PROD when prod creds are available */}
+              {form.environment === 'PROD' && testCreds?.testCredentials?.prod?.apiId && (
+                <label className="flex items-center gap-2.5 cursor-pointer select-none mt-3">
+                  <input
+                    type="checkbox"
+                    checked={useTestCreds}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setUseTestCreds(checked);
+
+                      if (checked) {
+                        populateTestCredentials('prod');
+                      } else {
+                        // Clear form when unchecked
+                        setForm({
+                          environment: 'PROD',
+                          domain: 'EXT',
+                          apiId: '',
+                          password: '',
+                          subscriptionKey: '',
+                          orgCode: '',
+                          orgName: '',
+                        });
+                        setRememberMe(false);
+                        setSellerOrganization(null);
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-slate-300 text-red-500 focus:ring-red-500"
+                  />
+                  <span className="text-sm text-slate-600 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-red-500" />
+                    Use PROD test credentials
+                  </span>
+                </label>
               )}
 
               {/* Use Test Credentials Checkbox - Only shown in UAT when test creds are available */}

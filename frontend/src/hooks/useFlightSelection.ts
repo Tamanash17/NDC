@@ -440,28 +440,33 @@ export function useFlightSelection(): UseFlightSelectionResult {
 
     console.log('[useFlightSelection] 🧮 Calculating totalPrice with paxCounts:', paxCounts);
 
-    // Helper to calculate flight total using actual per-pax pricing if available
+    // Helper to calculate flight total using per-person amounts and CURRENT pax counts
     const calculateFlightTotal = (selectionItem: FlightSelectionItem): number => {
       const bundlePrice = selectionItem.bundle.price;
+      const perPaxPricing = selectionItem.perPaxPricing;
 
-      // Use actual per-pax pricing from AirShopping if available
-      if (selectionItem.perPaxPricing && selectionItem.perPaxPricing.length > 0) {
+      // Use per-person amounts from AirShopping with CURRENT pax counts from searchCriteria
+      // NOTE: perPaxPricing.paxCount may be stale from a previous search, so we use paxCounts instead
+      if (perPaxPricing && perPaxPricing.length > 0) {
+        // Get per-person fares from AirShopping response
+        const adtPricing = perPaxPricing.find(p => p.paxType === 'ADT');
+        const chdPricing = perPaxPricing.find(p => p.paxType === 'CHD');
+        const infPricing = perPaxPricing.find(p => p.paxType === 'INF');
+
+        const adultFarePerPerson = adtPricing?.perPersonAmount ?? 0;
+        const childFarePerPerson = chdPricing?.perPersonAmount ?? adultFarePerPerson;
+        const infantFarePerPerson = infPricing?.perPersonAmount ?? 0;
+
+        console.log('[useFlightSelection] Per-person fares: ADT=', adultFarePerPerson, 'CHD=', childFarePerPerson, 'INF=', infantFarePerPerson);
+        console.log('[useFlightSelection] Current paxCounts:', paxCounts);
+
+        // Apply CURRENT passenger counts (not stale perPaxPricing.paxCount)
         let flightTotal = 0;
-        for (const paxPricing of selectionItem.perPaxPricing) {
-          // paxPricing.totalAmount includes base fare + taxes (NO bundles)
-          // Bundles are optional add-ons that the user selects
-          const fareTotal = paxPricing.totalAmount;
-          console.log('[useFlightSelection] Adding paxType', paxPricing.paxType, 'count:', paxPricing.paxCount, 'fareTotal:', fareTotal);
-          flightTotal += fareTotal;
+        flightTotal += paxCounts.adults * (adultFarePerPerson + bundlePrice);
+        flightTotal += paxCounts.children * (childFarePerPerson + bundlePrice);
+        flightTotal += paxCounts.infants * infantFarePerPerson; // INF doesn't get bundle
 
-          // Add the selected bundle price for paying passengers (not infants)
-          if (paxPricing.paxType !== 'INF') {
-            const bundleForPax = paxPricing.paxCount * bundlePrice;
-            flightTotal += bundleForPax;
-            console.log('[useFlightSelection]   + bundle for', paxPricing.paxType, ':', paxPricing.paxCount, '×', bundlePrice, '=', bundleForPax);
-          }
-        }
-        console.log('[useFlightSelection] Flight total (fare + selected bundle):', flightTotal);
+        console.log('[useFlightSelection] Flight total (using current paxCounts):', flightTotal);
         return flightTotal;
       }
 

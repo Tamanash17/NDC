@@ -233,23 +233,31 @@ export function SelectionBreakdown({
 
   const paxCounts = searchCriteria?.passengers || { adults: 1, children: 0, infants: 0 };
 
-  // Helper to calculate flight total using actual per-pax pricing when available
+  // Helper to calculate flight total using per-person amounts and current pax counts
   const calculateFlightTotal = (selectionItem: typeof selection.outbound): number => {
     if (!selectionItem) return 0;
     const bundlePrice = selectionItem.bundle.price;
     const perPaxPricing = selectionItem.perPaxPricing;
 
-    // Use actual per-pax pricing from AirShopping if available
+    // Use per-person amounts from AirShopping with CURRENT pax counts from searchCriteria
+    // NOTE: perPaxPricing.paxCount may be stale from a previous search, so we use paxCounts instead
     if (perPaxPricing && perPaxPricing.length > 0) {
       let flightTotal = 0;
-      for (const paxPricing of perPaxPricing) {
-        // Base fare from AirShopping (total for this pax type)
-        flightTotal += paxPricing.totalAmount;
-        // Bundle upgrade cost: only ADT and CHD get bundles, INF does not
-        if (paxPricing.paxType !== 'INF') {
-          flightTotal += paxPricing.paxCount * bundlePrice;
-        }
-      }
+
+      // Get per-person fares from AirShopping response
+      const adtPricing = perPaxPricing.find(p => p.paxType === 'ADT');
+      const chdPricing = perPaxPricing.find(p => p.paxType === 'CHD');
+      const infPricing = perPaxPricing.find(p => p.paxType === 'INF');
+
+      const adultFarePerPerson = adtPricing?.perPersonAmount ?? 0;
+      const childFarePerPerson = chdPricing?.perPersonAmount ?? adultFarePerPerson;
+      const infantFarePerPerson = infPricing?.perPersonAmount ?? 0;
+
+      // Apply CURRENT passenger counts (not stale perPaxPricing.paxCount)
+      flightTotal += paxCounts.adults * (adultFarePerPerson + bundlePrice);
+      flightTotal += paxCounts.children * (childFarePerPerson + bundlePrice);
+      flightTotal += paxCounts.infants * infantFarePerPerson; // INF doesn't get bundle
+
       return flightTotal;
     }
 
