@@ -250,27 +250,33 @@ export class OfferPriceParser extends BaseXmlParser {
     }
     console.log("[OfferPriceParser] ================================================================");
 
-    // Group fare items by segment reference first (to identify flight)
-    // Each segment = one flight leg
-    const itemsBySegment = new Map<string, OfferItem[]>();
+    // Group fare items by JOURNEY (unique combination of segment refs)
+    // A multi-segment journey (e.g., ADL→MEL→AYQ) should be treated as ONE flight
+    // not split into separate "Flight 1" and "Flight 2"
+    const itemsByJourney = new Map<string, OfferItem[]>();
     const itemsWithoutSegment: OfferItem[] = [];
 
     for (const item of fareItems) {
-      const segRef = item.segmentRefIds?.[0];
-      if (segRef) {
-        if (!itemsBySegment.has(segRef)) {
-          itemsBySegment.set(segRef, []);
+      const segRefs = item.segmentRefIds || [];
+      if (segRefs.length > 0) {
+        // Use ALL segment refs as the key (sorted for consistency)
+        const journeyKey = [...segRefs].sort().join('|');
+        if (!itemsByJourney.has(journeyKey)) {
+          itemsByJourney.set(journeyKey, []);
         }
-        itemsBySegment.get(segRef)!.push(item);
+        itemsByJourney.get(journeyKey)!.push(item);
       } else {
         itemsWithoutSegment.push(item);
       }
     }
 
-    console.log("[OfferPriceParser] Items grouped by segment:", {
-      segmentGroups: Array.from(itemsBySegment.keys()),
+    console.log("[OfferPriceParser] Items grouped by journey:", {
+      journeyGroups: Array.from(itemsByJourney.keys()),
       itemsWithoutSegment: itemsWithoutSegment.length,
     });
+
+    // Alias for backward compatibility with rest of code
+    const itemsBySegment = itemsByJourney;
 
     // If no segment refs, fall back to grouping by passenger count
     // Assume fare items are evenly distributed across flights
@@ -308,14 +314,31 @@ export class OfferPriceParser extends BaseXmlParser {
       currency = offer.offerItems[0].totalAmount?.currency || "AUD";
     }
 
-    for (const [segRef, segItems] of itemsBySegment) {
+    for (const [journeyKey, segItems] of itemsBySegment) {
       flightNumber++;
 
-      // Find segment info
-      const segment = segments.find(s => s.id === segRef) || segments[flightNumber - 1];
-      const route = segment
-        ? `${segment.origin} → ${segment.destination}`
-        : `Flight ${flightNumber}`;
+      // Parse segment IDs from the journey key (could be single or multiple segments)
+      const segmentIds = journeyKey.split('|');
+
+      // For multi-segment journeys, find origin of first segment and destination of last segment
+      // This gives us the FULL journey route (e.g., ADL → AYQ for ADL→MEL→AYQ)
+      let route = `Flight ${flightNumber}`;
+
+      if (segmentIds.length > 0) {
+        // Find all segments in this journey
+        const journeySegments = segmentIds
+          .map(id => segments.find(s => s.id === id))
+          .filter((s): s is { id: string; origin: string; destination: string } => s !== null);
+
+        if (journeySegments.length > 0) {
+          // First segment origin → Last segment destination
+          const firstSeg = journeySegments[0];
+          const lastSeg = journeySegments[journeySegments.length - 1];
+          route = `${firstSeg.origin} → ${lastSeg.destination}`;
+
+          console.log(`[OfferPriceParser] Journey route: ${route} (${journeySegments.length} segments: ${segmentIds.join(', ')})`);
+        }
+      }
 
       // Group items by passenger type
       const paxBreakdowns = new Map<string, PassengerPriceBreakdown>();

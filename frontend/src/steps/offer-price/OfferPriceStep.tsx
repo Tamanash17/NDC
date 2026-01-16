@@ -777,9 +777,23 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
       outboundBundleSwap.serviceCode === inboundBundleSwap.serviceCode &&
       outboundBundleSwap.price === inboundBundleSwap.price;
 
+    // Helper to get route from journey segments (fallback when searchCriteria missing)
+    const getJourneyRoute = (selectionItem: typeof selection.outbound): string => {
+      const segments = selectionItem?.journey?.segments;
+      if (segments && segments.length > 0) {
+        const firstSeg = segments[0];
+        const lastSeg = segments[segments.length - 1];
+        return `${firstSeg.origin} → ${lastSeg.destination}`;
+      }
+      return 'Unknown Route';
+    };
+
     // Outbound - use swapped bundle if available
     if (selection.outbound) {
-      const route = `${searchCriteria?.origin || 'XXX'} → ${searchCriteria?.destination || 'XXX'}`;
+      // Prefer searchCriteria, fallback to journey segment data
+      const route = searchCriteria?.origin && searchCriteria?.destination
+        ? `${searchCriteria.origin} → ${searchCriteria.destination}`
+        : getJourneyRoute(selection.outbound);
       const bundleSel = buildBundleSelection(
         selection.outbound,
         1,
@@ -790,7 +804,10 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
         if (sameBundle && selection.inbound) {
           // CRITICAL: ServiceList returns ONE bundle price for the entire round trip
           // Don't show it twice - combine both journeys into one display row
-          bundleSel.route = `${searchCriteria?.origin || 'XXX'} ↔ ${searchCriteria?.destination || 'XXX'} (Round Trip)`;
+          const roundTripRoute = searchCriteria?.origin && searchCriteria?.destination
+            ? `${searchCriteria.origin} ↔ ${searchCriteria.destination} (Round Trip)`
+            : `${getJourneyRoute(selection.outbound).replace(' → ', ' ↔ ')} (Round Trip)`;
+          bundleSel.route = roundTripRoute;
           bundleSel.flightNumber = 0;  // Indicate it's for both flights
           console.log('[OfferPriceStep] Same bundle for both journeys - showing as single round-trip bundle');
         }
@@ -801,7 +818,10 @@ export function OfferPriceStep({ onComplete, onBack, onPriceVerified, stepId }: 
     // Inbound (return flight) - use swapped bundle if available
     // SKIP if same bundle already added for round trip
     if (selection.inbound && !sameBundle) {
-      const route = `${searchCriteria?.destination || 'XXX'} → ${searchCriteria?.origin || 'XXX'}`;
+      // Prefer searchCriteria, fallback to journey segment data
+      const route = searchCriteria?.destination && searchCriteria?.origin
+        ? `${searchCriteria.destination} → ${searchCriteria.origin}`
+        : getJourneyRoute(selection.inbound);
       const bundleSel = buildBundleSelection(
         selection.inbound,
         2,
