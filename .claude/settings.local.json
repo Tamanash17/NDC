@@ -147,7 +147,8 @@
       "Bash(timeout:*)",
       "Bash(ping:*)",
       "Bash(echo:*)",
-      "Bash(git subtree push:*)"
+      "Bash(git subtree push:*)",
+      "Bash(head:*)"
     ]
   }
 }

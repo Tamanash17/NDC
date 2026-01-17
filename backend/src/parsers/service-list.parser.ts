@@ -24,6 +24,11 @@ export interface ParsedOfferItem {
   serviceType: 'segment' | 'journey' | 'leg' | 'unknown';
 }
 
+// Extended ServiceDefinition with bundle inclusion refs
+interface ExtendedServiceDefinition extends ServiceDefinition {
+  includedServiceRefIds?: string[];  // For bundles: refs to included services
+}
+
 export class ServiceListParser extends BaseXmlParser {
   parse(xml: string): ServiceListParseResult {
     const doc = this.parseXml(xml);
@@ -87,9 +92,10 @@ export class ServiceListParser extends BaseXmlParser {
 
   /**
    * Parse ServiceDefinition elements from DataLists
+   * For bundles: also parse ServiceBundle/ServiceDefinitionRefID to get included services
    */
-  private parseServiceDefinitions(doc: Document): ServiceDefinition[] {
-    const services: ServiceDefinition[] = [];
+  private parseServiceDefinitions(doc: Document): ExtendedServiceDefinition[] {
+    const services: ExtendedServiceDefinition[] = [];
 
     // Look for ServiceDefinition in DataLists/ServiceDefinitionList
     const serviceElements = this.getElements(doc, "ServiceDefinition");
@@ -111,6 +117,22 @@ export class ServiceListParser extends BaseXmlParser {
 
       const serviceType = this.determineServiceType(serviceCode, serviceName, rfic);
 
+      // Check for ServiceBundle element (bundles contain references to their inclusions)
+      const serviceBundleEl = this.getElement(svcEl, "ServiceBundle");
+      let includedServiceRefIds: string[] | undefined;
+
+      if (serviceBundleEl) {
+        // Parse ServiceDefinitionRefID elements within ServiceBundle
+        const refElements = this.getElements(serviceBundleEl, "ServiceDefinitionRefID");
+        includedServiceRefIds = refElements
+          .map(el => el.textContent?.trim() || "")
+          .filter(id => id.length > 0);
+
+        if (includedServiceRefIds.length > 0) {
+          console.log(`[ServiceListParser] Bundle ${serviceCode} has ${includedServiceRefIds.length} inclusions: ${includedServiceRefIds.join(', ')}`);
+        }
+      }
+
       services.push({
         serviceId,
         serviceCode,
@@ -119,6 +141,7 @@ export class ServiceListParser extends BaseXmlParser {
         description,
         rfic,
         rfisc,
+        includedServiceRefIds,
       });
     }
 
@@ -172,8 +195,10 @@ export class ServiceListParser extends BaseXmlParser {
    * CRITICAL FIX (2026-01-11): Group bundles by serviceCode and build per-passenger offerItemId mapping
    * Bundles have separate offerItemIds for each passenger type (ADT, CHD, INF) but share the same serviceCode.
    * We must group them and provide paxOfferItemIds mapping for OfferPrice to work correctly.
+   *
+   * 2026-01-17: Now also includes includedServiceRefIds for bundles to map inclusions to specific bundles
    */
-  private parseALaCarteOffers(doc: Document, serviceDefinitions: ServiceDefinition[]): AncillaryOffer[] {
+  private parseALaCarteOffers(doc: Document, serviceDefinitions: ExtendedServiceDefinition[]): AncillaryOffer[] {
     const offers: AncillaryOffer[] = [];
 
     // Get ALL ALaCarteOffer elements (there can be multiple - one per flight)
@@ -200,7 +225,7 @@ export class ServiceListParser extends BaseXmlParser {
     interface ItemData {
       offerItemId: string;
       serviceDefRefId: string;
-      serviceDef?: ServiceDefinition;
+      serviceDef?: ExtendedServiceDefinition;
       price: number;
       currency: string;
       paxRefIds: string[];
@@ -336,6 +361,8 @@ export class ServiceListParser extends BaseXmlParser {
         legRefIds: bundleItem.legRefIds,
         associationType: bundleItem.associationType,
         price: { value: bundleItem.price, currency: bundleItem.currency },
+        // Include bundle inclusion refs so frontend can map inclusions to specific bundles
+        includedServiceRefIds: bundleItem.serviceDef?.includedServiceRefIds,
         // DO NOT include paxOfferItemIds - ServiceList bundles use ONE offerItemId for all
       });
     }

@@ -77,54 +77,14 @@ Object.values(serviceCategoriesConfig.bundleTiers).forEach(val => {
   BUNDLE_TIER_NAMES[val.tier] = val.name;
 });
 
-// Known bundle codes to friendly names mapping - ONLY use as fallback when API doesn't provide meaningful name
-// These are Jetstar economy bundle codes (not business class)
-const BUNDLE_CODE_NAMES: Record<string, string> = {
-  'S050': 'Starter',
-  'S051': 'Starter',
-  'P200': 'Plus',
-  'P201': 'Plus',
-  'M200': 'Max',
-  'M201': 'Max',
-  'M202': 'Flex Plus',  // M2xx are typically Flex variants
-  'F200': 'Flex',
-  'F201': 'Flex',
-  'F202': 'Flex',
-  'F204': 'Flex',
-  'B200': 'Flex',  // B2xx in economy context = Flex, NOT Business class
-  'B050': 'Business',   // B050 might be actual business class - check cabin
-};
-
-// Default bundle inclusions by tier (used when API doesn't provide inclusions)
-const DEFAULT_BUNDLE_INCLUSIONS: Record<number, BundleOption['inclusions']> = {
-  1: {
-    baggage: '7kg carry-on',
-    meals: false,
-    seatSelection: false,
-    changes: 'Fee applies',
-    cancellation: 'Non-refundable',
-  },
-  2: {
-    baggage: '20kg checked bag',
-    meals: false,
-    seatSelection: true,
-    changes: 'Fee applies',
-    cancellation: 'Credit voucher',
-  },
-  3: {
-    baggage: '30kg checked bag',
-    meals: true,
-    seatSelection: true,
-    changes: 'Included',
-    cancellation: 'Refundable',
-  },
-  4: {
-    baggage: '30kg checked bag',
-    meals: true,
-    seatSelection: true,
-    changes: 'Included',
-    cancellation: 'Refundable',
-  },
+// Empty default inclusions - all bundle inclusions come from XML ServiceBundle refs
+// No hardcoded values - everything is realtime from API
+const EMPTY_BUNDLE_INCLUSIONS: BundleOption['inclusions'] = {
+  baggage: '',
+  meals: false,
+  seatSelection: false,
+  changes: '',
+  cancellation: '',
 };
 
 // Detected bundle from ServiceList
@@ -986,8 +946,9 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       serviceDefMap.set(id, svc);
     }
 
-    // Collect bundle inclusions by direction (OOCP, MORE, FLEX, CCSH etc.)
-    // These are components of bundles, shown inside bundle cards, not as separate services
+    // Track bundle inclusion codes by direction (OOCP, MORE, FLEX, CCSH etc.)
+    // These are filtered OUT from regular services but NOT displayed in bundle cards
+    // because Jetstar's ServiceList returns them by direction, not linked to specific bundles.
     const bundleInclusionsByDirection: Record<'outbound' | 'inbound' | 'both', { code: string; name: string }[]> = {
       outbound: [],
       inbound: [],
@@ -1020,15 +981,15 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       const servicePrice = offer.price?.value || offer.Price?.Amount || 0;
 
       // Check if this is a bundle inclusion (OOCP, MORE, FLEX, CCSH etc.)
-      // These are components of bundles, shown inside bundle cards
+      // These are filtered OUT from regular services - they're part of bundles, not purchasable separately
       // AUTO-DETECTS: $0 services with bundle-related keywords (cancel, change, flex, etc.)
       if (isBundleInclusion(serviceCode, rawName, servicePrice)) {
         bundleInclusionsByDirection[bundleDirection].push({
           code: serviceCode.toUpperCase(),
           name: rawName,
         });
-        console.log(`[ServiceListStep] Bundle inclusion detected: ${serviceCode} -> ${rawName} ($${servicePrice}), direction=${bundleDirection}`);
-        continue; // Don't add to services array
+        console.log(`[ServiceListStep] Bundle inclusion filtered (not purchasable): ${serviceCode} -> ${rawName} ($${servicePrice}), direction=${bundleDirection}`);
+        continue; // Don't add to services array - these are bundle components, not standalone services
       }
 
       // Check if this is a bundle
@@ -1054,35 +1015,18 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
 
         console.log(`[ServiceListStep] Bundle ${upperCode} isCurrentBundle check: direction=${bundleDirection}, match=${isCurrentBundle}`);
 
-        // Determine bundle name: use API name if meaningful, then known codes, then tier fallback
+        // Bundle name comes directly from XML - just clean up common prefixes/suffixes
         let bundleName = rawName;
-        // Clean up the raw name first - remove common prefixes and suffixes
         bundleName = bundleName.replace(/^JQ\s*/i, '').trim();
-        bundleName = bundleName.replace(/\s*Current\s*$/i, '').trim();  // Remove "Current" suffix
-        bundleName = bundleName.replace(/\s*Bundle\s*$/i, '').trim();   // Remove "Bundle" suffix
-        bundleName = bundleName.replace(/\s*\(NDC\)\s*/gi, '').trim();  // Remove "(NDC)" anywhere
-        bundleName = bundleName.replace(/\s*NDC\s*$/i, '').trim();      // Remove trailing "NDC"
-        // Remove trailing numbers like "FLEX 2" -> "Flex"
+        bundleName = bundleName.replace(/\s*Current\s*$/i, '').trim();
+        bundleName = bundleName.replace(/\s*Bundle\s*$/i, '').trim();
+        bundleName = bundleName.replace(/\s*\(NDC\)\s*/gi, '').trim();
+        bundleName = bundleName.replace(/\s*NDC\s*$/i, '').trim();
         bundleName = bundleName.replace(/\s+\d+\s*$/i, '').trim();
 
-        // Only use our mapping if API name is just the code, empty, or generic
-        const isGenericName = !bundleName ||
-          bundleName === serviceCode ||
-          bundleName.toUpperCase() === upperCode ||
-          bundleName.toUpperCase() === 'SERVICE' ||
-          bundleName.toUpperCase() === 'BUNDLE' ||
-          bundleName.toUpperCase() === 'FLEX' ||  // Use our mapping for better display
-          bundleName.toUpperCase() === 'STARTER';
-
-        // ALSO check for "Business" in bundle name when it's not actually a business class cabin
-        // B2xx codes in economy context should NOT be called "Business Max" - they're Flex bundles
-        const hasBusinessInName = bundleName.toUpperCase().includes('BUSINESS');
-        const isEconomyBundleCode = upperCode.startsWith('B2') || upperCode.startsWith('F') ||
-                                     upperCode.startsWith('M') || upperCode.startsWith('P') ||
-                                     upperCode.startsWith('S');
-
-        if (isGenericName || (hasBusinessInName && isEconomyBundleCode)) {
-          bundleName = BUNDLE_CODE_NAMES[upperCode] || BUNDLE_TIER_NAMES[tier] || 'Bundle';
+        // If name is empty or just the code, use tier name from config as fallback
+        if (!bundleName || bundleName === serviceCode || bundleName.toUpperCase() === upperCode) {
+          bundleName = BUNDLE_TIER_NAMES[tier] || upperCode;
         }
 
         // Capitalize first letter for consistency
@@ -1090,24 +1034,27 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
           bundleName = bundleName.charAt(0).toUpperCase() + bundleName.slice(1).toLowerCase();
         }
 
-        console.log(`[ServiceListStep] Bundle detected: code=${upperCode}, rawName="${rawName}", resolvedName="${bundleName}", tier=${tier}, direction=${bundleDirection}, offerId=${offerId}, journeyRefs=${journeyRefs}, segmentRefs=${segmentRefs}`);
+        // Get bundle's included service refs from ServiceBundle (parsed by backend)
+        const includedServiceRefIds = offer.includedServiceRefIds || [];
+        console.log(`[ServiceListStep] Bundle detected: code=${upperCode}, rawName="${rawName}", resolvedName="${bundleName}", tier=${tier}, direction=${bundleDirection}, offerId=${offerId}, journeyRefs=${journeyRefs}, segmentRefs=${segmentRefs}, includedServiceRefIds=${includedServiceRefIds.length}`);
 
         bundles.push({
           serviceId: offer.offerItemId || offer.OfferItemID || serviceRefId || '',
           serviceCode: upperCode,
           serviceName: bundleName,
           tier,
-          tierName: bundleName,  // Use the resolved name, not tier-based name
+          tierName: bundleName,
           price: offer.price?.value || offer.Price?.Amount || 0,
           currency: offer.price?.currency || offer.Price?.CurrencyCode || 'AUD',
-          inclusions: DEFAULT_BUNDLE_INCLUSIONS[tier] || DEFAULT_BUNDLE_INCLUSIONS[1],
+          inclusions: { ...EMPTY_BUNDLE_INCLUSIONS },  // Empty - will be populated from XML ServiceBundle refs
           offerId,
           offerItemId: offer.offerItemId || offer.OfferItemID,
           journeyRefs,
-          segmentRefs,  // Store segment refs for direction detection
+          segmentRefs,
           isCurrentBundle,
           direction: bundleDirection,
-          paxOfferItemIds: offer.paxOfferItemIds,  // Per-passenger offerItemIds for bundle swaps
+          paxOfferItemIds: offer.paxOfferItemIds,
+          includedServiceRefIds,  // Store refs to resolve inclusions later
         });
       } else {
         // Regular ancillary service
@@ -1462,39 +1409,75 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
 
     console.log('[ServiceListStep] Complete SSR mappings:', ssrMappings);
 
-    // Add ONLY bundle inclusion codes (OOCP, MORE, FLEX, CCSH etc.) to bundle cards
-    // These are special codes that come WITH bundles, NOT regular purchasable services
-    console.log('[ServiceListStep] Bundle inclusions collected:', bundleInclusionsByDirection);
-
+    // Resolve bundle inclusions using includedServiceRefIds from the backend
+    // Each bundle has a ServiceBundle element containing ServiceDefinitionRefID elements
+    // that point to the actual inclusion services (baggage, meals, seats, flex options etc.)
     for (const bundle of sortedBundles) {
-      // Get bundle inclusion codes for this bundle's direction
-      const inclusionsForDirection = bundle.direction === 'both'
-        ? [...bundleInclusionsByDirection.both]
-        : [...bundleInclusionsByDirection[bundle.direction], ...bundleInclusionsByDirection.both];
+      const includedRefs = (bundle as any).includedServiceRefIds || [];
+      if (includedRefs.length > 0) {
+        const resolvedInclusions: { code: string; name: string }[] = [];
+        let baggageInclusion = '';
+        let hasMeals = false;
+        let hasSeatSelection = false;
+        let changesPolicy = '';
+        let cancellationPolicy = '';
 
-      if (inclusionsForDirection.length > 0) {
-        // De-duplicate by code
-        const uniqueCodes = new Map<string, { code: string; name: string }>();
-        for (const item of inclusionsForDirection) {
-          if (!uniqueCodes.has(item.code)) {
-            uniqueCodes.set(item.code, item);
+        for (const refId of includedRefs) {
+          // Look up the service definition by its ID
+          const serviceDef = serviceDefMap.get(refId);
+          if (serviceDef) {
+            const code = (serviceDef.serviceCode || serviceDef.ServiceCode || '').toUpperCase();
+            const name = serviceDef.serviceName || serviceDef.ServiceName || code;
+            const upperName = name.toUpperCase();
+
+            // Categorize inclusion by type
+            if (code.startsWith('BG') || code.startsWith('OB') || upperName.includes('BAG') || upperName.includes('KG')) {
+              // Baggage inclusion - extract weight if present
+              const weightMatch = (name + ' ' + code).match(/(\d+)\s*KG/i);
+              if (weightMatch) {
+                const isChecked = upperName.includes('CHECK');
+                baggageInclusion = `${weightMatch[1]}kg ${isChecked ? 'checked bag' : 'bag'}`;
+              } else {
+                baggageInclusion = name;
+              }
+            } else if (upperName.includes('MEAL') || upperName.includes('FOOD') || upperName.includes('SNACK')) {
+              hasMeals = true;
+            } else if (upperName.includes('SEAT') || code === 'STSL' || code === 'SEAT') {
+              hasSeatSelection = true;
+            } else if (upperName.includes('CHANGE') || upperName.includes('FLEX') || code === 'FLXN' || code === 'FLEX') {
+              changesPolicy = name;
+            } else if (upperName.includes('CANCEL') || upperName.includes('REFUND') || code === 'CCSH') {
+              cancellationPolicy = name;
+            }
+
+            // Add to otherInclusions for display
+            resolvedInclusions.push({ code, name });
           }
         }
 
-        const otherInclusions = Array.from(uniqueCodes.values()).map(inc => ({
-          code: inc.code,
-          name: inc.name,
-        }));
-
-        // Add to bundle inclusions
+        // Update bundle inclusions with resolved values
         bundle.inclusions = {
-          ...bundle.inclusions,
-          otherInclusions,
+          baggage: baggageInclusion || bundle.inclusions.baggage,
+          meals: hasMeals || bundle.inclusions.meals,
+          seatSelection: hasSeatSelection || bundle.inclusions.seatSelection,
+          changes: changesPolicy || bundle.inclusions.changes,
+          cancellation: cancellationPolicy || bundle.inclusions.cancellation,
+          otherInclusions: resolvedInclusions,
         };
 
-        console.log(`[ServiceListStep] Added ${otherInclusions.length} bundle inclusions to ${bundle.serviceCode} (${bundle.direction}):`, otherInclusions.map(i => i.code));
+        console.log(`[ServiceListStep] Bundle ${bundle.serviceCode} resolved ${resolvedInclusions.length} inclusions:`, {
+          baggage: baggageInclusion,
+          meals: hasMeals,
+          seats: hasSeatSelection,
+          changes: changesPolicy,
+          cancel: cancellationPolicy,
+          codes: resolvedInclusions.map(i => i.code),
+        });
       }
     }
+
+    // Log any remaining inclusion codes that were filtered but not linked to bundles
+    console.log('[ServiceListStep] Bundle inclusions filtered from services (direction-based):', bundleInclusionsByDirection);
 
     return {
       services: Array.from(uniqueServices.values()),
@@ -3207,7 +3190,7 @@ function BundleKeyInclusions({ inclusions }: BundleKeyInclusionsProps) {
           </span>
         </div>
       ))}
-      {/* Show bundle inclusion codes (OOCP, MORE, FLEX, CCSH etc.) - format: "Description (CODE)" */}
+      {/* Bundle inclusion codes (OOCP, MORE, FLEX, CCSH etc.) - resolved from ServiceBundle refs */}
       {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
         inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
           const code = typeof other === 'string' ? other : other.code;
@@ -3933,6 +3916,7 @@ function BundleInclusionsList({ inclusions, compact = false, enhanced = false }:
             </span>
           </div>
         ))}
+        {/* Bundle inclusion codes (OOCP, MORE, FLEX, CCSH etc.) */}
         {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
           inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
             const code = typeof other === 'string' ? other : other.code;
@@ -3972,6 +3956,7 @@ function BundleInclusionsList({ inclusions, compact = false, enhanced = false }:
             <span className="truncate max-w-[120px]">{item.label}</span>
           </span>
         ))}
+        {/* Bundle inclusion codes (OOCP, MORE, FLEX, CCSH etc.) */}
         {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
           inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
             const code = typeof other === 'string' ? other : other.code;
@@ -4008,6 +3993,7 @@ function BundleInclusionsList({ inclusions, compact = false, enhanced = false }:
           {item.label}
         </div>
       ))}
+      {/* Bundle inclusion codes (OOCP, MORE, FLEX, CCSH etc.) */}
       {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
         inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
           const code = typeof other === 'string' ? other : other.code;

@@ -295,6 +295,8 @@ export interface AncillaryOffer {
   price: Amount;
   // Per-passenger offerItemIds - bundles have different IDs for ADT, CHD, INF
   paxOfferItemIds?: Record<string, string>;
+  // For bundles: refs to included services (from ServiceBundle/ServiceDefinitionRefID)
+  includedServiceRefIds?: string[];
 }
 
 export interface SelectedService {
