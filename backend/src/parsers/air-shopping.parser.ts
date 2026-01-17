@@ -682,7 +682,8 @@ export class AirShoppingParser extends BaseXmlParser {
       const journeyRefIds = primaryItem!.journeyRefIds;  // NEW: Array of ALL journey refs
       console.log(`[AirShoppingParser] Bundle ${serviceCode} journeyRefId: ${journeyRefId}, journeyRefIds: ${journeyRefIds?.join(',') || 'none'}, paxOfferItemIds:`, paxOfferItemIds);
 
-      // Resolve inclusions from ServiceBundle references
+      // Resolve inclusions from ServiceBundle references - NO categorization
+      // Put ALL inclusions into 'other' array for consistent display
       const inclusions: BundleOfferItem['inclusions'] = {
         baggage: [],
         seats: [],
@@ -694,29 +695,16 @@ export class AirShoppingParser extends BaseXmlParser {
         for (const refId of bundleDef.includedServiceRefIds) {
           const includedService = serviceDefMap.get(refId);
           if (includedService) {
-            const inclusion = {
+            // NO CATEGORIZATION - all inclusions go to 'other' for raw display
+            inclusions.other.push({
               serviceCode: includedService.serviceCode,
               name: includedService.name,
               description: includedService.description,
-            };
-
-            switch (includedService.serviceType) {
-              case 'baggage':
-                inclusions.baggage.push(inclusion);
-                break;
-              case 'seat':
-                inclusions.seats.push(inclusion);
-                break;
-              case 'meal':
-                inclusions.meals.push(inclusion);
-                break;
-              default:
-                inclusions.other.push(inclusion);
-                break;
-            }
+            });
           }
         }
       }
+      console.log(`[AirShoppingParser] Bundle ${serviceCode} resolved ${inclusions.other.length} inclusions (no categorization)`)
 
       bundleOffers.push({
         offerItemId: primaryItem!.offerItemId,  // Keep for backwards compatibility

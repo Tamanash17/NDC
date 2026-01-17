@@ -101,121 +101,72 @@ interface BackendResponse {
   errors?: Array<{ code: string; message: string }>;
 }
 
-// Known bundle codes and their display info
-// Jetstar uses codes like S050, P200, M201, F204
+// Known bundle codes - NO hardcoded inclusions, all from API
+// Only keep name and tier for display fallback
 const BUNDLE_CONFIG: Record<string, { name: string; tier: number; inclusions: BundleOption['inclusions'] }> = {
-  // Generic bundle names (fallback)
+  // Generic bundle names (fallback for name/tier only)
   'STARTER': {
     name: 'Starter',
     tier: 1,
-    inclusions: {
-      baggage: '7kg carry-on',
-      meals: false,
-      seatSelection: false,
-      changes: 'Fee applies',
-      cancellation: 'Non-refundable',
-    },
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
   },
   'PLUS': {
     name: 'Plus',
     tier: 2,
-    inclusions: {
-      baggage: '20kg checked bag',
-      meals: false,
-      seatSelection: true,
-      changes: 'Fee applies',
-      cancellation: 'Credit voucher',
-    },
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
   },
   'MAX': {
     name: 'Max',
     tier: 3,
-    inclusions: {
-      baggage: '30kg checked bag',
-      meals: true,
-      seatSelection: true,
-      changes: 'Included',
-      cancellation: 'Refundable',
-    },
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
   },
   'BIZMAX': {
     name: 'Business Max',
     tier: 4,
-    inclusions: {
-      baggage: '30kg checked bag',
-      meals: true,
-      seatSelection: true,
-      changes: 'Included',
-      cancellation: 'Refundable',
-    },
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
   },
   // Jetstar-specific bundle codes
   'S050': {
     name: 'Starter',
     tier: 1,
-    inclusions: {
-      baggage: '7kg carry-on',
-      meals: false,
-      seatSelection: false,
-      changes: 'Fee applies',
-      cancellation: 'Non-refundable',
-    },
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
   },
   'P200': {
     name: 'Plus',
     tier: 2,
-    inclusions: {
-      baggage: '20kg checked bag',
-      meals: false,
-      seatSelection: true,
-      changes: 'Fee applies',
-      cancellation: 'Credit voucher',
-    },
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
   },
   'M201': {
     name: 'Max',
     tier: 3,
-    inclusions: {
-      baggage: '30kg checked bag',
-      meals: true,
-      seatSelection: true,
-      changes: 'Included',
-      cancellation: 'Refundable',
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: ''
     },
   },
   'F204': {
     name: 'Flex Max',
     tier: 4,
-    inclusions: {
-      baggage: '30kg checked bag',
-      meals: true,
-      seatSelection: true,
-      changes: 'Included',
-      cancellation: 'Refundable',
-    },
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
+  },
+  'F202': {
+    name: 'Flex',
+    tier: 3,
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
+  },
+  'M202': {
+    name: 'Flex Plus',
+    tier: 3,
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
   },
   // Business class bundles
   'B050': {
     name: 'Business',
     tier: 4,
-    inclusions: {
-      baggage: '30kg checked bag',
-      meals: true,
-      seatSelection: true,
-      changes: 'Included',
-      cancellation: 'Refundable',
-    },
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
   },
   'B200': {
     name: 'Business Plus',
     tier: 4,
-    inclusions: {
-      baggage: '30kg checked bag',
-      meals: true,
-      seatSelection: true,
-      changes: 'Included',
-      cancellation: 'Refundable',
-    },
+    inclusions: { baggage: '', meals: false, seatSelection: false, changes: '', cancellation: '' },
   },
 };
 
@@ -487,10 +438,18 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
 
         // Build inclusions from API data if available, otherwise use fallback
         let inclusions: BundleOption['inclusions'];
-        if (firstBundleOffer.inclusions) {
+        const apiInclusions = firstBundleOffer.inclusions;
+        // Check if there's ANY actual inclusion data from API (not just empty arrays)
+        const hasApiInclusions = apiInclusions && (
+          (apiInclusions.baggage && apiInclusions.baggage.length > 0) ||
+          (apiInclusions.seats && apiInclusions.seats.length > 0) ||
+          (apiInclusions.meals && apiInclusions.meals.length > 0) ||
+          (apiInclusions.other && apiInclusions.other.length > 0)
+        );
+
+        if (hasApiInclusions) {
           // Use actual inclusions from API - combine ALL inclusions into otherInclusions
           // This matches ServiceListStep behavior where all inclusions are displayed from API
-          const apiInclusions = firstBundleOffer.inclusions;
 
           // Combine all inclusion types into a single array with {code, name} format
           const allInclusions: { code: string; name: string }[] = [];
@@ -536,9 +495,12 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
             otherInclusions: allInclusions.length > 0 ? allInclusions : undefined,
           };
         } else {
-          // Use fallback config
+          // Use fallback config - API didn't provide inclusions data
+          console.log(`[Parser] Bundle ${bundleCode}: No API inclusions, using fallback. apiInclusions:`, apiInclusions);
           inclusions = configFallback.inclusions;
         }
+
+        console.log(`[Parser] Bundle ${bundleCode} final inclusions:`, inclusions);
 
         // Use name from API if available, otherwise from config
         const bundleName = firstBundleOffer.bundleName || configFallback.name || bundleCode;
