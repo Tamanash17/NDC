@@ -322,15 +322,27 @@ export function PassengersStep() {
     const firstOutboundSeg = outboundSegs[0];
     let baseDate: Date;
 
+    // Try to parse from segment departure time
     if (firstOutboundSeg?.departureTime) {
-      // Parse departure time (e.g., "2025-03-15T07:00:00")
-      baseDate = new Date(firstOutboundSeg.departureTime);
+      const parsed = new Date(firstOutboundSeg.departureTime);
+      if (!isNaN(parsed.getTime())) {
+        baseDate = parsed;
+      } else {
+        baseDate = new Date();
+        baseDate.setDate(baseDate.getDate() + 7); // Default to 7 days from now
+      }
     } else if (searchCriteria?.departureDate) {
-      baseDate = new Date(searchCriteria.departureDate);
+      const parsed = new Date(searchCriteria.departureDate);
+      if (!isNaN(parsed.getTime())) {
+        baseDate = parsed;
+      } else {
+        baseDate = new Date();
+        baseDate.setDate(baseDate.getDate() + 7);
+      }
     } else {
-      // Default to tomorrow
+      // Default to 7 days from now
       baseDate = new Date();
-      baseDate.setDate(baseDate.getDate() + 1);
+      baseDate.setDate(baseDate.getDate() + 7);
     }
 
     // Set passive segment date 1-2 days BEFORE the sold flight
@@ -338,8 +350,15 @@ export function PassengersStep() {
     const passiveDate = new Date(baseDate);
     passiveDate.setDate(passiveDate.getDate() - daysBeforeFlight);
 
-    // Format date as YYYY-MM-DD
-    const formatDateStr = (d: Date) => d.toISOString().split('T')[0];
+    // Format date as YYYY-MM-DD (with fallback for invalid dates)
+    const formatDateStr = (d: Date) => {
+      if (isNaN(d.getTime())) {
+        const fallback = new Date();
+        fallback.setDate(fallback.getDate() + 5);
+        return fallback.toISOString().split('T')[0];
+      }
+      return d.toISOString().split('T')[0];
+    };
 
     // Morning departure times (07:00 or 09:00 based on segment index)
     const departureHour = segmentIndex % 2 === 0 ? '07' : '09';
