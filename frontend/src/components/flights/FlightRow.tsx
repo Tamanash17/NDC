@@ -313,11 +313,11 @@ function FlightRowExpanded({
 
       {/* Bundle Selection - IMPORTANT: This is where bundle cards are rendered in flight selection */}
       {/* Bundle codes (S050, P200, M202, F202) are displayed here in brackets next to bundle names */}
-      <div className="overflow-x-auto">
+      <div>
         <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-3">
           Select Fare Bundle
         </h4>
-        <div className="grid grid-cols-4 gap-4" style={{ minWidth: '900px' }}>
+        <div className="grid grid-cols-4 gap-3">
           {bundles.map((bundle) => {
             const isSelected = selectedBundleId === bundle.bundleId;
             const totalPrice = perPersonBaseFare + bundle.price;
@@ -327,7 +327,7 @@ function FlightRowExpanded({
                 key={bundle.bundleId}
                 onClick={() => onSelectBundle(bundle.bundleId)}
                 className={cn(
-                  'relative p-4 rounded-xl border-2 text-left transition-all duration-200 flex flex-col items-start min-w-[200px]',
+                  'relative p-3 rounded-xl border-2 text-left transition-all duration-200 flex flex-col items-start',
                   isSelected
                     ? 'border-primary-500 bg-gradient-to-br from-primary-50 to-orange-50 shadow-lg ring-2 ring-primary-200 scale-[1.02]'
                     : getBundleTierStyle(bundle.tier),
@@ -335,29 +335,29 @@ function FlightRowExpanded({
                 )}
               >
                 {/* Bundle Name with Code */}
-                <div className="font-bold text-neutral-900 text-sm pr-8">
+                <div className="font-bold text-neutral-900 text-xs pr-6 leading-tight">
                   {cleanName(bundle.bundleName)}{bundle.bundleCode ? ` (${bundle.bundleCode})` : ''}
                 </div>
 
                 {/* Price */}
                 <div className={cn(
-                  'text-xl font-bold mt-1',
+                  'text-lg font-bold mt-1',
                   bundle.price === 0 ? 'text-emerald-600' : 'text-primary-600'
                 )}>
                   {bundle.price === 0 ? 'Included' : `+${formatCurrency(bundle.price, bundle.currency)}`}
                 </div>
 
                 {/* Key Inclusions - vertical list with Name (CODE) format */}
-                <div className="mt-3 space-y-0.5 text-[10px] w-full">
+                <div className="mt-2 space-y-0.5 text-[9px] w-full">
                   {bundle.inclusions.otherInclusions && bundle.inclusions.otherInclusions.length > 0 ? (
                     bundle.inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
                       const code = typeof other === 'string' ? other : other.code;
                       const name = typeof other === 'string' ? '' : other.name;
                       const displayText = name ? `${name} (${code})` : code;
                       return (
-                        <div key={`other-${idx}`} className="flex items-start gap-1 text-green-700">
+                        <div key={`other-${idx}`} className="flex items-start gap-1 text-green-700 leading-tight">
                           <span className="text-green-500 flex-shrink-0">✓</span>
-                          <span className="break-words">{displayText}</span>
+                          <span>{displayText}</span>
                         </div>
                       );
                     })
@@ -368,11 +368,11 @@ function FlightRowExpanded({
 
                 {/* Selection Circle */}
                 <div className={cn(
-                  'absolute top-3 right-3 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all',
+                  'absolute top-2 right-2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all',
                   isSelected ? 'border-primary-500 bg-primary-500 shadow-md' : 'border-neutral-300 bg-white'
                 )}>
                   {isSelected && (
-                    <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   )}
@@ -380,12 +380,12 @@ function FlightRowExpanded({
 
                 {/* Total price at bottom - pushed to bottom with flex-grow spacer */}
                 <div className="flex-grow"></div>
-                <div className="mt-4 pt-3 border-t border-neutral-200 w-full">
-                  <span className="text-[10px] text-neutral-400 uppercase tracking-wider">Total: </span>
-                  <span className="font-bold text-primary-600 text-base">
+                <div className="mt-3 pt-2 border-t border-neutral-200 w-full">
+                  <span className="text-[9px] text-neutral-400 uppercase tracking-wider">Total: </span>
+                  <span className="font-bold text-primary-600 text-sm">
                     {formatCurrency(totalPrice, currency)}
                   </span>
-                  <span className="text-xs text-neutral-500">/person</span>
+                  <span className="text-[10px] text-neutral-500">/person</span>
                 </div>
               </button>
             );
