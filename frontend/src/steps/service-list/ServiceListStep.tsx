@@ -1675,15 +1675,20 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
         const segmentServices = (service as any).segmentServices as Service[] | undefined;
 
         if (segmentServices && segmentServices.length > 1) {
-          // GROUPED SERVICE: Expand into multiple segment services
-          console.log(`[ServiceListStep] Expanding grouped service "${service.serviceName}" into ${segmentServices.length} segment services`);
+          // GROUPED SERVICE: Expand into multiple segment services for API
+          // This ensures multi-leg/multi-segment SSRs send ALL required offerItemIds
+          console.log(`[ServiceListStep] 🔄 EXPANDING grouped service "${service.serviceName}" (${service.serviceCode}) into ${segmentServices.length} segment services`);
+          console.log(`[ServiceListStep] Each will have its own offerItemId for the API`);
 
           for (const segmentService of segmentServices) {
-            console.log(`[ServiceListStep] Adding segment service ${segmentService.serviceCode} (${segmentService.serviceId}):`, {
+            console.log(`[ServiceListStep] ➡️ Adding segment service ${segmentService.serviceCode}:`, {
               offerId: segmentService.offerId,
               offerItemId: segmentService.offerItemId,
               price: segmentService.price,
               segmentRefs: segmentService.segmentRefs,
+              journeyRefs: segmentService.journeyRefs,
+              legRefs: segmentService.legRefs,
+              associationType: segmentService.associationType,
             });
 
             selectedServicesList.push({
