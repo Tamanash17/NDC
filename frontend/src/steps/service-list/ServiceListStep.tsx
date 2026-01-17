@@ -547,10 +547,38 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
 
   // Check if a service code is a bundle inclusion (component of bundles, not standalone purchasable)
   // These should be filtered out from the services list
-  const isBundleInclusion = (code: string): boolean => {
+  // AUTO-DETECTION: Checks both config list AND service characteristics
+  const isBundleInclusion = (code: string, serviceName?: string, price?: number): boolean => {
     if (!code) return false;
     const upperCode = code.toUpperCase();
-    return BUNDLE_INCLUSION_CODES.has(upperCode);
+
+    // 1. Check explicit config list first (known bundle inclusion codes)
+    if (BUNDLE_INCLUSION_CODES.has(upperCode)) {
+      return true;
+    }
+
+    // 2. AUTO-DETECT based on service characteristics:
+    // Bundle inclusions typically have $0.00 price AND specific keywords in name
+    if (price === 0 && serviceName) {
+      const upperName = serviceName.toUpperCase();
+
+      // Keywords that indicate bundle-related flexibility/change services
+      const bundleKeywords = [
+        'CANCEL', 'CHANGE', 'FLEX', 'CREDIT', 'REFUND', 'MODIFY',
+        'REBOOK', 'RESCHEDULE', 'VOUCHER', 'FARE LOCK', 'FARE HOLD',
+        'FEE WAIVER', 'NO SHOW', 'NAME CHANGE'
+      ];
+
+      // Check if the name contains any bundle-related keyword
+      const isBundleRelated = bundleKeywords.some(keyword => upperName.includes(keyword));
+
+      if (isBundleRelated) {
+        console.log(`[ServiceListStep] Auto-detected bundle inclusion: ${code} (${serviceName}) - $0.00 with bundle keyword`);
+        return true;
+      }
+    }
+
+    return false;
   };
 
   // Get bundle tier from code
@@ -990,12 +1018,14 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
 
       // Check if this is a bundle inclusion (OOCP, MORE, FLEX, etc.)
       // These are components of bundles, shown inside bundle cards
-      if (isBundleInclusion(serviceCode)) {
+      // AUTO-DETECTS: $0 services with bundle-related keywords (cancel, change, flex, etc.)
+      const servicePrice = offer.price?.value || offer.Price?.Amount || 0;
+      if (isBundleInclusion(serviceCode, rawName, servicePrice)) {
         bundleInclusionsByDirection[bundleDirection].push({
           code: serviceCode.toUpperCase(),
           name: rawName,
         });
-        console.log(`[ServiceListStep] Bundle inclusion detected: ${serviceCode} -> ${rawName}, direction=${bundleDirection}`);
+        console.log(`[ServiceListStep] Bundle inclusion detected: ${serviceCode} -> ${rawName} ($${servicePrice}), direction=${bundleDirection}`);
         continue; // Don't add to services array
       }
 
