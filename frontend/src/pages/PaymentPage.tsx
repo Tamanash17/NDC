@@ -117,6 +117,7 @@ export function PaymentPage() {
   // State
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('CC');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false); // Prevent duplicate submissions
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [paymentResult, setPaymentResult] = useState<any>(null);
@@ -337,7 +338,11 @@ export function PaymentPage() {
   };
 
   const canSubmit = (): boolean => {
+    // Prevent submission if already processing or has been submitted
+    if (isProcessing || hasSubmitted) return false;
     if (!orderId) return false;
+    // For CC payments, wait until fees are loaded
+    if (selectedMethod === 'CC' && isLoadingCCFees) return false;
     switch (selectedMethod) {
       case 'CC':
         return validateCreditCard();
@@ -368,9 +373,11 @@ export function PaymentPage() {
 
   // Handle payment submission
   const handleSubmit = async () => {
-    if (!canSubmit()) return;
+    // Guard against duplicate submissions
+    if (!canSubmit() || isProcessing || hasSubmitted) return;
 
     setIsProcessing(true);
+    setHasSubmitted(true); // Mark as submitted to prevent duplicates
     setError(null);
     const startTime = Date.now();
 
@@ -504,6 +511,8 @@ export function PaymentPage() {
       });
 
       console.error('[PaymentPage] Payment error:', err);
+      // Reset hasSubmitted on error so user can retry
+      setHasSubmitted(false);
     } finally {
       setIsProcessing(false);
     }
@@ -1117,7 +1126,7 @@ export function PaymentPage() {
               {/* Pay Button */}
               <button
                 onClick={handleSubmit}
-                disabled={!canSubmit() || isProcessing || isProdEnvironment}
+                disabled={!canSubmit() || isProcessing || hasSubmitted || isProdEnvironment || (selectedMethod === 'CC' && isLoadingCCFees)}
                 className={`w-full mt-6 flex items-center justify-center gap-2 px-6 py-4 font-bold rounded-xl transition-colors ${
                   isProdEnvironment
                     ? 'bg-red-100 text-red-400 cursor-not-allowed border-2 border-red-200'
@@ -1127,12 +1136,22 @@ export function PaymentPage() {
                 {isProcessing ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Processing...
+                    Processing Payment...
+                  </>
+                ) : selectedMethod === 'CC' && isLoadingCCFees ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Loading Fees...
                   </>
                 ) : isProdEnvironment ? (
                   <>
                     <AlertTriangle className="w-5 h-5" />
                     Payment Disabled in PROD
+                  </>
+                ) : hasSubmitted ? (
+                  <>
+                    <Lock className="w-5 h-5" />
+                    Payment Submitted
                   </>
                 ) : (
                   <>
