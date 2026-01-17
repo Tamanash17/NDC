@@ -313,11 +313,11 @@ function FlightRowExpanded({
 
       {/* Bundle Selection - IMPORTANT: This is where bundle cards are rendered in flight selection */}
       {/* Bundle codes (S050, P200, M202, F202) are displayed here in brackets next to bundle names */}
-      <div>
+      <div className="overflow-x-auto">
         <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-3">
           Select Fare Bundle
         </h4>
-        <div className="grid grid-cols-4 gap-5">
+        <div className="grid grid-cols-4 gap-4" style={{ minWidth: '900px' }}>
           {bundles.map((bundle) => {
             const isSelected = selectedBundleId === bundle.bundleId;
             const totalPrice = perPersonBaseFare + bundle.price;
@@ -327,7 +327,7 @@ function FlightRowExpanded({
                 key={bundle.bundleId}
                 onClick={() => onSelectBundle(bundle.bundleId)}
                 className={cn(
-                  'relative p-5 rounded-xl border-2 text-left transition-all duration-200 flex flex-col items-start',
+                  'relative p-4 rounded-xl border-2 text-left transition-all duration-200 flex flex-col items-start min-w-[200px]',
                   isSelected
                     ? 'border-primary-500 bg-gradient-to-br from-primary-50 to-orange-50 shadow-lg ring-2 ring-primary-200 scale-[1.02]'
                     : getBundleTierStyle(bundle.tier),
@@ -335,7 +335,7 @@ function FlightRowExpanded({
                 )}
               >
                 {/* Bundle Name with Code */}
-                <div className="font-bold text-neutral-900 text-sm whitespace-nowrap">
+                <div className="font-bold text-neutral-900 text-sm pr-8">
                   {cleanName(bundle.bundleName)}{bundle.bundleCode ? ` (${bundle.bundleCode})` : ''}
                 </div>
 
@@ -348,16 +348,16 @@ function FlightRowExpanded({
                 </div>
 
                 {/* Key Inclusions - vertical list with Name (CODE) format */}
-                <div className="mt-3 space-y-1 text-[11px]">
+                <div className="mt-3 space-y-0.5 text-[10px] w-full">
                   {bundle.inclusions.otherInclusions && bundle.inclusions.otherInclusions.length > 0 ? (
                     bundle.inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
                       const code = typeof other === 'string' ? other : other.code;
                       const name = typeof other === 'string' ? '' : other.name;
                       const displayText = name ? `${name} (${code})` : code;
                       return (
-                        <div key={`other-${idx}`} className="flex items-center gap-1.5 text-green-700 whitespace-nowrap">
-                          <span className="text-green-500">✓</span>
-                          <span>{displayText}</span>
+                        <div key={`other-${idx}`} className="flex items-start gap-1 text-green-700">
+                          <span className="text-green-500 flex-shrink-0">✓</span>
+                          <span className="break-words">{displayText}</span>
                         </div>
                       );
                     })
