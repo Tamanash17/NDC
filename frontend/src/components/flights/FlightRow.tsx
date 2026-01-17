@@ -347,20 +347,30 @@ function FlightRowExpanded({
                   {bundle.price === 0 ? 'Included' : `+${formatCurrency(bundle.price, bundle.currency)}`}
                 </div>
 
-                {/* Key Inclusions - 100% from API response, same format as ServiceListStep */}
-                <div className="mt-3 space-y-1.5 text-xs">
+                {/* Key Inclusions - horizontal chip display */}
+                <div className="mt-3 flex flex-wrap gap-1">
                   {bundle.inclusions.otherInclusions && bundle.inclusions.otherInclusions.length > 0 ? (
-                    bundle.inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
-                      const code = typeof other === 'string' ? other : other.code;
-                      const name = typeof other === 'string' ? '' : other.name;
-                      // Format: "Name (CODE)" - same as ServiceListStep
-                      const displayText = name ? `${name} (${code})` : code;
-                      return (
-                        <InclusionItem key={`other-${idx}`} included={true} text={displayText} />
-                      );
-                    })
+                    <>
+                      {bundle.inclusions.otherInclusions.slice(0, 4).map((other: { code: string; name: string } | string, idx: number) => {
+                        const code = typeof other === 'string' ? other : other.code;
+                        return (
+                          <span
+                            key={`other-${idx}`}
+                            className="inline-flex items-center px-1.5 py-0.5 bg-green-50 text-green-700 text-[10px] rounded font-medium"
+                            title={typeof other === 'string' ? other : `${other.name} (${other.code})`}
+                          >
+                            {code}
+                          </span>
+                        );
+                      })}
+                      {bundle.inclusions.otherInclusions.length > 4 && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 bg-neutral-100 text-neutral-500 text-[10px] rounded font-medium">
+                          +{bundle.inclusions.otherInclusions.length - 4}
+                        </span>
+                      )}
+                    </>
                   ) : (
-                    <span className="text-neutral-400 text-xs">No inclusions</span>
+                    <span className="text-neutral-400 text-[10px]">No inclusions</span>
                   )}
                 </div>
 
