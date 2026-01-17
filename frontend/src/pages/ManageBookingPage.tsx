@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useXmlViewer } from '@/core/context/XmlViewerContext';
 import { useSessionStore } from '@/core/context/SessionStore';
+import { useServicingStore, type ServicingBookingData } from '@/core/context/ServicingStore';
 import { orderRetrieve } from '@/lib/ndc-api';
 import { cn } from '@/lib/cn';
 import { Card, Button, Alert } from '@/components/ui';
@@ -127,6 +128,7 @@ export function ManageBookingPage() {
   const navigate = useNavigate();
   const { startNewSession, addCapture } = useXmlViewer();
   const { getDistributionContext } = useSessionStore();
+  const { setBookingData, clearBookingData } = useServicingStore();
   const [searchParams] = useSearchParams();
 
   const pnrFromUrl = searchParams.get('pnr') || '';
@@ -146,6 +148,18 @@ export function ManageBookingPage() {
       return null;
     }
   }, [booking]);
+
+  // Save parsed booking to ServicingStore for servicing operations
+  useEffect(() => {
+    if (parsedBooking && booking) {
+      const servicingData = transformToServicingData(parsedBooking, booking);
+      setBookingData(servicingData);
+      console.log('[ManageBooking] Saved booking to ServicingStore:', servicingData.orderId);
+    } else if (!booking) {
+      // Clear servicing store when booking is cleared
+      clearBookingData();
+    }
+  }, [parsedBooking, booking, setBookingData, clearBookingData]);
 
   useEffect(() => {
     startNewSession();
@@ -1848,4 +1862,165 @@ function calculateLayover(arrivalTime: string, departureTime: string): string {
   } catch {
     return 'N/A';
   }
+}
+
+// ============================================================================
+// TRANSFORM TO SERVICING STORE DATA
+// ============================================================================
+
+function transformToServicingData(parsed: ParsedBooking, rawBooking: any): ServicingBookingData {
+  const dataLists = rawBooking?.DataLists || rawBooking?.Response?.DataLists || {};
+  const order = rawBooking?.Response?.Order || rawBooking?.Order || rawBooking?.order || {};
+
+  // Transform segments with full details including legs
+  const allSegments = parsed.journeys.flatMap(j => j.segments.map(seg => ({
+    segmentId: seg.segmentId,
+    marketingSegmentId: seg.marketingSegmentId,
+    departure: {
+      airportCode: seg.origin,
+      date: seg.departureTime?.split('T')[0] || '',
+      time: formatTime(seg.departureTime),
+    },
+    arrival: {
+      airportCode: seg.destination,
+      date: seg.arrivalTime?.split('T')[0] || '',
+      time: formatTime(seg.arrivalTime),
+    },
+    marketingCarrier: {
+      code: seg.carrierCode,
+      flightNumber: seg.flightNumber,
+    },
+    duration: seg.duration,
+    cabinType: seg.cabinClass,
+    cabinCode: seg.cabinCode,
+    aircraftCode: seg.aircraft,
+    legs: [], // Would be populated from DatedOperatingLegList if needed
+    status: seg.status || 'CONFIRMED',
+  })));
+
+  // Transform journeys
+  const journeys = parsed.journeys.map(j => ({
+    journeyId: j.journeyId,
+    direction: j.direction === 'outbound' ? 'OUTBOUND' : 'INBOUND' as 'OUTBOUND' | 'INBOUND' | 'UNKNOWN',
+    origin: j.origin,
+    destination: j.destination,
+    departureDate: j.segments[0]?.departureTime?.split('T')[0] || '',
+    arrivalDate: j.segments[j.segments.length - 1]?.arrivalTime?.split('T')[0],
+    duration: j.duration,
+    segments: j.segments.map(seg => ({
+      segmentId: seg.segmentId,
+      marketingSegmentId: seg.marketingSegmentId,
+      departure: {
+        airportCode: seg.origin,
+        date: seg.departureTime?.split('T')[0] || '',
+        time: formatTime(seg.departureTime),
+      },
+      arrival: {
+        airportCode: seg.destination,
+        date: seg.arrivalTime?.split('T')[0] || '',
+        time: formatTime(seg.arrivalTime),
+      },
+      marketingCarrier: {
+        code: seg.carrierCode,
+        flightNumber: seg.flightNumber,
+      },
+      duration: seg.duration,
+      cabinType: seg.cabinClass,
+      cabinCode: seg.cabinCode,
+      aircraftCode: seg.aircraft,
+      legs: [],
+      status: seg.status || 'CONFIRMED',
+    })),
+  }));
+
+  // Transform passengers
+  const passengers = parsed.passengers.map(pax => ({
+    paxId: pax.paxId,
+    firstName: pax.givenName,
+    lastName: pax.surname,
+    gender: pax.gender,
+    dateOfBirth: pax.birthdate,
+    passengerType: pax.ptc,
+    travelDocuments: pax.document ? [{
+      documentType: pax.document.type,
+      documentNumber: pax.document.number,
+      issuingCountry: pax.document.country,
+      expiryDate: pax.document.expiry,
+    }] : [],
+    loyaltyPrograms: pax.loyalty ? [{
+      programCode: pax.loyalty.program,
+      accountNumber: pax.loyalty.number,
+    }] : [],
+    contactInfo: pax.email || pax.phone ? {
+      emailAddress: pax.email,
+      phoneNumber: pax.phone,
+    } : undefined,
+  }));
+
+  // Transform services
+  const services = parsed.services.map(svc => ({
+    orderItemId: svc.orderItemId,
+    serviceCode: svc.code || '',
+    serviceName: svc.name,
+    serviceType: svc.type as 'FLIGHT' | 'BAGGAGE' | 'SEAT' | 'MEAL' | 'BUNDLE' | 'SSR' | 'ANCILLARY' | 'OTHER',
+    status: svc.status,
+    price: {
+      amount: svc.price.value,
+      currency: svc.price.currency,
+    },
+    paxIds: svc.paxIds,
+    segmentIds: svc.segmentIds,
+  }));
+
+  // Transform payments
+  const payments = parsed.payments.map(p => ({
+    paymentId: p.paymentId,
+    paymentMethod: p.method.type,
+    amount: p.amount.value,
+    currency: p.amount.currency,
+    status: p.status,
+    cardDetails: p.method.cardBrand ? {
+      cardType: p.method.cardBrand,
+      maskedNumber: p.method.maskedNumber,
+    } : undefined,
+  }));
+
+  // Calculate pricing summary
+  const totalPaid = parsed.payments
+    .filter(p => p.status === 'SUCCESSFUL')
+    .reduce((sum, p) => sum + p.amount.value, 0);
+
+  return {
+    orderId: parsed.pnr,
+    pnrLocator: parsed.pnr,
+    ownerCode: parsed.ownerCode,
+    orderStatus: parsed.status,
+    creationDate: parsed.creationDate,
+    journeys,
+    allSegments,
+    passengers,
+    primaryContact: parsed.contactInfo ? {
+      emailAddress: parsed.contactInfo.email,
+      phoneNumber: parsed.contactInfo.phone,
+      address: parsed.contactInfo.city ? {
+        city: parsed.contactInfo.city,
+        countryCode: parsed.contactInfo.country,
+      } : undefined,
+    } : undefined,
+    services,
+    payments,
+    tickets: [], // Would be extracted from TicketDocInfo if present
+    remarks: [], // Would be extracted from Remark elements if present
+    pricingSummary: {
+      baseFare: 0, // Would need to calculate from fare breakdown
+      taxes: 0,
+      fees: 0,
+      totalAmount: parsed.totalPrice.value,
+      currency: parsed.totalPrice.currency,
+      paidAmount: totalPaid,
+      dueAmount: parsed.totalPrice.value - totalPaid,
+    },
+    rawResponse: JSON.stringify(rawBooking),
+    loadedAt: new Date().toISOString(),
+  };
 }
