@@ -1471,10 +1471,12 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
         : [...bundleInclusionsByDirection[bundle.direction], ...bundleInclusionsByDirection.both];
 
       if (inclusionsForDirection.length > 0) {
-        // Format inclusions as readable strings for display
-        const otherInclusions = inclusionsForDirection.map(inc =>
-          `${inc.name} (${inc.code})`
-        );
+        // Store inclusions with code and name separately for better UI display
+        // Format: { code: 'CCSH', name: 'Cancel flight for Cash' }
+        const otherInclusions = inclusionsForDirection.map(inc => ({
+          code: inc.code,
+          name: inc.name,
+        }));
 
         // Add to bundle inclusions
         bundle.inclusions = {
@@ -3908,17 +3910,23 @@ function BundleInclusionsList({ inclusions, compact = false, enhanced = false }:
           </div>
         ))}
         {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
-          inclusions.otherInclusions.map((other, idx) => (
-            <div
-              key={`other-${idx}`}
-              className="flex items-center gap-3 p-2 rounded-lg bg-indigo-50 border border-indigo-200"
-            >
-              <div className="flex-shrink-0 p-1.5 rounded-full bg-indigo-500">
-                <Sparkles className="w-3 h-3 text-white" />
+          inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
+            const code = typeof other === 'string' ? other : other.code;
+            const name = typeof other === 'string' ? '' : other.name;
+            return (
+              <div
+                key={`other-${idx}`}
+                className="flex items-center gap-3 p-2 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200"
+              >
+                <span className="flex-shrink-0 px-2 py-0.5 rounded bg-indigo-600 text-white text-xs font-bold font-mono">
+                  {code}
+                </span>
+                {name && (
+                  <span className="text-sm text-indigo-700">{name}</span>
+                )}
               </div>
-              <span className="text-sm font-medium text-indigo-900">{other}</span>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     );
@@ -3942,15 +3950,17 @@ function BundleInclusionsList({ inclusions, compact = false, enhanced = false }:
           </span>
         ))}
         {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
-          inclusions.otherInclusions.map((other, idx) => (
-            <span
-              key={`other-${idx}`}
-              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700"
-            >
-              <Sparkles className="w-3 h-3" />
-              {other}
-            </span>
-          ))
+          inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
+            const code = typeof other === 'string' ? other : other.code;
+            return (
+              <span
+                key={`other-${idx}`}
+                className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-indigo-600 text-white font-bold font-mono"
+              >
+                {code}
+              </span>
+            );
+          })
         )}
       </div>
     );
@@ -3973,15 +3983,21 @@ function BundleInclusionsList({ inclusions, compact = false, enhanced = false }:
         </div>
       ))}
       {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
-        inclusions.otherInclusions.map((other, idx) => (
-          <div
-            key={`other-${idx}`}
-            className="flex items-center gap-2 text-sm text-blue-600"
-          >
-            <Sparkles className="w-4 h-4" />
-            {other}
-          </div>
-        ))
+        inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
+          const code = typeof other === 'string' ? other : other.code;
+          const name = typeof other === 'string' ? '' : other.name;
+          return (
+            <div
+              key={`other-${idx}`}
+              className="flex items-center gap-2 text-sm"
+            >
+              <span className="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-xs font-bold font-mono">
+                {code}
+              </span>
+              {name && <span className="text-indigo-700">{name}</span>}
+            </div>
+          );
+        })
       )}
     </div>
   );
