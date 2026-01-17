@@ -120,11 +120,26 @@ export class ServiceListParser extends BaseXmlParser {
       // Check for ServiceBundle element (bundles contain references to their inclusions)
       // ServiceBundle can be directly under ServiceDefinition OR nested in ServiceDefinitionAssociation
       let serviceBundleEl = this.getElement(svcEl, "ServiceBundle");
+
+      // Debug: Check if this is a bundle (S/P/M/F/B + 2-3 digits)
+      const isBundleCode = /^[SPMFB]\d{2,3}$/i.test(serviceCode);
+      if (isBundleCode) {
+        console.log(`[ServiceListParser] 🔍 Checking bundle ${serviceCode} (${serviceId}):`, {
+          directServiceBundle: !!serviceBundleEl,
+        });
+      }
+
       if (!serviceBundleEl) {
         // Try nested path: ServiceDefinitionAssociation/ServiceBundle
         const assocEl = this.getElement(svcEl, "ServiceDefinitionAssociation");
         if (assocEl) {
           serviceBundleEl = this.getElement(assocEl, "ServiceBundle");
+          if (isBundleCode) {
+            console.log(`[ServiceListParser] 🔍 Bundle ${serviceCode} nested ServiceBundle:`, {
+              hasAssocEl: !!assocEl,
+              hasServiceBundle: !!serviceBundleEl,
+            });
+          }
         }
       }
 
@@ -138,8 +153,12 @@ export class ServiceListParser extends BaseXmlParser {
           .filter(id => id.length > 0);
 
         if (includedServiceRefIds.length > 0) {
-          console.log(`[ServiceListParser] Bundle ${serviceCode} has ${includedServiceRefIds.length} inclusions: ${includedServiceRefIds.join(', ')}`);
+          console.log(`[ServiceListParser] ✅ Bundle ${serviceCode} has ${includedServiceRefIds.length} inclusions: ${includedServiceRefIds.join(', ')}`);
+        } else {
+          console.log(`[ServiceListParser] ⚠️ Bundle ${serviceCode} has ServiceBundle but NO inclusions`);
         }
+      } else if (isBundleCode) {
+        console.log(`[ServiceListParser] ❌ Bundle ${serviceCode} has NO ServiceBundle element`);
       }
 
       services.push({
@@ -255,6 +274,15 @@ export class ServiceListParser extends BaseXmlParser {
 
       // Find matching service definition
       const serviceDef = serviceDefinitions.find(s => s.serviceId === serviceDefinitionRefId);
+
+      // Debug: Log bundle serviceDef lookup
+      if (serviceDef?.serviceType === 'BUNDLE') {
+        console.log(`[ServiceListParser] 🔗 OfferItem ${offerItemId} matched to bundle ${serviceDef.serviceCode}:`, {
+          serviceDefinitionRefId,
+          hasIncludedServiceRefIds: !!serviceDef.includedServiceRefIds,
+          inclusionCount: serviceDef.includedServiceRefIds?.length || 0,
+        });
+      }
 
       // Parse price from UnitPrice/TotalAmount
       const unitPriceEl = this.getElement(itemEl, "UnitPrice");

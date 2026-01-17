@@ -740,6 +740,23 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
     // DEBUG: Log raw ancillary offers to verify offerId is present from API
     console.log('[ServiceListStep] ===== RAW ANCILLARY OFFERS FROM API =====');
     console.log('[ServiceListStep] Total offers:', ancillaryOffers.length);
+    console.log('[ServiceListStep] Total serviceDefinitions:', serviceDefinitions.length);
+
+    // Log bundle offers with their includedServiceRefIds
+    const bundleOffers = ancillaryOffers.filter((o: any) => o.serviceType === 'BUNDLE');
+    console.log('[ServiceListStep] Bundle offers:', bundleOffers.length);
+    bundleOffers.forEach((offer: any, i: number) => {
+      console.log(`[ServiceListStep] BundleOffer[${i}]:`, {
+        offerId: offer.offerId,
+        offerItemId: offer.offerItemId,
+        serviceCode: offer.serviceCode,
+        serviceName: offer.serviceName,
+        serviceType: offer.serviceType,
+        includedServiceRefIds: offer.includedServiceRefIds || 'NONE',
+        price: offer.price,
+      });
+    });
+
     ancillaryOffers.slice(0, 5).forEach((offer: any, i: number) => {
       console.log(`[ServiceListStep] Offer[${i}]:`, {
         offerId: offer.offerId,         // <-- This MUST be the ALaCarteOffer ID
@@ -1412,8 +1429,14 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
     // Resolve bundle inclusions using includedServiceRefIds from the backend
     // Each bundle has a ServiceBundle element containing ServiceDefinitionRefID elements
     // that point to the actual inclusion services (baggage, meals, seats, flex options etc.)
+    console.log('[ServiceListStep] 🔍 Resolving bundle inclusions...');
+    console.log('[ServiceListStep] serviceDefMap size:', serviceDefMap.size);
+    console.log('[ServiceListStep] serviceDefMap keys (first 10):', Array.from(serviceDefMap.keys()).slice(0, 10));
+
     for (const bundle of sortedBundles) {
       const includedRefs = (bundle as any).includedServiceRefIds || [];
+      console.log(`[ServiceListStep] 📦 Bundle ${bundle.serviceCode} has ${includedRefs.length} includedRefs:`, includedRefs.slice(0, 5));
+
       if (includedRefs.length > 0) {
         const resolvedInclusions: { code: string; name: string }[] = [];
         let baggageInclusion = '';
@@ -1425,6 +1448,9 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
         for (const refId of includedRefs) {
           // Look up the service definition by its ID
           const serviceDef = serviceDefMap.get(refId);
+          if (!serviceDef) {
+            console.log(`[ServiceListStep] ⚠️ Could not find serviceDef for refId: ${refId}`);
+          }
           if (serviceDef) {
             const code = (serviceDef.serviceCode || serviceDef.ServiceCode || '').toUpperCase();
             const name = serviceDef.serviceName || serviceDef.ServiceName || code;

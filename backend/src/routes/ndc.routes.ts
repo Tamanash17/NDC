@@ -602,6 +602,17 @@ router.post("/service-list", async (req: any, res: any) => {
 
     console.log("[NDC] Parsed services count:", parsed.services?.length || 0);
     console.log("[NDC] Parsed ancillary offers count:", parsed.ancillaryOffers?.length || 0);
+
+    // Debug: Log bundle ancillary offers with their includedServiceRefIds
+    const bundleOffers = parsed.ancillaryOffers?.filter((o: any) => o.serviceType === 'BUNDLE') || [];
+    console.log("[NDC] Bundle offers count:", bundleOffers.length);
+    bundleOffers.forEach((offer: any, i: number) => {
+      console.log(`[NDC] BundleOffer[${i}]: ${offer.serviceCode} (${offer.offerItemId})`, {
+        includedServiceRefIds: offer.includedServiceRefIds || 'NONE',
+        inclusionCount: offer.includedServiceRefIds?.length || 0,
+      });
+    });
+
     if (parsed.ancillaryOffers?.[0]) {
       console.log("[NDC] First ancillary offer:", JSON.stringify(parsed.ancillaryOffers[0], null, 2));
     }
