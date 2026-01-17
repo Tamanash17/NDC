@@ -352,7 +352,7 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
       // Single segment - use the segment's own duration
       totalDuration = segments[0].duration;
     } else {
-      // Multi-segment - calculate from first departure to last arrival (includes layovers)
+      // Multi-segment - try to calculate from first departure to last arrival (includes layovers)
       const rawSegments = uniqueSegmentRefs
         .map(refId => segmentMap.get(refId))
         .filter((s): s is BackendSegment => s !== null);
@@ -366,9 +366,13 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
           lastRaw.arrivalDate || lastRaw.departureDate,
           lastRaw.arrivalTime || ''
         );
-      } else {
-        // Fallback to sum of segment durations
-        totalDuration = segments.reduce((total, seg) => total + seg.duration, 0);
+      }
+
+      // If calculation failed (duration is 0 or unreasonable), fall back to sum of segment durations
+      if (totalDuration === 0) {
+        const segmentSum = segments.reduce((total, seg) => total + seg.duration, 0);
+        console.log(`[Parser] Multi-segment: calculated duration=${totalDuration}, falling back to segment sum=${segmentSum}`);
+        totalDuration = segmentSum;
       }
     }
 
@@ -851,10 +855,33 @@ function calculateDuration(
   arrTime: string
 ): number {
   try {
+    // Validate inputs - all are required
+    if (!depDate || !depTime || !arrDate || !arrTime) {
+      console.warn('[Parser] calculateDuration: Missing required time data', { depDate, depTime, arrDate, arrTime });
+      return 0;
+    }
+
     const dep = new Date(`${depDate}T${depTime}`);
     const arr = new Date(`${arrDate}T${arrTime}`);
-    return Math.round((arr.getTime() - dep.getTime()) / (1000 * 60));
-  } catch {
+
+    // Validate dates are valid
+    if (isNaN(dep.getTime()) || isNaN(arr.getTime())) {
+      console.warn('[Parser] calculateDuration: Invalid date(s)', { depDate, depTime, arrDate, arrTime });
+      return 0;
+    }
+
+    const durationMinutes = Math.round((arr.getTime() - dep.getTime()) / (1000 * 60));
+
+    // Duration should be positive and reasonable (< 48 hours)
+    if (durationMinutes <= 0 || durationMinutes > 2880) {
+      console.warn('[Parser] calculateDuration: Unexpected duration', { durationMinutes, depDate, depTime, arrDate, arrTime });
+      // If negative or too long, return 0 to trigger fallback
+      return durationMinutes > 0 ? durationMinutes : 0;
+    }
+
+    return durationMinutes;
+  } catch (e) {
+    console.error('[Parser] calculateDuration error:', e);
     return 0;
   }
 }
