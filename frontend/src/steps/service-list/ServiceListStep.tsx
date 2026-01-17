@@ -1430,7 +1430,9 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
             const name = serviceDef.serviceName || serviceDef.ServiceName || code;
             const upperName = name.toUpperCase();
 
-            // Categorize inclusion by type
+            // Categorize inclusion by type - track if it was categorized
+            let wasCategorized = false;
+
             if (code.startsWith('BG') || code.startsWith('OB') || upperName.includes('BAG') || upperName.includes('KG')) {
               // Baggage inclusion - extract weight if present
               const weightMatch = (name + ' ' + code).match(/(\d+)\s*KG/i);
@@ -1440,18 +1442,25 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
               } else {
                 baggageInclusion = name;
               }
+              wasCategorized = true;
             } else if (upperName.includes('MEAL') || upperName.includes('FOOD') || upperName.includes('SNACK')) {
               hasMeals = true;
+              wasCategorized = true;
             } else if (upperName.includes('SEAT') || code === 'STSL' || code === 'SEAT') {
               hasSeatSelection = true;
+              wasCategorized = true;
             } else if (upperName.includes('CHANGE') || upperName.includes('FLEX') || code === 'FLXN' || code === 'FLEX') {
               changesPolicy = name;
+              wasCategorized = true;
             } else if (upperName.includes('CANCEL') || upperName.includes('REFUND') || code === 'CCSH') {
               cancellationPolicy = name;
+              wasCategorized = true;
             }
 
-            // Add to otherInclusions for display
-            resolvedInclusions.push({ code, name });
+            // Only add to otherInclusions if NOT already categorized (avoid duplicates)
+            if (!wasCategorized) {
+              resolvedInclusions.push({ code, name });
+            }
           }
         }
 
@@ -3162,11 +3171,12 @@ interface BundleKeyInclusionsProps {
 }
 
 function BundleKeyInclusions({ inclusions }: BundleKeyInclusionsProps) {
+  // Only show items that are actually available - don't show "No X" for missing items
   const keyItems = [
-    { icon: Briefcase, text: inclusions.baggage || 'No baggage', available: !!inclusions.baggage },
-    { icon: Coffee, text: inclusions.meals ? 'Meals' : 'No meals', available: inclusions.meals },
-    { icon: Armchair, text: inclusions.seatSelection ? 'Seat selection' : 'No seat selection', available: inclusions.seatSelection },
-  ];
+    inclusions.baggage ? { icon: Briefcase, text: inclusions.baggage, available: true } : null,
+    inclusions.meals ? { icon: Coffee, text: 'Meals', available: true } : null,
+    inclusions.seatSelection ? { icon: Armchair, text: 'Seat selection', available: true } : null,
+  ].filter(Boolean) as { icon: any; text: string; available: boolean }[];
 
   return (
     <div className="space-y-1">
@@ -3856,33 +3866,34 @@ interface BundleInclusionsListProps {
 }
 
 function BundleInclusionsList({ inclusions, compact = false, enhanced = false }: BundleInclusionsListProps) {
+  // Only show items that have actual data from XML - don't show "No X" for missing items
   const items = [
-    {
+    inclusions.baggage ? {
       icon: <Briefcase className="w-4 h-4" />,
       label: inclusions.baggage,
-      available: !!inclusions.baggage,
-    },
-    {
+      available: true,
+    } : null,
+    inclusions.meals ? {
       icon: <Coffee className="w-4 h-4" />,
-      label: inclusions.meals ? 'Meals included' : 'No meals',
-      available: inclusions.meals,
-    },
-    {
+      label: 'Meals included',
+      available: true,
+    } : null,
+    inclusions.seatSelection ? {
       icon: <Armchair className="w-4 h-4" />,
-      label: inclusions.seatSelection ? 'Seat selection' : 'No seat selection',
-      available: inclusions.seatSelection,
-    },
-    {
+      label: 'Seat selection',
+      available: true,
+    } : null,
+    inclusions.changes ? {
       icon: <RefreshCw className="w-4 h-4" />,
       label: `Changes: ${inclusions.changes}`,
-      available: inclusions.changes !== 'Non-refundable' && inclusions.changes !== 'Fee applies',
-    },
-    {
+      available: true,
+    } : null,
+    inclusions.cancellation ? {
       icon: <Ban className="w-4 h-4" />,
       label: `Cancellation: ${inclusions.cancellation}`,
-      available: inclusions.cancellation !== 'Non-refundable',
-    },
-  ];
+      available: true,
+    } : null,
+  ].filter(Boolean) as { icon: React.ReactNode; label: string; available: boolean }[];
 
   // Enhanced list view for bundle cards
   if (enhanced) {

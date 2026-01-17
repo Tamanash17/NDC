@@ -118,7 +118,16 @@ export class ServiceListParser extends BaseXmlParser {
       const serviceType = this.determineServiceType(serviceCode, serviceName, rfic);
 
       // Check for ServiceBundle element (bundles contain references to their inclusions)
-      const serviceBundleEl = this.getElement(svcEl, "ServiceBundle");
+      // ServiceBundle can be directly under ServiceDefinition OR nested in ServiceDefinitionAssociation
+      let serviceBundleEl = this.getElement(svcEl, "ServiceBundle");
+      if (!serviceBundleEl) {
+        // Try nested path: ServiceDefinitionAssociation/ServiceBundle
+        const assocEl = this.getElement(svcEl, "ServiceDefinitionAssociation");
+        if (assocEl) {
+          serviceBundleEl = this.getElement(assocEl, "ServiceBundle");
+        }
+      }
+
       let includedServiceRefIds: string[] | undefined;
 
       if (serviceBundleEl) {
@@ -180,10 +189,10 @@ export class ServiceListParser extends BaseXmlParser {
     // Insurance
     if (combined.includes("INSURANCE") || combined.includes("INS")) return "INSURANCE";
 
-    // Bundle detection
+    // Bundle detection - codes like S050, P200, M202, F202, B050 (S/P/M/F/B + 2-3 digits)
     if (combined.includes("BUNDLE") || combined.includes("PLUS") ||
         combined.includes("MAX") || combined.includes("STARTER") ||
-        /^[PSMB]\d{3}$/.test(code)) {
+        /^[SPMFB]\d{2,3}$/i.test(code)) {
       return "BUNDLE";
     }
 
