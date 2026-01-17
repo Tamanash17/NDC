@@ -979,6 +979,11 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       const legRefs = offer.legRefIds || [];
       const offerId = offer.offerId || offer.OfferID;
 
+      // Debug: Log association type for each service
+      if (legRefs.length > 0 || associationType === 'leg') {
+        console.log(`[ServiceListStep] LEG SERVICE: ${serviceCode} - assocType=${associationType}, legRefs=${legRefs.join(',')}`);
+      }
+
       // Determine direction using segment origin/destination from API DataLists
       const direction = detectDirection(segmentRefs, journeyRefs, legRefs);
       const bundleDirection: 'outbound' | 'inbound' | 'both' = direction;
@@ -1169,6 +1174,20 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       // Sum prices across all segments
       displayService.price = segmentServices.reduce((sum, svc) => sum + svc.price, 0);
 
+      // Merge all refs from grouped services (for display purposes)
+      // This ensures we show ALL leg/segment/journey refs even if service is split across multiple offers
+      const allSegmentRefs = new Set<string>();
+      const allJourneyRefs = new Set<string>();
+      const allLegRefs = new Set<string>();
+      for (const svc of segmentServices) {
+        svc.segmentRefs?.forEach(r => allSegmentRefs.add(r));
+        svc.journeyRefs?.forEach(r => allJourneyRefs.add(r));
+        svc.legRefs?.forEach(r => allLegRefs.add(r));
+      }
+      displayService.segmentRefs = Array.from(allSegmentRefs);
+      displayService.journeyRefs = Array.from(allJourneyRefs);
+      displayService.legRefs = Array.from(allLegRefs);
+
       // Store array of segment services in a custom property for internal tracking
       (displayService as any).segmentServices = segmentServices;
 
@@ -1177,7 +1196,7 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
 
       uniqueServices.set(groupKey, displayService);
 
-      console.log(`[ServiceListStep] Grouped ${segmentServices.length} segments for "${displayService.serviceName}" - Total price: $${displayService.price}`);
+      console.log(`[ServiceListStep] Grouped ${segmentServices.length} segments for "${displayService.serviceName}" - Total price: $${displayService.price}, legRefs: ${displayService.legRefs?.join(',')}`);
     }
 
     console.log('[ServiceListStep] Created display groups:', uniqueServices.size, 'groups from', processedServices.length, 'segment services');
