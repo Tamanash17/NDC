@@ -3327,6 +3327,8 @@ function CompactServiceSection({
 
   // State for toggling API debug info visibility
   const [showApiDebug, setShowApiDebug] = useState(false);
+  // State for view mode: 'card' or 'table'
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
 
   // Get service type icon
   const getServiceIcon = (service: Service) => {
@@ -3753,18 +3755,138 @@ function CompactServiceSection({
     );
   };
 
+  // Table view renderer for API team
+  const renderTableView = (servicesToRender: Service[]) => (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr className="bg-neutral-100 text-left">
+            <th className="px-2 py-2 font-semibold text-neutral-600 border-b">Code</th>
+            <th className="px-2 py-2 font-semibold text-neutral-600 border-b">Name</th>
+            <th className="px-2 py-2 font-semibold text-neutral-600 border-b">ServiceDefID</th>
+            <th className="px-2 py-2 font-semibold text-neutral-600 border-b">OfferItemID</th>
+            <th className="px-2 py-2 font-semibold text-neutral-600 border-b">Type</th>
+            <th className="px-2 py-2 font-semibold text-neutral-600 border-b">Price</th>
+            <th className="px-2 py-2 font-semibold text-neutral-600 border-b">Pax</th>
+          </tr>
+        </thead>
+        <tbody>
+          {servicesToRender.map((service) => {
+            const selectedPaxIds = perPaxSelections.get(service.serviceId) || new Set();
+            const eligiblePax = getEligiblePassengers(service);
+            return (
+              <tr key={service.serviceId} className="border-b border-neutral-100 hover:bg-neutral-50">
+                <td className="px-2 py-2 font-mono text-purple-600 font-medium">{service.serviceCode || '-'}</td>
+                <td className="px-2 py-2 text-neutral-800 max-w-[200px] truncate" title={service.serviceName}>{service.serviceName || '-'}</td>
+                <td className="px-2 py-2 font-mono text-neutral-500 text-[10px]">{service.serviceRefId || service.serviceId?.split('-').slice(0,3).join('-') || '-'}</td>
+                <td className="px-2 py-2 font-mono text-neutral-500 text-[10px]">{service.offerItemId || '-'}</td>
+                <td className="px-2 py-2">
+                  <span className={cn(
+                    "px-1.5 py-0.5 rounded text-[10px] font-medium uppercase",
+                    service.associationType === 'journey' && "bg-purple-100 text-purple-700",
+                    service.associationType === 'segment' && "bg-blue-100 text-blue-700",
+                    service.associationType === 'leg' && "bg-amber-100 text-amber-700",
+                    !service.associationType && "bg-neutral-100 text-neutral-500"
+                  )}>
+                    {service.associationType || 'N/A'}
+                  </span>
+                </td>
+                <td className="px-2 py-2 font-medium">
+                  {service.price === 0 ? (
+                    <span className="text-emerald-600">FREE</span>
+                  ) : (
+                    <span className="text-neutral-800">{formatCurrency(service.price, service.currency)}</span>
+                  )}
+                </td>
+                <td className="px-2 py-2">
+                  <div className="flex flex-wrap gap-1">
+                    {eligiblePax.map((pax) => {
+                      const isSelected = selectedPaxIds.has(pax.paxId);
+                      return (
+                        <button
+                          key={pax.paxId}
+                          type="button"
+                          onClick={() => onToggleServiceForPax(service.serviceId, pax.paxId)}
+                          className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors",
+                            isSelected
+                              ? "bg-purple-500 text-white"
+                              : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                          )}
+                        >
+                          {pax.type}{pax.displayLabel.match(/\d+/)?.[0] || ''}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <Card className="overflow-hidden">
       <div className={cn("bg-gradient-to-r px-6 py-4", gradient)}>
-        <h3 className="text-lg font-bold text-white flex items-center gap-2">
-          {icon}
-          {title}
-        </h3>
-        <p className="text-white/80 text-sm mt-1">{subtitle}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              {icon}
+              {title}
+            </h3>
+            <p className="text-white/80 text-sm mt-1">{subtitle}</p>
+          </div>
+          {/* View mode toggle */}
+          <div className="flex items-center gap-1 bg-white/20 rounded-lg p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('card')}
+              className={cn(
+                "px-2 py-1 rounded text-xs font-medium transition-colors",
+                viewMode === 'card' ? "bg-white text-neutral-800" : "text-white/80 hover:text-white"
+              )}
+            >
+              Cards
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={cn(
+                "px-2 py-1 rounded text-xs font-medium transition-colors",
+                viewMode === 'table' ? "bg-white text-neutral-800" : "text-white/80 hover:text-white"
+              )}
+            >
+              Table
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="p-4">
-        {showGrouped ? (
+        {viewMode === 'table' ? (
+          // Table view
+          showGrouped ? (
+            <div className="space-y-4">
+              {outboundServices.length > 0 && (
+                <div>
+                  <div className="text-sm font-semibold text-neutral-700 mb-2">{outboundFlightLabel}</div>
+                  {renderTableView(outboundServices)}
+                </div>
+              )}
+              {inboundServices.length > 0 && (
+                <div>
+                  <div className="text-sm font-semibold text-neutral-700 mb-2">{inboundFlightLabel}</div>
+                  {renderTableView(inboundServices)}
+                </div>
+              )}
+            </div>
+          ) : (
+            renderTableView(services)
+          )
+        ) : showGrouped ? (
           // Round trip: show side-by-side layout
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Outbound services */}
