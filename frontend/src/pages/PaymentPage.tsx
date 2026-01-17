@@ -588,12 +588,6 @@ export function PaymentPage() {
               <Plane className="w-4 h-4" />
               Retrieve PNR
             </button>
-            <button
-              onClick={() => window.print()}
-              className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors"
-            >
-              Print Confirmation
-            </button>
           </div>
         </div>
       </AppLayout>
