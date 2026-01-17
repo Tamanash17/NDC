@@ -317,7 +317,7 @@ function FlightRowExpanded({
         <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-3">
           Select Fare Bundle
         </h4>
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-4 gap-5">
           {bundles.map((bundle) => {
             const isSelected = selectedBundleId === bundle.bundleId;
             const totalPrice = perPersonBaseFare + bundle.price;
@@ -327,15 +327,15 @@ function FlightRowExpanded({
                 key={bundle.bundleId}
                 onClick={() => onSelectBundle(bundle.bundleId)}
                 className={cn(
-                  'relative p-4 rounded-xl border-2 text-left transition-all duration-200',
+                  'relative p-5 rounded-xl border-2 text-left transition-all duration-200 flex flex-col items-start',
                   isSelected
                     ? 'border-primary-500 bg-gradient-to-br from-primary-50 to-orange-50 shadow-lg ring-2 ring-primary-200 scale-[1.02]'
                     : getBundleTierStyle(bundle.tier),
                   'hover:shadow-lg hover:scale-[1.01]'
                 )}
               >
-                {/* Bundle Name with Code - wrapped for long names */}
-                <div className="font-bold text-neutral-900 text-xs leading-tight break-words hyphens-auto">
+                {/* Bundle Name with Code */}
+                <div className="font-bold text-neutral-900 text-sm whitespace-nowrap">
                   {cleanName(bundle.bundleName)}{bundle.bundleCode ? ` (${bundle.bundleCode})` : ''}
                 </div>
 
@@ -348,14 +348,14 @@ function FlightRowExpanded({
                 </div>
 
                 {/* Key Inclusions - vertical list with Name (CODE) format */}
-                <div className="mt-3 space-y-1 text-[10px]">
+                <div className="mt-3 space-y-1 text-[11px]">
                   {bundle.inclusions.otherInclusions && bundle.inclusions.otherInclusions.length > 0 ? (
                     bundle.inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
                       const code = typeof other === 'string' ? other : other.code;
                       const name = typeof other === 'string' ? '' : other.name;
                       const displayText = name ? `${name} (${code})` : code;
                       return (
-                        <div key={`other-${idx}`} className="flex items-center gap-1.5 text-green-700">
+                        <div key={`other-${idx}`} className="flex items-center gap-1.5 text-green-700 whitespace-nowrap">
                           <span className="text-green-500">✓</span>
                           <span>{displayText}</span>
                         </div>
@@ -378,8 +378,9 @@ function FlightRowExpanded({
                   )}
                 </div>
 
-                {/* Total price at bottom */}
-                <div className="mt-4 pt-3 border-t border-neutral-200">
+                {/* Total price at bottom - pushed to bottom with flex-grow spacer */}
+                <div className="flex-grow"></div>
+                <div className="mt-4 pt-3 border-t border-neutral-200 w-full">
                   <span className="text-[10px] text-neutral-400 uppercase tracking-wider">Total: </span>
                   <span className="font-bold text-primary-600 text-base">
                     {formatCurrency(totalPrice, currency)}
