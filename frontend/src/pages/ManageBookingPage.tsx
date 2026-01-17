@@ -1571,22 +1571,78 @@ function CopyableBadge({ label, value, small = false }: { label: string; value: 
 
 function parseBookingData(raw: any): ParsedBooking {
   console.log('[parseBookingData] Raw input keys:', Object.keys(raw || {}));
-  console.log('[parseBookingData] Raw.Response keys:', Object.keys(raw?.Response || {}));
 
-  // Try multiple possible paths for data extraction
-  const dataLists = raw?.DataLists || raw?.Response?.DataLists ||
+  // Backend parser returns: { order: {...}, warnings: [...] }
+  // The 'order' object contains orderId (lowercase), totalPrice, payments, DataLists
+  const orderObj = raw?.order;
+  const hasBackendFormat = orderObj && typeof orderObj === 'object';
+
+  console.log('[parseBookingData] hasBackendFormat:', hasBackendFormat);
+
+  // Extract DataLists from multiple possible paths
+  const dataLists = orderObj?.DataLists ||
+                    raw?.DataLists ||
+                    raw?.Response?.DataLists ||
                     raw?.IATA_OrderViewRS?.Response?.DataLists || {};
-  const order = raw?.Response?.Order || raw?.Order || raw?.order ||
-                raw?.IATA_OrderViewRS?.Response?.Order || {};
-  const paymentFunctions = raw?.Response?.PaymentFunctions || raw?.PaymentFunctions ||
-                           raw?.IATA_OrderViewRS?.PaymentFunctions || {};
-  const payloadAttributes = raw?.PayloadAttributes || raw?.Response?.PayloadAttributes ||
-                            raw?.IATA_OrderViewRS?.PayloadAttributes || {};
 
-  console.log('[parseBookingData] Order keys:', Object.keys(order || {}));
-  console.log('[parseBookingData] Order.OrderID:', order?.OrderID);
-  console.log('[parseBookingData] Order.TotalPrice:', order?.TotalPrice);
-  console.log('[parseBookingData] PaymentFunctions keys:', Object.keys(paymentFunctions || {}));
+  console.log('[parseBookingData] DataLists keys:', Object.keys(dataLists || {}));
+
+  // Build unified order object from backend format OR XML paths
+  let pnr: string;
+  let ownerCode: string;
+  let status: string;
+  let creationDate: string | undefined;
+  let totalPriceValue: number;
+  let totalPriceCurrency: string;
+  let payments: any[];
+  let orderItems: any[];
+
+  if (hasBackendFormat) {
+    // Backend parsed format (camelCase properties)
+    console.log('[parseBookingData] Using backend format');
+    console.log('[parseBookingData] orderObj keys:', Object.keys(orderObj));
+    console.log('[parseBookingData] orderObj.orderId:', orderObj.orderId);
+    console.log('[parseBookingData] orderObj.totalPrice:', orderObj.totalPrice);
+    console.log('[parseBookingData] orderObj.payments:', orderObj.payments);
+
+    pnr = orderObj.orderId || '';
+    ownerCode = orderObj.ownerCode || 'JQ';
+    status = orderObj.status || 'UNKNOWN';
+    creationDate = orderObj.creationDateTime;
+    totalPriceValue = orderObj.totalPrice?.value || 0;
+    totalPriceCurrency = orderObj.totalPrice?.currency || 'AUD';
+    payments = orderObj.payments || [];
+    orderItems = orderObj.orderItems || [];
+  } else {
+    // Fallback: Raw XML-to-JSON format
+    console.log('[parseBookingData] Using XML fallback format');
+    const xmlOrder = raw?.Response?.Order || raw?.Order || raw?.order ||
+                     raw?.IATA_OrderViewRS?.Response?.Order || {};
+    const paymentFunctions = raw?.Response?.PaymentFunctions || raw?.PaymentFunctions ||
+                             raw?.IATA_OrderViewRS?.PaymentFunctions || {};
+
+    console.log('[parseBookingData] xmlOrder keys:', Object.keys(xmlOrder || {}));
+
+    pnr = xmlOrder?.OrderID || xmlOrder?.orderId || '';
+    ownerCode = xmlOrder?.OwnerCode || xmlOrder?.ownerCode || 'JQ';
+    status = xmlOrder?.StatusCode || xmlOrder?.status || 'UNKNOWN';
+    creationDate = xmlOrder?.CreationDateTime;
+
+    const totalPrice = xmlOrder?.TotalPrice?.TotalAmount || xmlOrder?.totalPrice;
+    totalPriceValue = parseFloat(totalPrice?.['#text'] || totalPrice?.value || totalPrice || 0);
+    totalPriceCurrency = totalPrice?.['@CurCode'] || totalPrice?.currency || totalPrice?.CurCode || 'AUD';
+
+    payments = normalizeToArray(paymentFunctions?.PaymentProcessingSummary);
+    orderItems = normalizeToArray(xmlOrder?.OrderItem);
+  }
+
+  console.log('[parseBookingData] Final - pnr:', pnr);
+  console.log('[parseBookingData] Final - status:', status);
+  console.log('[parseBookingData] Final - totalPrice:', totalPriceValue, totalPriceCurrency);
+  console.log('[parseBookingData] Final - payments count:', payments.length);
+
+  const payloadAttributes = raw?.payloadAttributes || raw?.PayloadAttributes ||
+                            raw?.Response?.PayloadAttributes || {};
 
   // Parse passengers
   const paxList = normalizeToArray(dataLists?.PaxList?.Pax);
@@ -1673,24 +1729,44 @@ function parseBookingData(raw: any): ParsedBooking {
     };
   });
 
-  // Parse payments
-  const paymentSummaries = normalizeToArray(paymentFunctions?.PaymentProcessingSummary);
-  const payments: PaymentInfo[] = paymentSummaries.map((p: any) => {
-    const amount = p.Amount;
-    const method = p.PaymentProcessingSummaryPaymentMethod;
-    return {
-      paymentId: p.PaymentID || '',
-      status: p.PaymentStatusCode || 'UNKNOWN',
-      amount: {
-        value: parseFloat(amount?.['#text'] || amount || 0),
-        currency: amount?.['@CurCode'] || amount?.CurCode || 'AUD',
-      },
-      method: {
-        type: method?.SettlementPlan?.PaymentTypeCode || method?.PaymentCard?.CardBrandCode ? 'CC' : 'OTHER',
-        cardBrand: method?.PaymentCard?.CardBrandCode,
-        maskedNumber: method?.PaymentCard?.MaskedCardNumber,
-      },
-    };
+  // Parse payments - handle both backend parsed format and raw XML format
+  const parsedPayments: PaymentInfo[] = payments.map((p: any) => {
+    // Backend format: { paymentId, status, amount: { value, currency }, method: { type, cardBrand, maskedCardNumber } }
+    // XML format: { PaymentID, PaymentStatusCode, Amount: { '#text', '@CurCode' }, PaymentProcessingSummaryPaymentMethod }
+
+    if (p.amount && typeof p.amount === 'object' && 'value' in p.amount) {
+      // Backend parsed format
+      return {
+        paymentId: p.paymentId || '',
+        status: p.status || 'UNKNOWN',
+        amount: {
+          value: p.amount.value || 0,
+          currency: p.amount.currency || 'AUD',
+        },
+        method: {
+          type: p.method?.type || 'OTHER',
+          cardBrand: p.method?.cardBrand,
+          maskedNumber: p.method?.maskedCardNumber,
+        },
+      };
+    } else {
+      // XML format
+      const amount = p.Amount;
+      const method = p.PaymentProcessingSummaryPaymentMethod;
+      return {
+        paymentId: p.PaymentID || '',
+        status: p.PaymentStatusCode || 'UNKNOWN',
+        amount: {
+          value: parseFloat(amount?.['#text'] || amount || 0),
+          currency: amount?.['@CurCode'] || amount?.CurCode || 'AUD',
+        },
+        method: {
+          type: method?.SettlementPlan?.PaymentTypeCode || method?.PaymentCard?.CardBrandCode ? 'CC' : 'OTHER',
+          cardBrand: method?.PaymentCard?.CardBrandCode,
+          maskedNumber: method?.PaymentCard?.MaskedCardNumber,
+        },
+      };
+    }
   });
 
   // Parse service definitions for better name/code mapping
@@ -1708,11 +1784,11 @@ function parseBookingData(raw: any): ParsedBooking {
 
   console.log('[parseBookingData] ServiceDefinitions:', serviceDefMap);
 
-  // Parse order items
-  const orderItems = normalizeToArray(order?.OrderItem);
-  console.log('[parseBookingData] Found OrderItems:', orderItems.length);
+  // Parse order items (already extracted at top as orderItems array)
+  const normalizedOrderItems = normalizeToArray(orderItems);
+  console.log('[parseBookingData] Found OrderItems:', normalizedOrderItems.length);
 
-  const services: ServiceInfo[] = orderItems.map((item: any) => {
+  const services: ServiceInfo[] = normalizedOrderItems.map((item: any) => {
     const itemId = item.OrderItemID || '';
     const price = item.Price || {};
 
@@ -1844,16 +1920,13 @@ function parseBookingData(raw: any): ParsedBooking {
     }
   });
 
-  // Get total price
-  const totalPrice = order?.TotalPrice?.TotalAmount || order?.totalPrice;
-
-  // Get payment status
+  // Get payment status (using already extracted values)
   let paymentStatus = 'UNKNOWN';
-  if (payments.some(p => p.status === 'SUCCESSFUL')) {
+  if (parsedPayments.some(p => p.status === 'SUCCESSFUL')) {
     paymentStatus = 'SUCCESSFUL';
-  } else if (payments.some(p => p.status === 'PENDING')) {
+  } else if (parsedPayments.some(p => p.status === 'PENDING')) {
     paymentStatus = 'PENDING';
-  } else if (order?.StatusCode === 'OPENED' || order?.status === 'OPENED') {
+  } else if (status === 'OPENED') {
     paymentStatus = 'PENDING';
   }
 
@@ -1872,17 +1945,19 @@ function parseBookingData(raw: any): ParsedBooking {
     country: firstContact.PostalAddress?.CountryCode,
   } : undefined;
 
+  console.log('[parseBookingData] Returning - pnr:', pnr, 'status:', status, 'totalPrice:', totalPriceValue);
+
   return {
-    pnr: order?.OrderID || order?.orderId || '',
-    ownerCode: order?.OwnerCode || order?.ownerCode || 'JQ',
-    status: order?.StatusCode || order?.status || 'UNKNOWN',
-    creationDate: order?.CreationDateTime,
+    pnr,
+    ownerCode,
+    status,
+    creationDate,
     totalPrice: {
-      value: parseFloat(totalPrice?.['#text'] || totalPrice?.value || totalPrice || 0),
-      currency: totalPrice?.['@CurCode'] || totalPrice?.currency || totalPrice?.CurCode || 'AUD',
+      value: totalPriceValue,
+      currency: totalPriceCurrency,
     },
     paymentStatus,
-    payments,
+    payments: parsedPayments,
     journeys,
     passengers,
     services,
