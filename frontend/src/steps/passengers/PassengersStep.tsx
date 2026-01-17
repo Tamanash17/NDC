@@ -130,11 +130,10 @@ interface ManualPassiveSegment {
   destination: string;
   departureDate: string;
   departureTime: string;
+  arrivalDate: string;      // Separate arrival date for overnight flights
   arrivalTime: string;
   flightNumber: string;
   marketingCarrier: string;
-  operatingCarrier: string;
-  rbd: string;
 }
 
 const TITLES = [
@@ -243,11 +242,10 @@ export function PassengersStep() {
       destination: '',
       departureDate: '',
       departureTime: '',
+      arrivalDate: '',
       arrivalTime: '',
       flightNumber: '',
       marketingCarrier: 'QF',
-      operatingCarrier: 'QF',
-      rbd: 'Y',
     },
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -266,11 +264,10 @@ export function PassengersStep() {
         destination: '',
         departureDate: '',
         departureTime: '',
+        arrivalDate: '',
         arrivalTime: '',
         flightNumber: '',
         marketingCarrier: 'QF',
-        operatingCarrier: 'QF',
-        rbd: 'Y',
       },
     ]);
   };
@@ -294,18 +291,18 @@ export function PassengersStep() {
   const buildPassiveSegments = () => {
     // Filter out incomplete segments and convert to API format
     return manualPassiveSegments
-      .filter(seg => seg.origin && seg.destination && seg.departureDate && seg.departureTime && seg.flightNumber)
+      .filter(seg => seg.origin && seg.destination && seg.departureDate && seg.departureTime && seg.flightNumber && seg.arrivalDate && seg.arrivalTime)
       .map((seg, index) => ({
         segmentId: `passive-${index + 1}`,
         origin: seg.origin.toUpperCase(),
         destination: seg.destination.toUpperCase(),
         departureDateTime: `${seg.departureDate}T${seg.departureTime}:00`,
-        arrivalDateTime: `${seg.departureDate}T${seg.arrivalTime || seg.departureTime}:00`,
+        arrivalDateTime: `${seg.arrivalDate}T${seg.arrivalTime}:00`,
         flightNumber: seg.flightNumber,
-        operatingCarrier: seg.operatingCarrier || 'QF',
+        operatingCarrier: seg.marketingCarrier || 'QF',  // Default operating = marketing
         marketingCarrier: seg.marketingCarrier || 'QF',
         journeyId: `passive-journey-${index + 1}`,
-        rbd: seg.rbd || 'Y',
+        rbd: 'Y',  // Default RBD
       }));
   };
 
@@ -932,8 +929,8 @@ export function PassengersStep() {
                       )}
                     </div>
 
-                    {/* Row 1: Route & Flight Number */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 mb-3">
+                    {/* Row 1: Flight Info */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
                       <div>
                         <label className="block text-xs font-medium text-slate-600 mb-1">Origin *</label>
                         <input
@@ -957,7 +954,7 @@ export function PassengersStep() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Marketing *</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Carrier *</label>
                         <input
                           type="text"
                           value={seg.marketingCarrier}
@@ -978,43 +975,27 @@ export function PassengersStep() {
                           className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                         />
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Operating</label>
-                        <input
-                          type="text"
-                          value={seg.operatingCarrier}
-                          onChange={(e) => updatePassiveSegment(seg.id, 'operatingCarrier', e.target.value.toUpperCase())}
-                          placeholder="QF"
-                          maxLength={2}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 uppercase"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">RBD</label>
-                        <input
-                          type="text"
-                          value={seg.rbd}
-                          onChange={(e) => updatePassiveSegment(seg.id, 'rbd', e.target.value.toUpperCase())}
-                          placeholder="Y"
-                          maxLength={1}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 uppercase"
-                        />
-                      </div>
                     </div>
 
-                    {/* Row 2: Date & Times */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {/* Row 2: Departure & Arrival */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Date *</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Dep Date *</label>
                         <input
                           type="date"
                           value={seg.departureDate}
-                          onChange={(e) => updatePassiveSegment(seg.id, 'departureDate', e.target.value)}
+                          onChange={(e) => {
+                            updatePassiveSegment(seg.id, 'departureDate', e.target.value);
+                            // Auto-fill arrival date if empty
+                            if (!seg.arrivalDate) {
+                              updatePassiveSegment(seg.id, 'arrivalDate', e.target.value);
+                            }
+                          }}
                           className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Departure *</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Dep Time *</label>
                         <input
                           type="time"
                           value={seg.departureTime}
@@ -1023,7 +1004,16 @@ export function PassengersStep() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Arrival</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Arr Date *</label>
+                        <input
+                          type="date"
+                          value={seg.arrivalDate}
+                          onChange={(e) => updatePassiveSegment(seg.id, 'arrivalDate', e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Arr Time *</label>
                         <input
                           type="time"
                           value={seg.arrivalTime}
