@@ -986,6 +986,14 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       serviceDefMap.set(id, svc);
     }
 
+    // Collect ALL service codes from XML by direction to show inside bundles
+    // This includes ALL services regardless of price - user requested all inclusions visible
+    const allServiceCodesByDirection: Record<'outbound' | 'inbound' | 'both', { code: string; name: string; price: number }[]> = {
+      outbound: [],
+      inbound: [],
+      both: [],
+    };
+
     // Collect bundle inclusions by direction (OOCP, MORE, FLEX, etc.)
     // These are components of bundles, shown inside bundle cards, not as separate services
     const bundleInclusionsByDirection: Record<'outbound' | 'inbound' | 'both', { code: string; name: string }[]> = {
@@ -1016,10 +1024,22 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
       const direction = detectDirection(segmentRefs, journeyRefs, legRefs);
       const bundleDirection: 'outbound' | 'inbound' | 'both' = direction;
 
+      // Get service price
+      const servicePrice = offer.price?.value || offer.Price?.Amount || 0;
+
+      // Collect ALL service codes for bundle display (regardless of price)
+      // Skip bundle codes themselves (S050, P200, etc.) - those are the bundles, not inclusions
+      if (!isBundleCode(serviceCode) && serviceCode) {
+        allServiceCodesByDirection[bundleDirection].push({
+          code: serviceCode.toUpperCase(),
+          name: rawName,
+          price: servicePrice,
+        });
+      }
+
       // Check if this is a bundle inclusion (OOCP, MORE, FLEX, etc.)
       // These are components of bundles, shown inside bundle cards
       // AUTO-DETECTS: $0 services with bundle-related keywords (cancel, change, flex, etc.)
-      const servicePrice = offer.price?.value || offer.Price?.Amount || 0;
       if (isBundleInclusion(serviceCode, rawName, servicePrice)) {
         bundleInclusionsByDirection[bundleDirection].push({
           code: serviceCode.toUpperCase(),
@@ -1460,22 +1480,33 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
 
     console.log('[ServiceListStep] Complete SSR mappings:', ssrMappings);
 
-    // Add bundle inclusions to each bundle's otherInclusions array
-    // These are codes like OOCP, MORE, FLEX that are components of the bundle
-    console.log('[ServiceListStep] Bundle inclusions collected:', bundleInclusionsByDirection);
+    // Add ALL service codes to each bundle's otherInclusions array
+    // User requested: ALL inclusions from XML should appear inside bundles irrespective of price
+    console.log('[ServiceListStep] ALL service codes collected:', allServiceCodesByDirection);
 
     for (const bundle of sortedBundles) {
-      // Get inclusions for this bundle's direction
-      const inclusionsForDirection = bundle.direction === 'both'
-        ? [...bundleInclusionsByDirection.both]
-        : [...bundleInclusionsByDirection[bundle.direction], ...bundleInclusionsByDirection.both];
+      // Get ALL service codes for this bundle's direction (not just filtered ones)
+      const allCodesForDirection = bundle.direction === 'both'
+        ? [...allServiceCodesByDirection.both]
+        : [...allServiceCodesByDirection[bundle.direction], ...allServiceCodesByDirection.both];
 
-      if (inclusionsForDirection.length > 0) {
+      // De-duplicate by code (same code might appear multiple times for different segments)
+      const uniqueCodes = new Map<string, { code: string; name: string; price: number }>();
+      for (const item of allCodesForDirection) {
+        if (!uniqueCodes.has(item.code)) {
+          uniqueCodes.set(item.code, item);
+        }
+      }
+
+      const inclusionsList = Array.from(uniqueCodes.values());
+
+      if (inclusionsList.length > 0) {
         // Store inclusions with code and name separately for better UI display
-        // Format: { code: 'CCSH', name: 'Cancel flight for Cash' }
-        const otherInclusions = inclusionsForDirection.map(inc => ({
+        // Format: { code: 'CCSH', name: 'Cancel flight for Cash', price: 0 }
+        const otherInclusions = inclusionsList.map(inc => ({
           code: inc.code,
           name: inc.name,
+          price: inc.price,
         }));
 
         // Add to bundle inclusions
@@ -1484,7 +1515,7 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
           otherInclusions,
         };
 
-        console.log(`[ServiceListStep] Added ${otherInclusions.length} inclusions to bundle ${bundle.serviceCode} (${bundle.direction}):`, otherInclusions);
+        console.log(`[ServiceListStep] Added ${otherInclusions.length} service codes to bundle ${bundle.serviceCode} (${bundle.direction}):`, otherInclusions.map(i => i.code));
       }
     }
 
@@ -3910,9 +3941,10 @@ function BundleInclusionsList({ inclusions, compact = false, enhanced = false }:
           </div>
         ))}
         {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
-          inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
+          inclusions.otherInclusions.map((other: { code: string; name: string; price?: number } | string, idx: number) => {
             const code = typeof other === 'string' ? other : other.code;
             const name = typeof other === 'string' ? '' : other.name;
+            const price = typeof other === 'string' ? undefined : other.price;
             return (
               <div
                 key={`other-${idx}`}
@@ -3921,8 +3953,14 @@ function BundleInclusionsList({ inclusions, compact = false, enhanced = false }:
                 <span className="flex-shrink-0 px-2 py-0.5 rounded bg-indigo-600 text-white text-xs font-bold font-mono">
                   {code}
                 </span>
-                {name && (
-                  <span className="text-sm text-indigo-700">{name}</span>
+                <span className="text-sm text-indigo-700 flex-1">{name}</span>
+                {price !== undefined && (
+                  <span className={cn(
+                    'text-xs font-semibold px-2 py-0.5 rounded',
+                    price === 0 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                  )}>
+                    {price === 0 ? 'FREE' : `$${price.toFixed(2)}`}
+                  </span>
                 )}
               </div>
             );
@@ -3950,12 +3988,16 @@ function BundleInclusionsList({ inclusions, compact = false, enhanced = false }:
           </span>
         ))}
         {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
-          inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
+          inclusions.otherInclusions.map((other: { code: string; name: string; price?: number } | string, idx: number) => {
             const code = typeof other === 'string' ? other : other.code;
+            const price = typeof other === 'string' ? undefined : other.price;
             return (
               <span
                 key={`other-${idx}`}
-                className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-indigo-600 text-white font-bold font-mono"
+                className={cn(
+                  'inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded font-bold font-mono',
+                  price === 0 ? 'bg-green-600 text-white' : 'bg-indigo-600 text-white'
+                )}
               >
                 {code}
               </span>
@@ -3983,18 +4025,25 @@ function BundleInclusionsList({ inclusions, compact = false, enhanced = false }:
         </div>
       ))}
       {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
-        inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
+        inclusions.otherInclusions.map((other: { code: string; name: string; price?: number } | string, idx: number) => {
           const code = typeof other === 'string' ? other : other.code;
           const name = typeof other === 'string' ? '' : other.name;
+          const price = typeof other === 'string' ? undefined : other.price;
           return (
             <div
               key={`other-${idx}`}
               className="flex items-center gap-2 text-sm"
             >
-              <span className="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-xs font-bold font-mono">
+              <span className={cn(
+                'px-1.5 py-0.5 rounded text-xs font-bold font-mono',
+                price === 0 ? 'bg-green-600 text-white' : 'bg-indigo-600 text-white'
+              )}>
                 {code}
               </span>
-              {name && <span className="text-indigo-700">{name}</span>}
+              <span className="text-indigo-700 flex-1">{name}</span>
+              {price !== undefined && price > 0 && (
+                <span className="text-xs text-amber-600 font-medium">${price.toFixed(2)}</span>
+              )}
             </div>
           );
         })
