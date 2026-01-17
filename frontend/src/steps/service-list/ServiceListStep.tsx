@@ -1428,86 +1428,40 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
 
     // Resolve bundle inclusions using includedServiceRefIds from the backend
     // Each bundle has a ServiceBundle element containing ServiceDefinitionRefID elements
-    // that point to the actual inclusion services (baggage, meals, seats, flex options etc.)
+    // Just display raw service names from XML - no categorization
     console.log('[ServiceListStep] 🔍 Resolving bundle inclusions...');
     console.log('[ServiceListStep] serviceDefMap size:', serviceDefMap.size);
-    console.log('[ServiceListStep] serviceDefMap keys (first 10):', Array.from(serviceDefMap.keys()).slice(0, 10));
 
     for (const bundle of sortedBundles) {
       const includedRefs = (bundle as any).includedServiceRefIds || [];
-      console.log(`[ServiceListStep] 📦 Bundle ${bundle.serviceCode} has ${includedRefs.length} includedRefs:`, includedRefs.slice(0, 5));
+      console.log(`[ServiceListStep] 📦 Bundle ${bundle.serviceCode} has ${includedRefs.length} includedRefs:`, includedRefs);
 
       if (includedRefs.length > 0) {
         const resolvedInclusions: { code: string; name: string }[] = [];
-        let baggageInclusion = '';
-        let hasMeals = false;
-        let hasSeatSelection = false;
-        let changesPolicy = '';
-        let cancellationPolicy = '';
 
         for (const refId of includedRefs) {
           // Look up the service definition by its ID
           const serviceDef = serviceDefMap.get(refId);
-          if (!serviceDef) {
-            console.log(`[ServiceListStep] ⚠️ Could not find serviceDef for refId: ${refId}`);
-          }
           if (serviceDef) {
             const code = (serviceDef.serviceCode || serviceDef.ServiceCode || '').toUpperCase();
             const name = serviceDef.serviceName || serviceDef.ServiceName || code;
-            const upperName = name.toUpperCase();
-
-            // Categorize inclusion by type - track if it was categorized
-            let wasCategorized = false;
-
-            if (code.startsWith('BG') || code.startsWith('OB') || upperName.includes('BAG') || upperName.includes('KG')) {
-              // Baggage inclusion - extract weight if present
-              const weightMatch = (name + ' ' + code).match(/(\d+)\s*KG/i);
-              if (weightMatch) {
-                const isChecked = upperName.includes('CHECK');
-                baggageInclusion = `${weightMatch[1]}kg ${isChecked ? 'checked bag' : 'bag'}`;
-              } else {
-                baggageInclusion = name;
-              }
-              wasCategorized = true;
-            } else if (upperName.includes('MEAL') || upperName.includes('FOOD') || upperName.includes('SNACK')) {
-              hasMeals = true;
-              wasCategorized = true;
-            } else if (upperName.includes('SEAT') || code === 'STSL' || code === 'SEAT') {
-              hasSeatSelection = true;
-              wasCategorized = true;
-            } else if (upperName.includes('CHANGE') || upperName.includes('FLEX') || code === 'FLXN' || code === 'FLEX') {
-              changesPolicy = name;
-              wasCategorized = true;
-            } else if (upperName.includes('CANCEL') || upperName.includes('REFUND') || code === 'CCSH') {
-              cancellationPolicy = name;
-              wasCategorized = true;
-            }
-
-            // Only add to otherInclusions if NOT already categorized (avoid duplicates)
-            if (!wasCategorized) {
-              resolvedInclusions.push({ code, name });
-            }
+            // Add all inclusions as raw data - no categorization
+            resolvedInclusions.push({ code, name });
           }
         }
 
-        // Update bundle inclusions with resolved values
+        // Update bundle inclusions - only use otherInclusions for raw display
         bundle.inclusions = {
-          baggage: baggageInclusion || bundle.inclusions.baggage,
-          meals: hasMeals || bundle.inclusions.meals,
-          seatSelection: hasSeatSelection || bundle.inclusions.seatSelection,
-          changes: changesPolicy || bundle.inclusions.changes,
-          cancellation: cancellationPolicy || bundle.inclusions.cancellation,
+          baggage: '',
+          meals: false,
+          seatSelection: false,
+          changes: '',
+          cancellation: '',
           otherInclusions: resolvedInclusions,
         };
 
-        console.log(`[ServiceListStep] Bundle ${bundle.serviceCode} resolved ${resolvedInclusions.length} inclusions:`, {
-          baggage: baggageInclusion,
-          meals: hasMeals,
-          seats: hasSeatSelection,
-          changes: changesPolicy,
-          cancel: cancellationPolicy,
-          codes: resolvedInclusions.map(i => i.code),
-        });
+        console.log(`[ServiceListStep] Bundle ${bundle.serviceCode} resolved ${resolvedInclusions.length} inclusions:`,
+          resolvedInclusions.map(i => `${i.name} (${i.code})`));
       }
     }
 
