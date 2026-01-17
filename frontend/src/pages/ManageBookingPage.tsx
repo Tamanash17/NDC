@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useToast } from '@/core/context/ToastContext';
 import { useXmlViewer } from '@/core/context/XmlViewerContext';
 import { useSessionStore } from '@/core/context/SessionStore';
 import { orderRetrieve } from '@/lib/ndc-api';
@@ -8,11 +7,11 @@ import { cn } from '@/lib/cn';
 import { Card, Button, Alert } from '@/components/ui';
 import { AppLayout } from '@/components/layout';
 import {
-  Search, RefreshCw, XCircle, Luggage, Armchair, Plane, Clock, Calendar,
-  Mail, Phone, MapPin, CreditCard, ChevronDown, ChevronUp, Copy, Check,
+  Search, RefreshCw, XCircle, Luggage, Armchair, Plane, Clock,
+  CreditCard, ChevronDown, ChevronUp, Copy, Check,
   User, Users, Baby, Star, FileText, Package, Tag, Database, Eye, Code,
-  AlertTriangle, CheckCircle, Info, Timer, Receipt, Hash, Utensils, Shield,
-  Building2, Banknote, Wallet, Globe, Award
+  AlertTriangle, CheckCircle, Info, Timer, Utensils,
+  Building2, Wallet, Award
 } from 'lucide-react';
 
 // ============================================================================
@@ -126,7 +125,6 @@ interface ContactInfo {
 
 export function ManageBookingPage() {
   const navigate = useNavigate();
-  const toast = useToast();
   const { startNewSession, addCapture } = useXmlViewer();
   const { getDistributionContext } = useSessionStore();
   const [searchParams] = useSearchParams();
@@ -447,14 +445,14 @@ function SimpleView({ booking, onAction, navigate }: ViewProps) {
       {/* Status Banner */}
       <BookingStatusBanner booking={booking} />
 
-      {/* Flight Timeline */}
-      <FlightTimeline journeys={booking.journeys} />
+      {/* Flight Timeline with Services per Segment */}
+      <FlightTimeline journeys={booking.journeys} services={booking.services} passengers={booking.passengers} />
 
-      {/* Passengers */}
-      <PassengersCard passengers={booking.passengers} services={booking.services} />
+      {/* Passengers Summary */}
+      <PassengersCardSimple passengers={booking.passengers} />
 
       {/* Payment Summary */}
-      <PaymentCard booking={booking} navigate={navigate} />
+      <PaymentCard booking={booking} />
 
       {/* Quick Actions */}
       <QuickActionsCard booking={booking} onAction={onAction} navigate={navigate} />
@@ -477,14 +475,11 @@ function DeveloperView({ booking, onAction, navigate }: ViewProps) {
         <WarningsCard warnings={booking.warnings} />
       )}
 
-      {/* Flight Timeline with IDs */}
-      <FlightTimelineDev journeys={booking.journeys} />
+      {/* Flight Timeline with IDs and Services per Segment */}
+      <FlightTimelineDev journeys={booking.journeys} services={booking.services} passengers={booking.passengers} />
 
-      {/* Passengers with IDs */}
+      {/* Passengers with IDs - Compact Section */}
       <PassengersCardDev passengers={booking.passengers} />
-
-      {/* Services/OrderItems */}
-      <ServicesCard services={booking.services} />
 
       {/* Payment Details with IDs */}
       <PaymentCardDev payments={booking.payments} totalPrice={booking.totalPrice} />
@@ -599,20 +594,20 @@ function StatusPill({ label, value }: { label: string; value: string }) {
 }
 
 // ============================================================================
-// FLIGHT TIMELINE (Simple)
+// FLIGHT TIMELINE (Simple) - Shows journeys with segments and services per segment
 // ============================================================================
 
-function FlightTimeline({ journeys }: { journeys: JourneyInfo[] }) {
+function FlightTimeline({ journeys, services, passengers }: { journeys: JourneyInfo[]; services: ServiceInfo[]; passengers: PassengerInfo[] }) {
   return (
     <div className="space-y-4">
-      {journeys.map((journey, idx) => (
-        <JourneyCard key={journey.journeyId} journey={journey} index={idx} />
+      {journeys.map((journey) => (
+        <JourneyCard key={journey.journeyId} journey={journey} services={services} passengers={passengers} />
       ))}
     </div>
   );
 }
 
-function JourneyCard({ journey, index }: { journey: JourneyInfo; index: number }) {
+function JourneyCard({ journey, services, passengers }: { journey: JourneyInfo; services: ServiceInfo[]; passengers: PassengerInfo[] }) {
   const [isExpanded, setIsExpanded] = useState(true);
   const isOutbound = journey.direction === 'outbound';
 
@@ -647,65 +642,119 @@ function JourneyCard({ journey, index }: { journey: JourneyInfo; index: number }
         </div>
       </button>
 
-      {/* Segments */}
+      {/* Segments with Services */}
       {isExpanded && (
         <div className="p-6 space-y-4">
-          {journey.segments.map((segment, segIdx) => (
-            <div key={segment.segmentId}>
-              <SegmentRow segment={segment} />
-              {segIdx < journey.segments.length - 1 && (
-                <LayoverIndicator
-                  arrivalTime={segment.arrivalTime}
-                  departureTime={journey.segments[segIdx + 1].departureTime}
-                  city={segment.destination}
-                />
-              )}
-            </div>
-          ))}
+          {journey.segments.map((segment, segIdx) => {
+            // Get services for this segment
+            const segmentServices = services.filter(svc =>
+              svc.segmentIds.includes(segment.segmentId) ||
+              svc.segmentIds.includes(segment.marketingSegmentId || '')
+            );
+
+            return (
+              <div key={segment.segmentId}>
+                <SegmentRow segment={segment} services={segmentServices} passengers={passengers} />
+                {segIdx < journey.segments.length - 1 && (
+                  <LayoverIndicator
+                    arrivalTime={segment.arrivalTime}
+                    departureTime={journey.segments[segIdx + 1].departureTime}
+                    city={segment.destination}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-function SegmentRow({ segment }: { segment: SegmentInfo }) {
+function SegmentRow({ segment, services, passengers }: { segment: SegmentInfo; services: ServiceInfo[]; passengers: PassengerInfo[] }) {
+  // Filter to only ancillary services (not flights)
+  const ancillaryServices = services.filter(s => s.type !== 'FLIGHT');
+
   return (
-    <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
-      {/* Flight Number */}
-      <div className="bg-orange-100 text-orange-700 px-3 py-2 rounded-lg font-mono font-bold text-center min-w-[70px]">
-        {segment.carrierCode} {segment.flightNumber}
-      </div>
-
-      {/* Departure */}
-      <div className="text-center">
-        <p className="text-2xl font-bold text-gray-900">{formatTime(segment.departureTime)}</p>
-        <p className="text-sm font-semibold text-gray-600">{segment.origin}</p>
-      </div>
-
-      {/* Flight Path */}
-      <div className="flex-1 flex items-center px-4">
-        <div className="flex-1 h-0.5 bg-gray-300" />
-        <div className="mx-2 flex flex-col items-center">
-          <Plane className="w-4 h-4 text-gray-400" />
-          {segment.duration && (
-            <span className="text-xs text-gray-500 mt-1">{segment.duration}</span>
-          )}
+    <div className="bg-gray-50 rounded-xl overflow-hidden">
+      {/* Flight Info Row */}
+      <div className="flex items-center gap-4 p-4">
+        {/* Flight Number */}
+        <div className="bg-orange-100 text-orange-700 px-3 py-2 rounded-lg font-mono font-bold text-center min-w-[70px]">
+          {segment.carrierCode} {segment.flightNumber}
         </div>
-        <div className="flex-1 h-0.5 bg-gray-300" />
+
+        {/* Departure */}
+        <div className="text-center">
+          <p className="text-2xl font-bold text-gray-900">{formatTime(segment.departureTime)}</p>
+          <p className="text-sm font-semibold text-gray-600">{segment.origin}</p>
+        </div>
+
+        {/* Flight Path */}
+        <div className="flex-1 flex items-center px-4">
+          <div className="flex-1 h-0.5 bg-gray-300" />
+          <div className="mx-2 flex flex-col items-center">
+            <Plane className="w-4 h-4 text-gray-400" />
+            {segment.duration && (
+              <span className="text-xs text-gray-500 mt-1">{segment.duration}</span>
+            )}
+          </div>
+          <div className="flex-1 h-0.5 bg-gray-300" />
+        </div>
+
+        {/* Arrival */}
+        <div className="text-center">
+          <p className="text-2xl font-bold text-gray-900">{formatTime(segment.arrivalTime)}</p>
+          <p className="text-sm font-semibold text-gray-600">{segment.destination}</p>
+        </div>
+
+        {/* Info */}
+        <div className="text-right text-xs text-gray-500 space-y-1">
+          <p>{formatDateShort(segment.departureTime)}</p>
+          {segment.cabinClass && <p>{segment.cabinClass}</p>}
+          {segment.aircraft && <p>{segment.aircraft}</p>}
+        </div>
       </div>
 
-      {/* Arrival */}
-      <div className="text-center">
-        <p className="text-2xl font-bold text-gray-900">{formatTime(segment.arrivalTime)}</p>
-        <p className="text-sm font-semibold text-gray-600">{segment.destination}</p>
-      </div>
+      {/* Services for this segment */}
+      {ancillaryServices.length > 0 && (
+        <div className="px-4 pb-4">
+          <div className="bg-white rounded-lg border border-gray-200 p-3">
+            <p className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+              <Package className="w-3 h-3" /> Services on this flight
+            </p>
+            <div className="space-y-2">
+              {ancillaryServices.map((svc, idx) => {
+                // Get passenger names for this service
+                const paxNames = svc.paxIds.map(id => {
+                  const pax = passengers.find(p => p.paxId === id);
+                  return pax?.name || id;
+                });
 
-      {/* Info */}
-      <div className="text-right text-xs text-gray-500 space-y-1">
-        <p>{formatDateShort(segment.departureTime)}</p>
-        {segment.cabinClass && <p>{segment.cabinClass}</p>}
-        {segment.aircraft && <p>{segment.aircraft}</p>}
-      </div>
+                return (
+                  <div key={idx} className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      {svc.type === 'BAGGAGE' && <Luggage className="w-4 h-4 text-blue-500" />}
+                      {svc.type === 'SEAT' && <Armchair className="w-4 h-4 text-purple-500" />}
+                      {svc.type === 'MEAL' && <Utensils className="w-4 h-4 text-green-500" />}
+                      {svc.type === 'BUNDLE' && <Package className="w-4 h-4 text-orange-500" />}
+                      {!['BAGGAGE', 'SEAT', 'MEAL', 'BUNDLE'].includes(svc.type) && <Tag className="w-4 h-4 text-gray-500" />}
+                      <span className="font-medium">{svc.name}</span>
+                      {svc.code && <span className="text-xs text-gray-400">({svc.code})</span>}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-gray-500">{paxNames.join(', ')}</span>
+                      <span className="font-semibold text-gray-700">
+                        {formatCurrency(svc.price.value, svc.price.currency)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -723,10 +772,10 @@ function LayoverIndicator({ arrivalTime, departureTime, city }: { arrivalTime: s
 }
 
 // ============================================================================
-// PASSENGERS CARD (Simple)
+// PASSENGERS CARD (Simple) - Compact view showing passengers with key details
 // ============================================================================
 
-function PassengersCard({ passengers, services }: { passengers: PassengerInfo[]; services: ServiceInfo[] }) {
+function PassengersCardSimple({ passengers }: { passengers: PassengerInfo[] }) {
   return (
     <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
       {/* Header */}
@@ -742,142 +791,47 @@ function PassengersCard({ passengers, services }: { passengers: PassengerInfo[];
         </div>
       </div>
 
-      {/* Passenger List */}
-      <div className="p-6 space-y-4">
-        {passengers.map((pax, idx) => (
-          <PassengerRow key={pax.paxId} passenger={pax} index={idx + 1} />
-        ))}
+      {/* Passenger List - Compact Grid */}
+      <div className="p-4">
+        <div className="grid gap-3">
+          {passengers.map((pax) => {
+            const PtcIcon = pax.ptc === 'CHD' ? Baby : pax.ptc === 'INF' ? Baby : User;
+            const ptcColor = pax.ptc === 'ADT' ? 'blue' : pax.ptc === 'CHD' ? 'purple' : 'pink';
+
+            return (
+              <div key={pax.paxId} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    'p-2 rounded-lg',
+                    `bg-${ptcColor}-100`
+                  )} style={{ backgroundColor: ptcColor === 'blue' ? '#dbeafe' : ptcColor === 'purple' ? '#f3e8ff' : '#fce7f3' }}>
+                    <PtcIcon className="w-5 h-5" style={{ color: ptcColor === 'blue' ? '#2563eb' : ptcColor === 'purple' ? '#9333ea' : '#db2777' }} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-gray-900">{pax.name}</p>
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span>{pax.ptc === 'ADT' ? 'Adult' : pax.ptc === 'CHD' ? 'Child' : 'Infant'}</span>
+                      {pax.birthdate && <span>• DOB: {formatDateShort(pax.birthdate)}</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {pax.loyalty && (
+                    <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1">
+                      <Star className="w-3 h-3" /> {pax.loyalty.program}
+                    </span>
+                  )}
+                  {pax.document && (
+                    <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1">
+                      <FileText className="w-3 h-3" /> {pax.document.country}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
-  );
-}
-
-function PassengerRow({ passenger, index }: { passenger: PassengerInfo; index: number }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const PtcIcon = passenger.ptc === 'CHD' ? Baby : User;
-
-  return (
-    <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <div className={cn(
-            'p-2 rounded-lg',
-            passenger.ptc === 'ADT' ? 'bg-blue-100' : passenger.ptc === 'CHD' ? 'bg-purple-100' : 'bg-pink-100'
-          )}>
-            <PtcIcon className={cn(
-              'w-5 h-5',
-              passenger.ptc === 'ADT' ? 'text-blue-600' : passenger.ptc === 'CHD' ? 'text-purple-600' : 'text-pink-600'
-            )} />
-          </div>
-          <div className="text-left">
-            <p className="font-bold text-gray-900">{passenger.name}</p>
-            <p className="text-xs text-gray-500">Pax {index} • {passenger.ptc === 'ADT' ? 'Adult' : passenger.ptc === 'CHD' ? 'Child' : 'Infant'}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {passenger.loyalty && (
-            <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1">
-              <Star className="w-3 h-3" /> {passenger.loyalty.program}
-            </span>
-          )}
-          {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-        </div>
-      </button>
-
-      {isExpanded && (
-        <div className="px-4 pb-4 space-y-3">
-          {/* Basic Info */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {passenger.birthdate && (
-              <div>
-                <p className="text-xs text-gray-500">Date of Birth</p>
-                <p className="text-sm font-medium">{formatDateFull(passenger.birthdate)}</p>
-              </div>
-            )}
-            {passenger.gender && (
-              <div>
-                <p className="text-xs text-gray-500">Gender</p>
-                <p className="text-sm font-medium">{passenger.gender === 'M' ? 'Male' : 'Female'}</p>
-              </div>
-            )}
-            {passenger.email && (
-              <div>
-                <p className="text-xs text-gray-500">Email</p>
-                <p className="text-sm font-medium">{passenger.email}</p>
-              </div>
-            )}
-            {passenger.phone && (
-              <div>
-                <p className="text-xs text-gray-500">Phone</p>
-                <p className="text-sm font-medium">{passenger.phone}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Document */}
-          {passenger.document && (
-            <div className="pt-3 border-t border-gray-200">
-              <p className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
-                <FileText className="w-3 h-3" /> Travel Document
-              </p>
-              <div className="grid grid-cols-4 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-gray-500">Type</p>
-                  <p className="font-medium">Passport</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Number</p>
-                  <p className="font-medium font-mono">***{passenger.document.number.slice(-4)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Country</p>
-                  <p className="font-medium">{passenger.document.country}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Expiry</p>
-                  <p className="font-medium">{formatDateFull(passenger.document.expiry)}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Loyalty */}
-          {passenger.loyalty && (
-            <div className="pt-3 border-t border-gray-200">
-              <div className="flex items-center gap-3 bg-amber-50 rounded-lg p-3 border border-amber-200">
-                <Star className="w-6 h-6 text-amber-500" />
-                <div>
-                  <p className="font-semibold text-gray-900">{passenger.loyalty.program} Frequent Flyer</p>
-                  <p className="text-sm text-gray-600">Member #{passenger.loyalty.number}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Services */}
-          {passenger.services.length > 0 && (
-            <div className="pt-3 border-t border-gray-200">
-              <p className="text-xs font-semibold text-gray-500 mb-2">Booked Services</p>
-              <div className="flex flex-wrap gap-2">
-                {passenger.services.map((svc, idx) => (
-                  <span key={idx} className={cn(
-                    'px-2 py-1 rounded text-xs font-medium',
-                    svc.type === 'BAGGAGE' ? 'bg-blue-100 text-blue-700' :
-                    svc.type === 'SEAT' ? 'bg-purple-100 text-purple-700' :
-                    svc.type === 'MEAL' ? 'bg-green-100 text-green-700' :
-                    'bg-gray-100 text-gray-700'
-                  )}>
-                    {svc.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -886,7 +840,7 @@ function PassengerRow({ passenger, index }: { passenger: PassengerInfo; index: n
 // PAYMENT CARD (Simple)
 // ============================================================================
 
-function PaymentCard({ booking, navigate }: { booking: ParsedBooking; navigate: (path: string) => void }) {
+function PaymentCard({ booking }: { booking: ParsedBooking }) {
   const totalPaid = booking.payments
     .filter(p => p.status === 'SUCCESSFUL')
     .reduce((sum, p) => sum + p.amount.value, 0);
@@ -1140,19 +1094,20 @@ function WarningsCard({ warnings }: { warnings: { code?: string; message: string
   );
 }
 
-function FlightTimelineDev({ journeys }: { journeys: JourneyInfo[] }) {
+function FlightTimelineDev({ journeys, services, passengers }: { journeys: JourneyInfo[]; services: ServiceInfo[]; passengers: PassengerInfo[] }) {
   return (
     <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
       <div className="bg-blue-600 px-6 py-4 text-white">
         <div className="flex items-center gap-3">
           <Plane className="w-5 h-5" />
-          <h3 className="font-bold">Flight Segments (PaxJourney / PaxSegment)</h3>
+          <h3 className="font-bold">Journeys & Segments (PaxJourney / PaxSegment / OrderItems)</h3>
         </div>
       </div>
       <div className="p-6 space-y-6">
         {journeys.map((journey, idx) => (
           <div key={journey.journeyId} className="space-y-3">
-            <div className="flex items-center gap-3">
+            {/* Journey Header */}
+            <div className="flex items-center gap-3 flex-wrap">
               <span className={cn(
                 'px-2 py-1 rounded text-xs font-bold',
                 idx === 0 ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
@@ -1164,35 +1119,98 @@ function FlightTimelineDev({ journeys }: { journeys: JourneyInfo[] }) {
               <CopyableBadge label="PaxJourneyID" value={journey.journeyId} small />
             </div>
 
-            <div className="space-y-2 ml-4 border-l-2 border-gray-200 pl-4">
-              {journey.segments.map(seg => (
-                <div key={seg.segmentId} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded font-mono font-bold text-sm">
-                        {seg.carrierCode} {seg.flightNumber}
-                      </span>
-                      <span className="font-semibold">{seg.origin} → {seg.destination}</span>
-                      <span className="text-sm text-gray-600">
-                        {formatTime(seg.departureTime)} - {formatTime(seg.arrivalTime)}
-                      </span>
-                      <span className="text-sm text-gray-500">{formatDateShort(seg.departureTime)}</span>
+            {/* Segments with Services */}
+            <div className="space-y-3 ml-4 border-l-2 border-blue-200 pl-4">
+              {journey.segments.map(seg => {
+                // Get services for this segment
+                const segmentServices = services.filter(svc =>
+                  svc.segmentIds.includes(seg.segmentId) ||
+                  svc.segmentIds.includes(seg.marketingSegmentId || '')
+                );
+
+                return (
+                  <div key={seg.segmentId} className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                    {/* Segment Header */}
+                    <div className="p-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-3">
+                          <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded font-mono font-bold text-sm">
+                            {seg.carrierCode} {seg.flightNumber}
+                          </span>
+                          <span className="font-semibold">{seg.origin} → {seg.destination}</span>
+                          <span className="text-sm text-gray-600">
+                            {formatTime(seg.departureTime)} - {formatTime(seg.arrivalTime)}
+                          </span>
+                          <span className="text-sm text-gray-500">{formatDateShort(seg.departureTime)}</span>
+                        </div>
+                        <span className={cn(
+                          'px-2 py-0.5 rounded text-xs font-semibold',
+                          seg.status === 'CONFIRMED' || seg.status === 'READY TO PROCEED' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'
+                        )}>{seg.status || 'CONFIRMED'}</span>
+                      </div>
+
+                      {/* Segment IDs */}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <CopyableBadge label="PaxSegmentID" value={seg.segmentId} small />
+                        {seg.marketingSegmentId && <CopyableBadge label="MktSegmentID" value={seg.marketingSegmentId} small />}
+                        {seg.cabinClass && <CopyableBadge label="Cabin" value={`${seg.cabinClass} (${seg.cabinCode})`} small />}
+                        {seg.rbd && <CopyableBadge label="RBD" value={seg.rbd} small />}
+                        {seg.duration && <CopyableBadge label="Duration" value={seg.duration} small />}
+                        {seg.aircraft && <CopyableBadge label="Aircraft" value={seg.aircraft} small />}
+                      </div>
                     </div>
-                    <span className={cn(
-                      'px-2 py-0.5 rounded text-xs font-semibold',
-                      seg.status === 'CONFIRMED' || seg.status === 'READY TO PROCEED' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'
-                    )}>{seg.status || 'CONFIRMED'}</span>
+
+                    {/* Services for this segment */}
+                    {segmentServices.length > 0 && (
+                      <div className="border-t border-gray-200 bg-purple-50/50 p-3">
+                        <p className="text-xs font-semibold text-purple-700 mb-2 flex items-center gap-1">
+                          <Package className="w-3 h-3" /> OrderItems for this segment
+                        </p>
+                        <div className="space-y-2">
+                          {segmentServices.map((svc, idx) => {
+                            const paxNames = svc.paxIds.map(id => {
+                              const pax = passengers.find(p => p.paxId === id);
+                              return pax?.name || id;
+                            });
+
+                            return (
+                              <div key={idx} className="bg-white rounded-lg p-2 border border-purple-200">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    {svc.type === 'FLIGHT' && <Plane className="w-4 h-4 text-blue-500" />}
+                                    {svc.type === 'BAGGAGE' && <Luggage className="w-4 h-4 text-blue-500" />}
+                                    {svc.type === 'SEAT' && <Armchair className="w-4 h-4 text-purple-500" />}
+                                    {svc.type === 'MEAL' && <Utensils className="w-4 h-4 text-green-500" />}
+                                    {svc.type === 'BUNDLE' && <Package className="w-4 h-4 text-orange-500" />}
+                                    {!['FLIGHT', 'BAGGAGE', 'SEAT', 'MEAL', 'BUNDLE'].includes(svc.type) && <Tag className="w-4 h-4 text-gray-500" />}
+                                    <span className="font-medium text-sm">{svc.name}</span>
+                                    <span className={cn(
+                                      'px-1.5 py-0.5 rounded text-[10px] font-semibold',
+                                      svc.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'
+                                    )}>{svc.status}</span>
+                                  </div>
+                                  <span className="font-bold text-sm">{formatCurrency(svc.price.value, svc.price.currency)}</span>
+                                </div>
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                  <CopyableBadge label="OrderItemID" value={svc.orderItemId} small />
+                                  {svc.code && <CopyableBadge label="ServiceCode" value={svc.code} small />}
+                                  <CopyableBadge label="Type" value={svc.type} small />
+                                  {svc.paxIds.map((id, i) => (
+                                    <CopyableBadge key={i} label={`PaxRefID`} value={id} small />
+                                  ))}
+                                </div>
+                                {paxNames.length > 0 && (
+                                  <p className="text-[10px] text-gray-500 mt-1">Passengers: {paxNames.join(', ')}</p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <CopyableBadge label="PaxSegmentID" value={seg.segmentId} small />
-                    {seg.marketingSegmentId && <CopyableBadge label="MktSegmentID" value={seg.marketingSegmentId} small />}
-                    {seg.cabinClass && <CopyableBadge label="Cabin" value={`${seg.cabinClass} (${seg.cabinCode})`} small />}
-                    {seg.rbd && <CopyableBadge label="RBD" value={seg.rbd} small />}
-                    {seg.duration && <CopyableBadge label="Duration" value={seg.duration} small />}
-                    {seg.aircraft && <CopyableBadge label="Aircraft" value={seg.aircraft} small />}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
@@ -1263,52 +1281,6 @@ function PassengersCardDev({ passengers }: { passengers: PassengerInfo[] }) {
                 </div>
               </div>
             )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ServicesCard({ services }: { services: ServiceInfo[] }) {
-  const flightServices = services.filter(s => s.type === 'FLIGHT');
-  const otherServices = services.filter(s => s.type !== 'FLIGHT');
-
-  return (
-    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
-      <div className="bg-purple-600 px-6 py-4 text-white">
-        <div className="flex items-center gap-3">
-          <Package className="w-5 h-5" />
-          <h3 className="font-bold">Order Items ({services.length})</h3>
-        </div>
-      </div>
-      <div className="p-6 space-y-4">
-        {services.map(svc => (
-          <div key={svc.orderItemId} className={cn(
-            'rounded-xl p-4 border',
-            svc.type === 'FLIGHT' ? 'bg-blue-50 border-blue-200' : 'bg-purple-50 border-purple-200'
-          )}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="font-bold text-gray-900">{svc.name}</p>
-                <p className="text-xs text-gray-500 font-mono mt-1">{svc.orderItemId}</p>
-              </div>
-              <div className="text-right">
-                <p className="font-bold text-lg">{formatCurrency(svc.price.value, svc.price.currency)}</p>
-                <span className={cn(
-                  'px-1.5 py-0.5 rounded text-xs font-semibold',
-                  svc.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'
-                )}>{svc.status}</span>
-              </div>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <CopyableBadge label="OrderItemID" value={svc.orderItemId} small />
-              {svc.code && <CopyableBadge label="ServiceCode" value={svc.code} small />}
-              <CopyableBadge label="Type" value={svc.type} small />
-              {svc.paxIds.map((id, i) => (
-                <CopyableBadge key={i} label={`Pax${i+1}`} value={id} small />
-              ))}
-            </div>
           </div>
         ))}
       </div>
@@ -1530,13 +1502,10 @@ function parseBookingData(raw: any): ParsedBooking {
 
   // Parse order items
   const orderItems = normalizeToArray(order?.OrderItem);
-  const serviceDefs = normalizeToArray(dataLists?.ServiceDefinitionList?.ServiceDefinition);
-  const serviceDefMap = new Map(serviceDefs.map((sd: any) => [sd.ServiceDefinitionID, sd]));
 
   const services: ServiceInfo[] = orderItems.map((item: any) => {
     const itemId = item.OrderItemID || '';
     const price = item.Price || {};
-    const isFlight = itemId.includes('FLIGHT');
 
     // Determine type and name
     let type = 'OTHER';
