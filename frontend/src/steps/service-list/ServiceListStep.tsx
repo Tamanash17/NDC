@@ -3433,7 +3433,7 @@ function CompactServiceSection({
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <h4 className="font-semibold text-neutral-900 text-base leading-tight truncate">
+                  <h4 className="font-semibold text-neutral-900 text-base leading-tight">
                     {service.serviceName || service.serviceCode || 'Service'}
                   </h4>
                   {service.description && (
