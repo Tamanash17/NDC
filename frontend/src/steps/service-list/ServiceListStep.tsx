@@ -48,6 +48,7 @@ interface Service {
   maxQuantity?: number;
   offerId?: string;
   offerItemId?: string;
+  serviceRefId?: string;  // XML ServiceDefinitionRefID
   associationType: 'segment' | 'journey' | 'leg' | 'unknown';
   weight?: string;
   rfic?: string;
@@ -1094,6 +1095,7 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
           description: serviceDef?.description || serviceDef?.Description,
           offerId,
           offerItemId: offer.offerItemId || offer.OfferItemID,
+          serviceRefId, // Store the actual XML ServiceDefinitionRefID
           paxRefIds: offer.paxRefIds || [],
           segmentRefs,
           journeyRefs,
