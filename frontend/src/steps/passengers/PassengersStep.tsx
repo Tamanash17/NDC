@@ -285,6 +285,94 @@ export function PassengersStep() {
   };
 
   /**
+   * Auto-generate intelligent test data for a passive segment
+   * - Uses domestic hub airports different from the sold route
+   * - Sets date 1-2 days before the sold flight
+   * - Uses morning times with ~2hr duration
+   * - Generates realistic QF flight numbers
+   */
+  const autoGeneratePassiveSegment = (segmentId: string, segmentIndex: number) => {
+    // Domestic hub airports in Australia
+    const domesticHubs = ['MEL', 'SYD', 'BNE', 'PER', 'ADL', 'OOL', 'CNS', 'HBA'];
+
+    // Get airports from the sold route to avoid duplication
+    const soldAirports = new Set<string>();
+    const outboundSegs = flightStore.selection.outbound?.journey?.segments || [];
+    const inboundSegs = flightStore.selection.inbound?.journey?.segments || [];
+
+    outboundSegs.forEach((seg: FlightSegment) => {
+      soldAirports.add(seg.origin);
+      soldAirports.add(seg.destination);
+    });
+    inboundSegs.forEach((seg: FlightSegment) => {
+      soldAirports.add(seg.origin);
+      soldAirports.add(seg.destination);
+    });
+
+    // Filter to available hubs not in the sold route
+    const availableHubs = domesticHubs.filter(hub => !soldAirports.has(hub));
+
+    // Pick origin and destination (use different airports)
+    // Use segment index to vary selection
+    const hubOffset = segmentIndex * 2;
+    const origin = availableHubs[hubOffset % availableHubs.length] || domesticHubs[0];
+    const destination = availableHubs[(hubOffset + 1) % availableHubs.length] || domesticHubs[1];
+
+    // Get the earliest sold flight date
+    const firstOutboundSeg = outboundSegs[0];
+    let baseDate: Date;
+
+    if (firstOutboundSeg?.departureTime) {
+      // Parse departure time (e.g., "2025-03-15T07:00:00")
+      baseDate = new Date(firstOutboundSeg.departureTime);
+    } else if (searchCriteria?.departureDate) {
+      baseDate = new Date(searchCriteria.departureDate);
+    } else {
+      // Default to tomorrow
+      baseDate = new Date();
+      baseDate.setDate(baseDate.getDate() + 1);
+    }
+
+    // Set passive segment date 1-2 days BEFORE the sold flight
+    const daysBeforeFlight = 1 + (segmentIndex % 2); // Alternates between 1 and 2 days
+    const passiveDate = new Date(baseDate);
+    passiveDate.setDate(passiveDate.getDate() - daysBeforeFlight);
+
+    // Format date as YYYY-MM-DD
+    const formatDateStr = (d: Date) => d.toISOString().split('T')[0];
+
+    // Morning departure times (07:00 or 09:00 based on segment index)
+    const departureHour = segmentIndex % 2 === 0 ? '07' : '09';
+    const departureTime = `${departureHour}:00`;
+
+    // Arrival ~2 hours later
+    const arrivalHour = String(parseInt(departureHour) + 2).padStart(2, '0');
+    const arrivalTime = `${arrivalHour}:00`;
+
+    // Generate realistic QF flight number (400-999 range)
+    const flightNumber = String(400 + Math.floor(Math.random() * 600));
+
+    // Update the segment with generated data
+    setManualPassiveSegments(prev =>
+      prev.map(seg =>
+        seg.id === segmentId
+          ? {
+              ...seg,
+              origin,
+              destination,
+              departureDate: formatDateStr(passiveDate),
+              departureTime,
+              arrivalDate: formatDateStr(passiveDate), // Same day for domestic
+              arrivalTime,
+              flightNumber,
+              marketingCarrier: 'QF',
+            }
+          : seg
+      )
+    );
+  };
+
+  /**
    * Build passive segments from manual user entry
    * Converts manual segment entries to API format
    */
@@ -917,16 +1005,26 @@ export function PassengersStep() {
                   <div key={seg.id} className="p-4 bg-white rounded-lg border border-purple-200 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-sm font-semibold text-purple-700">Segment {index + 1}</span>
-                      {manualPassiveSegments.length > 1 && (
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => removePassiveSegment(seg.id)}
-                          className="flex items-center gap-1 px-2 py-1 text-red-600 hover:bg-red-50 rounded-md text-sm transition-colors"
+                          onClick={() => autoGeneratePassiveSegment(seg.id, index)}
+                          className="flex items-center gap-1 px-2 py-1 text-amber-600 hover:bg-amber-50 rounded-md text-sm transition-colors"
                         >
-                          <Trash2 className="w-4 h-4" />
-                          Remove
+                          <Wand2 className="w-4 h-4" />
+                          Auto-generate
                         </button>
-                      )}
+                        {manualPassiveSegments.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removePassiveSegment(seg.id)}
+                            className="flex items-center gap-1 px-2 py-1 text-red-600 hover:bg-red-50 rounded-md text-sm transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Row 1: Flight Info */}

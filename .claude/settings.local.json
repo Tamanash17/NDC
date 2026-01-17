@@ -148,7 +148,12 @@
       "Bash(ping:*)",
       "Bash(echo:*)",
       "Bash(git subtree push:*)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(npm run start)",
+      "Bash(npm start)",
+      "Bash(node --experimental-vm-modules -e:*)",
+      "Bash(node:*)",
+      "Bash(npm run type-check:*)"
     ]
   }
 }

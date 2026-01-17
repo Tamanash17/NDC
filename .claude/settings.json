@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(railway login:*)",
+      "Bash(git cherry-pick:*)"
+    ]
+  }
+}
