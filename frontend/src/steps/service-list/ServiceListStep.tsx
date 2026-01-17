@@ -3230,6 +3230,28 @@ function BundleKeyInclusions({ inclusions }: BundleKeyInclusionsProps) {
           </span>
         </div>
       ))}
+      {/* Show ALL service codes from XML */}
+      {inclusions.otherInclusions && inclusions.otherInclusions.length > 0 && (
+        <div className="pt-1 mt-1 border-t border-neutral-100">
+          <div className="flex flex-wrap gap-1">
+            {inclusions.otherInclusions.map((other: { code: string; name: string; price?: number } | string, idx: number) => {
+              const code = typeof other === 'string' ? other : other.code;
+              const price = typeof other === 'string' ? undefined : other.price;
+              return (
+                <span
+                  key={`other-${idx}`}
+                  className={cn(
+                    'inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-bold font-mono',
+                    price === 0 ? 'bg-green-600 text-white' : 'bg-indigo-600 text-white'
+                  )}
+                >
+                  {code}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
