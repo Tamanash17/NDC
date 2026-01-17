@@ -3320,101 +3320,287 @@ function CompactServiceSection({
 
   const colors = colorClasses[accentColor as keyof typeof colorClasses] || colorClasses.purple;
 
+  // State for toggling API debug info visibility
+  const [showApiDebug, setShowApiDebug] = useState(false);
+
+  // Get service type icon
+  const getServiceIcon = (service: Service) => {
+    const code = service.serviceCode?.toUpperCase() || '';
+    const name = service.serviceName?.toLowerCase() || '';
+
+    // Baggage
+    if (service.serviceType === 'baggage' || code.includes('BAG') || name.includes('bag') || name.includes('luggage')) {
+      return <Luggage className="w-5 h-5" />;
+    }
+    // Meals
+    if (service.serviceType === 'meal' || code.includes('MEAL') || name.includes('meal') || name.includes('food')) {
+      return <Utensils className="w-5 h-5" />;
+    }
+    // Seats
+    if (code.includes('SEAT') || code.includes('STST') || name.includes('seat')) {
+      return <Armchair className="w-5 h-5" />;
+    }
+    // Insurance/Protection
+    if (service.serviceType === 'insurance' || name.includes('insurance') || name.includes('protect')) {
+      return <ShieldCheck className="w-5 h-5" />;
+    }
+    // Flexibility
+    if (service.serviceType === 'flexibility' || name.includes('flex') || name.includes('change')) {
+      return <RefreshCw className="w-5 h-5" />;
+    }
+    // Priority/Upgrade
+    if (name.includes('priority') || name.includes('upgrade') || name.includes('lounge')) {
+      return <ArrowUpCircle className="w-5 h-5" />;
+    }
+    // Default
+    return <Package className="w-5 h-5" />;
+  };
+
+  // Get association type styling with icon
+  const getAssociationStyle = (type: Service['associationType']) => {
+    switch (type) {
+      case 'segment':
+        return { bg: 'bg-gradient-to-r from-blue-500 to-blue-600', text: 'text-white', label: 'SEGMENT', icon: '✈' };
+      case 'journey':
+        return { bg: 'bg-gradient-to-r from-purple-500 to-purple-600', text: 'text-white', label: 'JOURNEY', icon: '🛫' };
+      case 'leg':
+        return { bg: 'bg-gradient-to-r from-amber-500 to-amber-600', text: 'text-white', label: 'LEG', icon: '📍' };
+      default:
+        return { bg: 'bg-gradient-to-r from-gray-400 to-gray-500', text: 'text-white', label: 'N/A', icon: '?' };
+    }
+  };
+
   const renderServiceCard = (service: Service) => {
     const eligiblePax = getEligiblePassengers(service);
     const selectedPaxIds = perPaxSelections.get(service.serviceId) || new Set();
     const allEligibleSelected = eligiblePax.length > 0 && eligiblePax.every(p => selectedPaxIds.has(p.paxId));
+    const isSelected = selectedPaxIds.size > 0;
+    const assocStyle = getAssociationStyle(service.associationType);
 
     return (
-      <div key={service.serviceId} className={cn("border border-neutral-200 rounded-lg p-4 bg-white transition-colors", colors.hoverBorder)}>
-        {/* Service header */}
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="font-semibold text-base text-neutral-900">
-                {service.serviceName || service.serviceCode || 'Service'}
-              </div>
-              {service.serviceCode && (
-                <span className={cn("text-xs font-mono px-2 py-0.5 rounded", colors.badgeBg, colors.badgeText)}>
-                  {service.serviceCode}
-                </span>
-              )}
-              {/* Association type badge for API team */}
-              {service.associationType && (
-                <span className={cn(
-                  "text-xs font-medium px-2 py-0.5 rounded",
-                  service.associationType === 'segment' && "bg-blue-100 text-blue-700",
-                  service.associationType === 'journey' && "bg-purple-100 text-purple-700",
-                  service.associationType === 'leg' && "bg-amber-100 text-amber-700",
-                  (service.associationType === 'unknown' || !service.associationType) && "bg-gray-100 text-gray-600"
+      <div
+        key={service.serviceId}
+        className={cn(
+          "group relative rounded-xl overflow-hidden transition-all duration-300",
+          "border-2 bg-white",
+          isSelected
+            ? cn("border-2 shadow-lg", colors.selectedBorder, "ring-2 ring-offset-2", `ring-${accentColor}-200`)
+            : "border-neutral-200 hover:border-neutral-300 hover:shadow-md"
+        )}
+      >
+        {/* Selected indicator ribbon */}
+        {isSelected && (
+          <div className={cn(
+            "absolute top-0 right-0 w-20 h-20 overflow-hidden"
+          )}>
+            <div className={cn(
+              "absolute top-3 -right-8 w-32 text-center text-xs font-bold py-1 rotate-45 shadow-sm",
+              colors.selectedBg, "text-white"
+            )}>
+              SELECTED
+            </div>
+          </div>
+        )}
+
+        {/* Main card content */}
+        <div className="p-4">
+          {/* Service header with icon */}
+          <div className="flex items-start gap-3 mb-4">
+            {/* Service type icon */}
+            <div className={cn(
+              "flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center shadow-sm",
+              "bg-gradient-to-br from-neutral-50 to-neutral-100 border border-neutral-200",
+              isSelected && cn("from-white to-neutral-50", colors.selectedBorder)
+            )}>
+              <span className={cn(
+                isSelected ? colors.priceText : "text-neutral-500",
+                "transition-colors"
+              )}>
+                {getServiceIcon(service)}
+              </span>
+            </div>
+
+            {/* Service info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h4 className="font-semibold text-neutral-900 text-base leading-tight truncate">
+                    {service.serviceName || service.serviceCode || 'Service'}
+                  </h4>
+                  {service.description && (
+                    <p className="text-sm text-neutral-500 mt-0.5 line-clamp-2">{service.description}</p>
+                  )}
+                </div>
+
+                {/* Price badge */}
+                <div className={cn(
+                  "flex-shrink-0 text-right px-3 py-1.5 rounded-lg",
+                  service.price === 0
+                    ? "bg-gradient-to-r from-emerald-50 to-emerald-100 border border-emerald-200"
+                    : cn("bg-gradient-to-r from-neutral-50 to-neutral-100 border border-neutral-200")
                 )}>
-                  {(service.associationType || 'unknown').toUpperCase()}
-                </span>
+                  <div className={cn(
+                    "text-lg font-bold",
+                    service.price === 0 ? "text-emerald-600" : colors.priceText
+                  )}>
+                    {service.price === 0 ? 'FREE' : `+${formatCurrency(service.price, service.currency)}`}
+                  </div>
+                  <div className="text-[10px] text-neutral-500 uppercase tracking-wide">per person</div>
+                </div>
+              </div>
+
+              {/* Code badges row */}
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {service.serviceCode && (
+                  <span className={cn(
+                    "inline-flex items-center text-xs font-mono px-2 py-0.5 rounded-full",
+                    colors.badgeBg, colors.badgeText
+                  )}>
+                    {service.serviceCode}
+                  </span>
+                )}
+                {/* Association type badge - modern pill style */}
+                {service.associationType && (
+                  <span className={cn(
+                    "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider",
+                    assocStyle.bg, assocStyle.text
+                  )}>
+                    <span>{assocStyle.icon}</span>
+                    {assocStyle.label}
+                  </span>
+                )}
+                {/* Weight badge for baggage */}
+                {service.weight && (
+                  <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                    {service.weight}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* API Debug Panel - Collapsible for technical users */}
+          {showDebug && (
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={() => setShowApiDebug(!showApiDebug)}
+                className="flex items-center gap-1.5 text-[10px] font-medium text-neutral-400 hover:text-neutral-600 transition-colors"
+              >
+                <Bug className="w-3 h-3" />
+                <span>API Details</span>
+                {showApiDebug ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+              {showApiDebug && (
+                <div className="mt-2 p-2 rounded-lg bg-neutral-50 border border-neutral-200 font-mono text-[10px] text-neutral-600 space-y-1">
+                  <div className="flex gap-4">
+                    <span className="text-neutral-400">offerId:</span>
+                    <span className="text-neutral-700">{service.offerId || 'N/A'}</span>
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="text-neutral-400">offerItemId:</span>
+                    <span className="text-neutral-700">{service.offerItemId || 'N/A'}</span>
+                  </div>
+                  {service.segmentRefs && service.segmentRefs.length > 0 && (
+                    <div className="flex gap-4">
+                      <span className="text-blue-500">Segments:</span>
+                      <span className="text-neutral-700">{service.segmentRefs.join(', ')}</span>
+                    </div>
+                  )}
+                  {service.journeyRefs && service.journeyRefs.length > 0 && (
+                    <div className="flex gap-4">
+                      <span className="text-purple-500">Journeys:</span>
+                      <span className="text-neutral-700">{service.journeyRefs.join(', ')}</span>
+                    </div>
+                  )}
+                  {service.legRefs && service.legRefs.length > 0 && (
+                    <div className="flex gap-4">
+                      <span className="text-amber-500">Legs:</span>
+                      <span className="text-neutral-700">{service.legRefs.join(', ')}</span>
+                    </div>
+                  )}
+                  {service.rfic && (
+                    <div className="flex gap-4">
+                      <span className="text-neutral-400">RFIC:</span>
+                      <span className="text-neutral-700">{service.rfic}</span>
+                    </div>
+                  )}
+                  {service.rfisc && (
+                    <div className="flex gap-4">
+                      <span className="text-neutral-400">RFISC:</span>
+                      <span className="text-neutral-700">{service.rfisc}</span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
-            {service.description && (
-              <div className="text-xs text-neutral-600 mb-1">{service.description}</div>
+          )}
+
+          {/* Passenger selection - Modern design */}
+          <div className={cn(
+            "mt-4 pt-4 border-t",
+            isSelected ? "border-neutral-200" : "border-neutral-100"
+          )}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Users className={cn("w-4 h-4", isSelected ? colors.priceText : "text-neutral-400")} />
+              <span className="text-sm font-medium text-neutral-700">Select passengers</span>
+            </div>
+            {selectedPaxIds.size > 0 && (
+              <span className={cn(
+                "text-xs font-semibold px-2 py-0.5 rounded-full",
+                colors.badgeBg, colors.badgeText
+              )}>
+                {selectedPaxIds.size} selected
+              </span>
             )}
-            {/* Refs display for API team */}
-            <div className="text-[10px] text-neutral-400 font-mono">
-              {service.segmentRefs && service.segmentRefs.length > 0 && (
-                <span className="mr-2">Seg: {service.segmentRefs.join(', ')}</span>
-              )}
-              {service.journeyRefs && service.journeyRefs.length > 0 && (
-                <span className="mr-2">Jrn: {service.journeyRefs.join(', ')}</span>
-              )}
-              {service.legRefs && service.legRefs.length > 0 && (
-                <span className="mr-2">Leg: {service.legRefs.join(', ')}</span>
-              )}
-              {(!service.segmentRefs || service.segmentRefs.length === 0) &&
-               (!service.journeyRefs || service.journeyRefs.length === 0) &&
-               (!service.legRefs || service.legRefs.length === 0) && (
-                <span className="text-neutral-300">(no refs)</span>
-              )}
-            </div>
           </div>
-          <div className="text-right">
-            <div className={cn("text-lg font-bold", colors.priceText)}>
-              {service.price === 0 ? (
-                <span className="text-emerald-600">FREE</span>
-              ) : (
-                `+${formatCurrency(service.price, service.currency)}`
-              )}
-            </div>
-            <div className="text-xs text-neutral-500">per person</div>
-          </div>
-        </div>
 
-        {/* Passenger selection */}
-        <div className="border-t border-neutral-100 pt-3">
-          <div className="text-xs font-medium text-neutral-600 mb-3">Select passengers:</div>
-
-          {/* "All passengers" button - full width */}
+          {/* "All passengers" button - Modern style */}
           {eligiblePax.length > 1 && (
             <button
               type="button"
               onClick={() => onToggleServiceForAllPax(service.serviceId)}
               className={cn(
-                'w-full px-4 py-2 rounded-lg text-sm font-medium transition-all border mb-3',
+                'w-full px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 mb-3',
+                'flex items-center justify-center gap-3',
                 allEligibleSelected
-                  ? cn(colors.selectedBg, 'text-white', colors.selectedBorder, 'shadow-sm')
-                  : cn('bg-white text-neutral-700 border-neutral-300', colors.hoverBorder, 'hover:shadow-sm')
+                  ? cn(
+                      "bg-gradient-to-r shadow-md",
+                      accentColor === 'orange' && "from-orange-500 to-orange-600 text-white",
+                      accentColor === 'emerald' && "from-emerald-500 to-emerald-600 text-white",
+                      accentColor === 'purple' && "from-purple-500 to-purple-600 text-white",
+                      accentColor === 'cyan' && "from-cyan-500 to-cyan-600 text-white",
+                      accentColor === 'primary' && "from-primary-500 to-primary-600 text-white",
+                      accentColor === 'slate' && "from-slate-500 to-slate-600 text-white"
+                    )
+                  : cn(
+                      'bg-gradient-to-r from-neutral-50 to-neutral-100 text-neutral-700',
+                      'border-2 border-dashed border-neutral-300',
+                      'hover:border-solid hover:shadow-sm',
+                      colors.hoverBorder
+                    )
               )}
             >
-              <div className="flex items-center justify-center gap-2">
-                <div className={cn(
-                  'w-4 h-4 rounded border-2 flex items-center justify-center',
-                  allEligibleSelected ? 'border-white bg-white' : 'border-neutral-400'
-                )}>
-                  {allEligibleSelected && <Check className={cn("w-3 h-3", colors.priceText)} strokeWidth={3} />}
-                </div>
-                <span>All passengers</span>
+              <div className={cn(
+                'w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all',
+                allEligibleSelected
+                  ? 'border-white/50 bg-white/20'
+                  : 'border-neutral-400 bg-white'
+              )}>
+                {allEligibleSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
               </div>
+              <span>Select all {eligiblePax.length} passengers</span>
+              {!allEligibleSelected && service.price > 0 && (
+                <span className="text-xs text-neutral-500">
+                  ({formatCurrency(service.price * eligiblePax.length, service.currency)} total)
+                </span>
+              )}
             </button>
           )}
 
-          {/* Individual passenger buttons - organized by type */}
-          <div className="space-y-3">
+          {/* Individual passenger buttons - Modern chip style */}
+          <div className="space-y-2">
             {/* Group passengers by type */}
             {(() => {
               // Debug: Log passenger info
@@ -3429,36 +3615,64 @@ function CompactServiceSection({
               // If no passengers match type filters, show all as-is
               const hasTypedPassengers = adults.length > 0 || children.length > 0 || infants.length > 0;
 
+              // Modern passenger chip renderer
+              const renderPassengerChip = (pax: { paxId: string; displayLabel: string }) => {
+                const isPaxSelected = selectedPaxIds.has(pax.paxId);
+                return (
+                  <button
+                    type="button"
+                    key={pax.paxId}
+                    onClick={() => onToggleServiceForPax(service.serviceId, pax.paxId)}
+                    className={cn(
+                      'group/pax relative px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 min-w-0',
+                      'flex items-center gap-2.5 overflow-hidden',
+                      isPaxSelected
+                        ? cn(
+                            "bg-gradient-to-r shadow-sm text-white",
+                            accentColor === 'orange' && "from-orange-500 to-orange-600",
+                            accentColor === 'emerald' && "from-emerald-500 to-emerald-600",
+                            accentColor === 'purple' && "from-purple-500 to-purple-600",
+                            accentColor === 'cyan' && "from-cyan-500 to-cyan-600",
+                            accentColor === 'primary' && "from-primary-500 to-primary-600",
+                            accentColor === 'slate' && "from-slate-500 to-slate-600"
+                          )
+                        : cn(
+                            'bg-white text-neutral-700 border border-neutral-200',
+                            'hover:border-neutral-300 hover:shadow-sm hover:bg-neutral-50'
+                          )
+                    )}
+                  >
+                    {/* Checkbox */}
+                    <div className={cn(
+                      'w-4 h-4 rounded-md border-2 flex items-center justify-center shrink-0 transition-all',
+                      isPaxSelected
+                        ? 'border-white/50 bg-white/20'
+                        : 'border-neutral-300 bg-white group-hover/pax:border-neutral-400'
+                    )}>
+                      {isPaxSelected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                    </div>
+                    {/* User icon */}
+                    <UserCircle className={cn(
+                      "w-4 h-4 shrink-0",
+                      isPaxSelected ? "text-white/80" : "text-neutral-400"
+                    )} />
+                    {/* Label */}
+                    <span className="truncate flex-1 text-left">{pax.displayLabel}</span>
+                    {/* Price indicator when not selected */}
+                    {!isPaxSelected && service.price > 0 && (
+                      <span className="text-[10px] text-neutral-400 shrink-0">
+                        +{formatCurrency(service.price, service.currency)}
+                      </span>
+                    )}
+                  </button>
+                );
+              };
+
               if (!hasTypedPassengers && eligiblePax.length > 0) {
                 // Fallback: show all passengers without grouping
                 return (
                   <div className="grid grid-cols-2 gap-2">
-                    {eligiblePax.map((pax) => {
-                      const isSelected = selectedPaxIds.has(pax.paxId);
-                      return (
-                        <button
-                          type="button"
-                          key={pax.paxId}
-                          onClick={() => onToggleServiceForPax(service.serviceId, pax.paxId)}
-                          className={cn(
-                            'px-3 py-2.5 rounded-md text-sm font-medium transition-all border min-w-0',
-                            isSelected
-                              ? cn(colors.selectedBg, 'text-white', colors.selectedBorder)
-                              : cn('bg-white text-neutral-700 border-neutral-300', colors.hoverBorder)
-                          )}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className={cn(
-                              'w-4 h-4 rounded border flex items-center justify-center shrink-0',
-                              isSelected ? 'border-white bg-white' : 'border-neutral-400'
-                            )}>
-                              {isSelected && <Check className={cn("w-3 h-3", colors.priceText)} strokeWidth={2.5} />}
-                            </div>
-                            <span className="truncate text-left flex-1">{pax.displayLabel}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
+                    {eligiblePax.map(renderPassengerChip)}
                   </div>
                 );
               }
@@ -3468,110 +3682,38 @@ function CompactServiceSection({
                   {/* Adults */}
                   {adults.length > 0 && (
                     <div>
-                      {adults.length > 1 && (
-                        <div className="text-xs font-medium text-neutral-500 mb-1.5 px-1">Adults</div>
+                      {(adults.length > 1 || children.length > 0 || infants.length > 0) && (
+                        <div className="flex items-center gap-2 mb-2 px-1">
+                          <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Adults</span>
+                          <div className="flex-1 h-px bg-neutral-200" />
+                        </div>
                       )}
                       <div className="grid grid-cols-2 gap-2">
-                        {adults.map((pax) => {
-                          const isSelected = selectedPaxIds.has(pax.paxId);
-                          return (
-                            <button
-                              type="button"
-                              key={pax.paxId}
-                              onClick={() => onToggleServiceForPax(service.serviceId, pax.paxId)}
-                              className={cn(
-                                'px-3 py-2.5 rounded-md text-sm font-medium transition-all border min-w-0',
-                                isSelected
-                                  ? cn(colors.selectedBg, 'text-white', colors.selectedBorder)
-                                  : cn('bg-white text-neutral-700 border-neutral-300', colors.hoverBorder)
-                              )}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className={cn(
-                                  'w-4 h-4 rounded border flex items-center justify-center shrink-0',
-                                  isSelected ? 'border-white bg-white' : 'border-neutral-400'
-                                )}>
-                                  {isSelected && <Check className={cn("w-3 h-3", colors.priceText)} strokeWidth={2.5} />}
-                                </div>
-                                <span className="truncate text-left flex-1">{pax.displayLabel}</span>
-                              </div>
-                            </button>
-                          );
-                        })}
+                        {adults.map(renderPassengerChip)}
                       </div>
                     </div>
                   )}
-
                   {/* Children */}
                   {children.length > 0 && (
-                    <div>
-                      {children.length > 1 && (
-                        <div className="text-xs font-medium text-neutral-500 mb-1.5 px-1">Children</div>
-                      )}
+                    <div className="mt-3">
+                      <div className="flex items-center gap-2 mb-2 px-1">
+                        <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Children</span>
+                        <div className="flex-1 h-px bg-neutral-200" />
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
-                        {children.map((pax) => {
-                          const isSelected = selectedPaxIds.has(pax.paxId);
-                          return (
-                            <button
-                              type="button"
-                              key={pax.paxId}
-                              onClick={() => onToggleServiceForPax(service.serviceId, pax.paxId)}
-                              className={cn(
-                                'px-3 py-2.5 rounded-md text-sm font-medium transition-all border min-w-0',
-                                isSelected
-                                  ? cn(colors.selectedBg, 'text-white', colors.selectedBorder)
-                                  : cn('bg-white text-neutral-700 border-neutral-300', colors.hoverBorder)
-                              )}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className={cn(
-                                  'w-4 h-4 rounded border flex items-center justify-center shrink-0',
-                                  isSelected ? 'border-white bg-white' : 'border-neutral-400'
-                                )}>
-                                  {isSelected && <Check className={cn("w-3 h-3", colors.priceText)} strokeWidth={2.5} />}
-                                </div>
-                                <span className="truncate text-left flex-1">{pax.displayLabel}</span>
-                              </div>
-                            </button>
-                          );
-                        })}
+                        {children.map(renderPassengerChip)}
                       </div>
                     </div>
                   )}
-
                   {/* Infants */}
                   {infants.length > 0 && (
-                    <div>
-                      {infants.length > 1 && (
-                        <div className="text-xs font-medium text-neutral-500 mb-1.5 px-1">Infants</div>
-                      )}
+                    <div className="mt-3">
+                      <div className="flex items-center gap-2 mb-2 px-1">
+                        <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Infants</span>
+                        <div className="flex-1 h-px bg-neutral-200" />
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
-                        {infants.map((pax) => {
-                          const isSelected = selectedPaxIds.has(pax.paxId);
-                          return (
-                            <button
-                              type="button"
-                              key={pax.paxId}
-                              onClick={() => onToggleServiceForPax(service.serviceId, pax.paxId)}
-                              className={cn(
-                                'px-3 py-2.5 rounded-md text-sm font-medium transition-all border min-w-0',
-                                isSelected
-                                  ? cn(colors.selectedBg, 'text-white', colors.selectedBorder)
-                                  : cn('bg-white text-neutral-700 border-neutral-300', colors.hoverBorder)
-                              )}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className={cn(
-                                  'w-4 h-4 rounded border flex items-center justify-center shrink-0',
-                                  isSelected ? 'border-white bg-white' : 'border-neutral-400'
-                                )}>
-                                  {isSelected && <Check className={cn("w-3 h-3", colors.priceText)} strokeWidth={2.5} />}
-                                </div>
-                                <span className="truncate text-left flex-1">{pax.displayLabel}</span>
-                              </div>
-                            </button>
-                          );
-                        })}
+                        {infants.map(renderPassengerChip)}
                       </div>
                     </div>
                   )}
@@ -3580,17 +3722,27 @@ function CompactServiceSection({
             })()}
           </div>
 
-          {/* Show selected count */}
-          {selectedPaxIds.size > 0 && (
-            <div className={cn("mt-2 text-xs font-medium", colors.countText)}>
-              Selected for {selectedPaxIds.size} passenger{selectedPaxIds.size > 1 ? 's' : ''}
-              {service.price > 0 && (
-                <span className="ml-2 text-neutral-600">
-                  Total: {formatCurrency(service.price * selectedPaxIds.size, service.currency)}
-                </span>
-              )}
+          {/* Selection summary - Modern card */}
+          {selectedPaxIds.size > 0 && service.price > 0 && (
+            <div className={cn(
+              "mt-4 p-3 rounded-xl",
+              "bg-gradient-to-r from-neutral-50 to-neutral-100/50",
+              "border border-neutral-200"
+            )}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Check className={cn("w-4 h-4", colors.priceText)} />
+                  <span className="text-sm text-neutral-600">
+                    {selectedPaxIds.size} passenger{selectedPaxIds.size > 1 ? 's' : ''} selected
+                  </span>
+                </div>
+                <div className={cn("text-base font-bold", colors.priceText)}>
+                  {formatCurrency(service.price * selectedPaxIds.size, service.currency)}
+                </div>
+              </div>
             </div>
           )}
+          </div>
         </div>
       </div>
     );
@@ -3617,7 +3769,7 @@ function CompactServiceSection({
                   <Plane className={cn("w-4 h-4", colors.iconColor)} />
                   <div className="font-semibold text-sm text-neutral-900">{outboundFlightLabel}</div>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {outboundServices.map(renderServiceCard)}
                 </div>
               </div>
@@ -3630,7 +3782,7 @@ function CompactServiceSection({
                   <Plane className={cn("w-4 h-4 rotate-180", colors.iconColor)} />
                   <div className="font-semibold text-sm text-neutral-900">{inboundFlightLabel}</div>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {inboundServices.map(renderServiceCard)}
                 </div>
               </div>
@@ -3638,7 +3790,7 @@ function CompactServiceSection({
           </div>
         ) : (
           // One-way or services for both directions
-          <div className="space-y-3">
+          <div className="space-y-4">
             {services.map(renderServiceCard)}
           </div>
         )}
@@ -3647,7 +3799,7 @@ function CompactServiceSection({
         {bothServices.length > 0 && showGrouped && (
           <div className="mt-6 pt-6 border-t border-neutral-200">
             <div className="font-semibold text-sm text-neutral-700 mb-3">Available for both flights</div>
-            <div className="space-y-3">
+            <div className="space-y-4">
               {bothServices.map(renderServiceCard)}
             </div>
           </div>
