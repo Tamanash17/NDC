@@ -1680,46 +1680,124 @@ function parseBookingData(raw: any): ParsedBooking {
     };
   });
 
+  // Parse service definitions for better name/code mapping
+  const serviceDefList = normalizeToArray(dataLists?.ServiceDefinitionList?.ServiceDefinition);
+  const serviceDefMap = new Map<string, { code: string; name: string; description?: string }>();
+  serviceDefList.forEach((sd: any) => {
+    const descriptions = normalizeToArray(sd.Desc);
+    const descText = descriptions.find((d: any) => d.DescText && !d.MarkupStyleText)?.DescText || '';
+    serviceDefMap.set(sd.ServiceDefinitionID, {
+      code: sd.ServiceCode || sd.ServiceDefinitionID,
+      name: sd.Name || descText || sd.ServiceDefinitionID,
+      description: descText,
+    });
+  });
+
+  console.log('[parseBookingData] ServiceDefinitions:', serviceDefMap);
+
   // Parse order items
   const orderItems = normalizeToArray(order?.OrderItem);
+  console.log('[parseBookingData] Found OrderItems:', orderItems.length);
 
   const services: ServiceInfo[] = orderItems.map((item: any) => {
     const itemId = item.OrderItemID || '';
     const price = item.Price || {};
 
-    // Determine type and name
-    let type = 'OTHER';
-    let name = itemId;
-    let code = '';
-
-    if (itemId.includes('FLIGHT')) {
-      type = 'FLIGHT';
-      const fareComp = item.FareDetail?.FareComponent;
-      name = `Flight - ${fareComp?.FareBasisCode || 'Base Fare'}`;
-      code = fareComp?.FareBasisCode;
-    } else if (itemId.includes('P200') || itemId.includes('BNDL')) {
-      type = 'BUNDLE';
-      name = 'Starter Plus Bundle';
-      code = 'P200';
-    } else if (itemId.includes('BAG') || itemId.includes('BG')) {
-      type = 'BAGGAGE';
-      name = 'Checked Baggage';
-    } else if (itemId.includes('SEAT')) {
-      type = 'SEAT';
-      name = 'Seat Selection';
-    } else if (itemId.includes('MEAL')) {
-      type = 'MEAL';
-      name = 'Meal';
-    }
-
     // Get service info from nested Service elements
     const itemServices = normalizeToArray(item.Service);
-    const paxIds = [...new Set(itemServices.map((s: any) => s.PaxRefID).filter(Boolean))];
-    const segmentIds = [...new Set(itemServices.flatMap((s: any) => {
-      const segRef = s.OrderServiceAssociation?.PaxSegmentRef?.PaxSegmentRefID ||
-                     s.OrderServiceAssociation?.ServiceDefinitionRef?.OrderFlightAssociations?.PaxSegmentRef?.PaxSegmentRefID;
-      return segRef ? [segRef] : [];
-    }))];
+
+    // Extract paxIds and segmentIds from all possible paths
+    const paxIds: string[] = [];
+    const segmentIds: string[] = [];
+    let serviceDefId: string | null = null;
+
+    itemServices.forEach((svc: any) => {
+      // Get PaxRefID
+      if (svc.PaxRefID) paxIds.push(svc.PaxRefID);
+
+      // Get segment refs from multiple possible paths
+      const assoc = svc.OrderServiceAssociation;
+      if (assoc) {
+        // Direct PaxSegmentRef (for FLIGHT items)
+        const directSegRef = assoc.PaxSegmentRef?.PaxSegmentRefID;
+        if (directSegRef) segmentIds.push(directSegRef);
+
+        // Through ServiceDefinitionRef -> OrderFlightAssociations (for ancillary services)
+        const svcDefRef = assoc.ServiceDefinitionRef;
+        if (svcDefRef) {
+          // Get segment from OrderFlightAssociations
+          const flightAssoc = svcDefRef.OrderFlightAssociations;
+          if (flightAssoc) {
+            const segRef = flightAssoc.PaxSegmentRef?.PaxSegmentRefID;
+            if (segRef) segmentIds.push(segRef);
+          }
+          // Get ServiceDefinitionRefID
+          if (svcDefRef.ServiceDefinitionRefID) {
+            serviceDefId = svcDefRef.ServiceDefinitionRefID;
+          }
+        }
+      }
+    });
+
+    // Determine type and name from service definition or itemId
+    let type = 'OTHER';
+    let name = '';
+    let code = '';
+
+    // Get info from service definition if available
+    if (serviceDefId && serviceDefMap.has(serviceDefId)) {
+      const svcDef = serviceDefMap.get(serviceDefId)!;
+      code = svcDef.code;
+      name = svcDef.name;
+    }
+
+    // Determine type from itemId, code, or FareDetail presence
+    const typeKey = (itemId + code).toUpperCase();
+
+    if (item.FareDetail) {
+      // This is a FLIGHT item
+      type = 'FLIGHT';
+      const fareComp = item.FareDetail?.FareComponent;
+      const fareBasis = fareComp?.FareBasisCode || '';
+      const priceClass = fareComp?.PriceClassRefID;
+      name = `Flight - ${fareBasis}`;
+      code = fareBasis;
+    } else if (typeKey.includes('P200') || typeKey.includes('STARTER PLUS') || typeKey.includes('STPL')) {
+      type = 'BUNDLE';
+      if (!name) name = 'Starter Plus Bundle';
+      if (!code) code = 'P200';
+    } else if (typeKey.includes('S050') || typeKey.includes('STARTER')) {
+      type = 'BUNDLE';
+      if (!name) name = 'Starter Bundle';
+      if (!code) code = 'S050';
+    } else if (typeKey.includes('M202') || typeKey.includes('MAX')) {
+      type = 'BUNDLE';
+      if (!name) name = 'Max Bundle';
+      if (!code) code = 'M202';
+    } else if (typeKey.includes('BG') || typeKey.includes('BAG')) {
+      type = 'BAGGAGE';
+      if (!name) name = 'Checked Baggage';
+    } else if (typeKey.includes('SEAT') || typeKey.includes('STD') || typeKey.includes('UPF') || typeKey.includes('EXS') || typeKey.includes('FXS')) {
+      type = 'SEAT';
+      if (!name) name = 'Seat Selection';
+    } else if (typeKey.includes('MEAL') || typeKey.includes('ML0') || typeKey.includes('FOOD')) {
+      type = 'MEAL';
+      if (!name) name = 'Meal';
+    } else if (typeKey.includes('V10') || typeKey.includes('VOUCHER')) {
+      type = 'ANCILLARY';
+      if (!name) name = 'Inflight Voucher';
+    } else if (typeKey.includes('FS2') || typeKey.includes('FIRST SERVICE')) {
+      type = 'ANCILLARY';
+      if (!name) name = 'First Service';
+    }
+
+    // Fallback name
+    if (!name) name = itemId;
+
+    const uniquePaxIds = [...new Set(paxIds.filter(Boolean))];
+    const uniqueSegmentIds = [...new Set(segmentIds.filter(Boolean))];
+
+    console.log('[parseBookingData] OrderItem:', itemId, '| Type:', type, '| Name:', name, '| Code:', code, '| Pax:', uniquePaxIds, '| Segments:', uniqueSegmentIds);
 
     return {
       orderItemId: itemId,
@@ -1731,8 +1809,8 @@ function parseBookingData(raw: any): ParsedBooking {
         currency: price.TotalAmount?.['@CurCode'] || 'AUD',
       },
       status: item.StatusCode || 'ACTIVE',
-      paxIds,
-      segmentIds,
+      paxIds: uniquePaxIds,
+      segmentIds: uniqueSegmentIds,
     };
   });
 
