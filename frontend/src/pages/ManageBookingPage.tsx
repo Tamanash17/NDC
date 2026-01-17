@@ -1570,10 +1570,23 @@ function CopyableBadge({ label, value, small = false }: { label: string; value: 
 // ============================================================================
 
 function parseBookingData(raw: any): ParsedBooking {
-  const dataLists = raw?.DataLists || raw?.Response?.DataLists || {};
-  const order = raw?.Response?.Order || raw?.Order || raw?.order || {};
-  const paymentFunctions = raw?.Response?.PaymentFunctions || raw?.PaymentFunctions || {};
-  const payloadAttributes = raw?.PayloadAttributes || raw?.Response?.PayloadAttributes || {};
+  console.log('[parseBookingData] Raw input keys:', Object.keys(raw || {}));
+  console.log('[parseBookingData] Raw.Response keys:', Object.keys(raw?.Response || {}));
+
+  // Try multiple possible paths for data extraction
+  const dataLists = raw?.DataLists || raw?.Response?.DataLists ||
+                    raw?.IATA_OrderViewRS?.Response?.DataLists || {};
+  const order = raw?.Response?.Order || raw?.Order || raw?.order ||
+                raw?.IATA_OrderViewRS?.Response?.Order || {};
+  const paymentFunctions = raw?.Response?.PaymentFunctions || raw?.PaymentFunctions ||
+                           raw?.IATA_OrderViewRS?.PaymentFunctions || {};
+  const payloadAttributes = raw?.PayloadAttributes || raw?.Response?.PayloadAttributes ||
+                            raw?.IATA_OrderViewRS?.PayloadAttributes || {};
+
+  console.log('[parseBookingData] Order keys:', Object.keys(order || {}));
+  console.log('[parseBookingData] Order.OrderID:', order?.OrderID);
+  console.log('[parseBookingData] Order.TotalPrice:', order?.TotalPrice);
+  console.log('[parseBookingData] PaymentFunctions keys:', Object.keys(paymentFunctions || {}));
 
   // Parse passengers
   const paxList = normalizeToArray(dataLists?.PaxList?.Pax);
