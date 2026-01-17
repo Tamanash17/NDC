@@ -62,6 +62,10 @@ import {
   Users,
   Calendar,
   Info,
+  ChevronDown,
+  ChevronUp,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 // Payment method types
@@ -92,6 +96,18 @@ interface AgencyPaymentForm {
 interface IFGPaymentForm {
   selectedParticipant: 'seller' | 'distributor';  // Which participant to use for IATA_Number
   referenceNumber: string;
+}
+
+// Passive segment entry for Long Sell CC fee calculation
+interface PassiveSegment {
+  id: string;
+  origin: string;
+  destination: string;
+  departureDate: string;  // YYYY-MM-DD format
+  departureTime: string;  // HH:MM format
+  carrierCode: string;
+  flightNumber: string;
+  cabinCode: string;
 }
 
 export function PaymentPage() {
@@ -145,6 +161,22 @@ export function PaymentPage() {
     referenceNumber: '',
   });
 
+  // Passive segment state for manual CC fee calculation
+  const [usePassiveSegments, setUsePassiveSegments] = useState(false);
+  const [passiveSegmentsExpanded, setPassiveSegmentsExpanded] = useState(false);
+  const [passiveSegments, setPassiveSegments] = useState<PassiveSegment[]>([
+    {
+      id: crypto.randomUUID(),
+      origin: '',
+      destination: '',
+      departureDate: '',
+      departureTime: '',
+      carrierCode: 'JQ',
+      flightNumber: '',
+      cabinCode: '5',
+    },
+  ]);
+
   // Check if this is a BOB booking (has distributor in distribution chain)
   const isBOBBooking = distributionContext.isValid &&
     (distributionContext.getPartyConfig()?.participants?.length || 0) > 1;
@@ -153,28 +185,101 @@ export function PaymentPage() {
   const sellerInfo = distributionContext.seller;
   const distributorInfo = distributionContext.getPartyConfig()?.participants?.find(p => p.role === 'Distributor');
 
-  // Fetch CC fees on page load using Long Sell
-  useEffect(() => {
-    const fetchCCFees = async () => {
-      // Build segments and journeys from flight selection
-      const selection = flightStore.selection;
-      const searchCriteria = flightStore.searchCriteria;
+  // Passive segment helpers
+  const addPassiveSegment = () => {
+    setPassiveSegments(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        origin: '',
+        destination: '',
+        departureDate: '',
+        departureTime: '',
+        carrierCode: 'JQ',
+        flightNumber: '',
+        cabinCode: '5',
+      },
+    ]);
+  };
 
-      if (!selection.outbound) {
-        console.log('[PaymentPage] No flight selection, skipping CC fee fetch');
-        setCCFeesError('No flight selection available');
+  const removePassiveSegment = (id: string) => {
+    setPassiveSegments(prev => prev.filter(seg => seg.id !== id));
+  };
+
+  const updatePassiveSegment = (id: string, field: keyof PassiveSegment, value: string) => {
+    setPassiveSegments(prev =>
+      prev.map(seg => (seg.id === id ? { ...seg, [field]: value.toUpperCase() } : seg))
+    );
+  };
+
+  const isPassiveSegmentValid = (seg: PassiveSegment): boolean => {
+    return (
+      seg.origin.length === 3 &&
+      seg.destination.length === 3 &&
+      seg.departureDate.length === 10 &&
+      seg.departureTime.length === 5 &&
+      seg.carrierCode.length >= 2 &&
+      seg.flightNumber.length >= 1
+    );
+  };
+
+  const areAllPassiveSegmentsValid = (): boolean => {
+    return passiveSegments.length > 0 && passiveSegments.every(isPassiveSegmentValid);
+  };
+
+  // Fetch CC fees using Long Sell (from flight selection or passive segments)
+  const fetchCCFeesNow = async () => {
+    const selection = flightStore.selection;
+    const searchCriteria = flightStore.searchCriteria;
+
+    // If using passive segments, validate them first
+    if (usePassiveSegments) {
+      if (!areAllPassiveSegmentsValid()) {
+        console.log('[PaymentPage] Passive segments not valid, skipping CC fee fetch');
+        setCCFeesError('Please fill in all passive segment fields');
         return;
       }
+    } else if (!selection.outbound) {
+      console.log('[PaymentPage] No flight selection, skipping CC fee fetch');
+      setCCFeesError('No flight selection available');
+      return;
+    }
 
-      setIsLoadingCCFees(true);
-      setCCFeesError(null);
+    setIsLoadingCCFees(true);
+    setCCFeesError(null);
 
-      try {
-        // Build segments from journey data
-        const segments: LongSellSegment[] = [];
-        const journeys: LongSellJourney[] = [];
+    try {
+      const segments: LongSellSegment[] = [];
+      const journeys: LongSellJourney[] = [];
 
-        // Get year from search criteria for date parsing
+      if (usePassiveSegments) {
+        // Build from passive segments entered by user
+        const segmentIds: string[] = [];
+        passiveSegments.forEach((seg, idx) => {
+          const segmentId = `seg-passive-${idx}`;
+          segmentIds.push(segmentId);
+          segments.push({
+            segmentId,
+            origin: seg.origin,
+            destination: seg.destination,
+            departureDateTime: `${seg.departureDate}T${seg.departureTime}:00`,
+            carrierCode: seg.carrierCode,
+            flightNumber: seg.flightNumber,
+            cabinCode: seg.cabinCode,
+          });
+        });
+
+        // Create a single journey covering all passive segments
+        if (segments.length > 0) {
+          journeys.push({
+            journeyId: 'journey-passive',
+            origin: segments[0].origin,
+            destination: segments[segments.length - 1].destination,
+            segmentIds,
+          });
+        }
+      } else {
+        // Build segments from flight selection (original logic)
         const outboundYear = searchCriteria?.departureDate ? new Date(searchCriteria.departureDate).getFullYear() : new Date().getFullYear();
         const inboundYear = searchCriteria?.returnDate ? new Date(searchCriteria.returnDate).getFullYear() : outboundYear;
 
@@ -233,57 +338,65 @@ export function PaymentPage() {
             segmentIds: inboundSegmentIds,
           });
         }
-
-        // Build passengers from search criteria
-        const passengers: LongSellPassenger[] = [];
-        const pax = searchCriteria?.passengers || { adults: 1, children: 0, infants: 0 };
-
-        for (let i = 0; i < pax.adults; i++) {
-          passengers.push({ paxId: `ADT${i}`, ptc: 'ADT' });
-        }
-        for (let i = 0; i < pax.children; i++) {
-          passengers.push({ paxId: `CHD${i}`, ptc: 'CHD' });
-        }
-        for (let i = 0; i < pax.infants; i++) {
-          passengers.push({ paxId: `INF${i}`, ptc: 'INF' });
-        }
-
-        console.log('[PaymentPage] Fetching CC fees with:', { segments, journeys, passengers });
-
-        const fees = await fetchAllCCFees(segments, journeys, passengers, currency);
-        setCCFees(fees);
-
-        console.log('[PaymentPage] CC fees fetched:', fees);
-
-        // Log only Visa (VI) Long Sell request/response for debugging
-        // We only log one card brand to avoid cluttering the console
-        // VI (Visa) is chosen as the primary reference since it's most commonly used
-        const visaFee = fees.find(f => f.cardBrand === 'VI');
-        if (visaFee) {
-          console.log('[PaymentPage] === VISA (VI) LONG SELL DEBUG ===');
-          console.log('[PaymentPage] Surcharge Amount:', visaFee.ccSurcharge);
-          console.log('[PaymentPage] Surcharge Type:', visaFee.surchargeType);
-          if (visaFee.requestXml) {
-            console.log('[PaymentPage] Request XML:', visaFee.requestXml);
-          }
-          if (visaFee.rawResponse) {
-            console.log('[PaymentPage] Response XML:', visaFee.rawResponse);
-          }
-          if (visaFee.error) {
-            console.log('[PaymentPage] Error:', visaFee.error);
-          }
-          console.log('[PaymentPage] === END VISA DEBUG ===');
-        }
-      } catch (err: any) {
-        console.error('[PaymentPage] Error fetching CC fees:', err);
-        setCCFeesError(err.message || 'Failed to fetch CC fees');
-      } finally {
-        setIsLoadingCCFees(false);
       }
-    };
 
-    fetchCCFees();
-  }, [flightStore.selection, flightStore.searchCriteria, currency]);
+      // Build passengers from search criteria (default to 1 adult)
+      const passengers: LongSellPassenger[] = [];
+      const pax = searchCriteria?.passengers || { adults: 1, children: 0, infants: 0 };
+
+      for (let i = 0; i < pax.adults; i++) {
+        passengers.push({ paxId: `ADT${i}`, ptc: 'ADT' });
+      }
+      for (let i = 0; i < pax.children; i++) {
+        passengers.push({ paxId: `CHD${i}`, ptc: 'CHD' });
+      }
+      for (let i = 0; i < pax.infants; i++) {
+        passengers.push({ paxId: `INF${i}`, ptc: 'INF' });
+      }
+
+      // Ensure at least 1 passenger
+      if (passengers.length === 0) {
+        passengers.push({ paxId: 'ADT0', ptc: 'ADT' });
+      }
+
+      console.log('[PaymentPage] Fetching CC fees with:', { segments, journeys, passengers, usePassiveSegments });
+
+      const fees = await fetchAllCCFees(segments, journeys, passengers, currency);
+      setCCFees(fees);
+
+      console.log('[PaymentPage] CC fees fetched:', fees);
+
+      // Log only Visa (VI) Long Sell request/response for debugging
+      const visaFee = fees.find(f => f.cardBrand === 'VI');
+      if (visaFee) {
+        console.log('[PaymentPage] === VISA (VI) LONG SELL DEBUG ===');
+        console.log('[PaymentPage] Surcharge Amount:', visaFee.ccSurcharge);
+        console.log('[PaymentPage] Surcharge Type:', visaFee.surchargeType);
+        if (visaFee.requestXml) {
+          console.log('[PaymentPage] Request XML:', visaFee.requestXml);
+        }
+        if (visaFee.rawResponse) {
+          console.log('[PaymentPage] Response XML:', visaFee.rawResponse);
+        }
+        if (visaFee.error) {
+          console.log('[PaymentPage] Error:', visaFee.error);
+        }
+        console.log('[PaymentPage] === END VISA DEBUG ===');
+      }
+    } catch (err: any) {
+      console.error('[PaymentPage] Error fetching CC fees:', err);
+      setCCFeesError(err.message || 'Failed to fetch CC fees');
+    } finally {
+      setIsLoadingCCFees(false);
+    }
+  };
+
+  // Auto-fetch CC fees on page load (only if not using passive segments)
+  useEffect(() => {
+    if (!usePassiveSegments) {
+      fetchCCFeesNow();
+    }
+  }, [flightStore.selection, flightStore.searchCriteria, currency, usePassiveSegments]);
 
   // Get CC fee for currently detected card brand
   const getCurrentCardFee = (): CCFeeResult | null => {
@@ -841,6 +954,193 @@ export function PaymentPage() {
                         maxLength={4}
                       />
                     </div>
+                  </div>
+
+                  {/* Passive Segment Entry for Long Sell */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    {/* Collapsible Header */}
+                    <button
+                      type="button"
+                      onClick={() => setPassiveSegmentsExpanded(!passiveSegmentsExpanded)}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={usePassiveSegments}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setUsePassiveSegments(e.target.checked);
+                            if (e.target.checked) {
+                              setPassiveSegmentsExpanded(true);
+                              setCCFees([]); // Clear existing fees
+                            }
+                          }}
+                          className="w-4 h-4 text-orange-500 border-slate-300 rounded focus:ring-orange-500"
+                        />
+                        <span className="font-semibold text-slate-700">Use Passive Segments for CC Fees</span>
+                      </div>
+                      {passiveSegmentsExpanded ? (
+                        <ChevronUp className="w-5 h-5 text-slate-400" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-slate-400" />
+                      )}
+                    </button>
+
+                    {/* Collapsible Content */}
+                    {passiveSegmentsExpanded && (
+                      <div className="p-4 space-y-4 bg-white">
+                        <p className="text-xs text-slate-500">
+                          Enter flight segment details to calculate CC surcharges via Long Sell API.
+                        </p>
+
+                        {/* Segment Rows */}
+                        {passiveSegments.map((seg, idx) => (
+                          <div key={seg.id} className="relative border border-slate-200 rounded-lg p-3 bg-slate-50">
+                            {/* Row Header */}
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-xs font-semibold text-slate-500 uppercase">Segment {idx + 1}</span>
+                              {passiveSegments.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removePassiveSegment(seg.id)}
+                                  className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                  title="Remove segment"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Row 1: Origin, Destination, Date, Time */}
+                            <div className="grid grid-cols-4 gap-2 mb-2">
+                              <div>
+                                <label className="block text-[10px] font-medium text-slate-500 mb-1">Origin</label>
+                                <input
+                                  type="text"
+                                  value={seg.origin}
+                                  onChange={(e) => updatePassiveSegment(seg.id, 'origin', e.target.value.slice(0, 3))}
+                                  placeholder="MEL"
+                                  maxLength={3}
+                                  className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 font-mono uppercase"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-slate-500 mb-1">Destination</label>
+                                <input
+                                  type="text"
+                                  value={seg.destination}
+                                  onChange={(e) => updatePassiveSegment(seg.id, 'destination', e.target.value.slice(0, 3))}
+                                  placeholder="SYD"
+                                  maxLength={3}
+                                  className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 font-mono uppercase"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-slate-500 mb-1">Date</label>
+                                <input
+                                  type="date"
+                                  value={seg.departureDate}
+                                  onChange={(e) => updatePassiveSegment(seg.id, 'departureDate', e.target.value)}
+                                  className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-slate-500 mb-1">Time</label>
+                                <input
+                                  type="time"
+                                  value={seg.departureTime}
+                                  onChange={(e) => updatePassiveSegment(seg.id, 'departureTime', e.target.value)}
+                                  className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Row 2: Carrier, Flight Number, Cabin */}
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <label className="block text-[10px] font-medium text-slate-500 mb-1">Carrier</label>
+                                <input
+                                  type="text"
+                                  value={seg.carrierCode}
+                                  onChange={(e) => updatePassiveSegment(seg.id, 'carrierCode', e.target.value.slice(0, 2))}
+                                  placeholder="JQ"
+                                  maxLength={2}
+                                  className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 font-mono uppercase"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-slate-500 mb-1">Flight #</label>
+                                <input
+                                  type="text"
+                                  value={seg.flightNumber}
+                                  onChange={(e) => updatePassiveSegment(seg.id, 'flightNumber', e.target.value.replace(/\D/g, '').slice(0, 4))}
+                                  placeholder="123"
+                                  maxLength={4}
+                                  className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 font-mono"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-slate-500 mb-1">Cabin</label>
+                                <select
+                                  value={seg.cabinCode}
+                                  onChange={(e) => updatePassiveSegment(seg.id, 'cabinCode', e.target.value)}
+                                  className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
+                                >
+                                  <option value="5">Economy (5)</option>
+                                  <option value="4">Prem Econ (4)</option>
+                                  <option value="3">Business (3)</option>
+                                  <option value="2">First (2)</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Validation indicator */}
+                            {isPassiveSegmentValid(seg) ? (
+                              <div className="absolute top-3 right-10 text-emerald-500">
+                                <CheckCircle className="w-4 h-4" />
+                              </div>
+                            ) : (
+                              <div className="absolute top-3 right-10 text-amber-400">
+                                <AlertCircle className="w-4 h-4" />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* Add Segment Button */}
+                        <button
+                          type="button"
+                          onClick={addPassiveSegment}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:border-orange-400 hover:text-orange-600 transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span className="text-sm font-medium">Add Segment</span>
+                        </button>
+
+                        {/* Fetch Fees Button */}
+                        {usePassiveSegments && (
+                          <button
+                            type="button"
+                            onClick={fetchCCFeesNow}
+                            disabled={!areAllPassiveSegmentsValid() || isLoadingCCFees}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded-lg transition-colors"
+                          >
+                            {isLoadingCCFees ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Fetching Fees...
+                              </>
+                            ) : (
+                              <>
+                                <CreditCard className="w-4 h-4" />
+                                Fetch CC Surcharges
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* CC Surcharge Display */}
