@@ -135,6 +135,7 @@ export function PaymentPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false); // Prevent duplicate submissions
   const [error, setError] = useState<string | null>(null);
+  const [errorWarnings, setErrorWarnings] = useState<string[]>([]); // Separate warnings for detailed display
   const [success, setSuccess] = useState(false);
   const [paymentResult, setPaymentResult] = useState<any>(null);
 
@@ -492,6 +493,7 @@ export function PaymentPage() {
     setIsProcessing(true);
     setHasSubmitted(true); // Mark as submitted to prevent duplicates
     setError(null);
+    setErrorWarnings([]);
     const startTime = Date.now();
 
     try {
@@ -579,17 +581,28 @@ export function PaymentPage() {
 
       console.log('[PaymentPage] Payment successful:', response.data);
     } catch (err: any) {
-      // Backend returns { success: false, error: "Error message string" }
+      // Backend returns { success: false, error: "Error message string", warnings: string[] }
       // Log entire error response for debugging
       console.error('[PaymentPage] Full error object:', err);
       console.error('[PaymentPage] err.response:', err.response);
       console.error('[PaymentPage] err.response?.data:', err.response?.data);
 
-      let errorMessage =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        err.message ||
-        'Payment failed';
+      // Extract warnings array if present (for detailed display)
+      const warnings: string[] = err.response?.data?.warnings || [];
+      setErrorWarnings(warnings);
+
+      // Use first warning as main error message, or fall back to generic message
+      let errorMessage: string;
+      if (warnings.length > 0) {
+        // Use the first warning as the primary error message
+        errorMessage = warnings[0];
+      } else {
+        errorMessage =
+          err.response?.data?.error ||
+          err.response?.data?.message ||
+          err.message ||
+          'Payment failed';
+      }
 
       // If we still have generic message, try to get more details
       if (errorMessage === 'Request failed with status code 400' && err.response?.data) {
@@ -1381,9 +1394,23 @@ export function PaymentPage() {
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                 <div className="flex gap-3">
                   <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  <div>
+                  <div className="flex-1">
                     <p className="font-semibold text-red-900">Payment Failed</p>
-                    <p className="text-sm text-red-700">{error}</p>
+                    <p className="text-sm text-red-700 mt-1">{error}</p>
+                    {/* Show additional warnings if there are more than one */}
+                    {errorWarnings.length > 1 && (
+                      <div className="mt-3 pt-3 border-t border-red-200">
+                        <p className="text-xs font-medium text-red-800 mb-2">Additional Warnings:</p>
+                        <ul className="space-y-1">
+                          {errorWarnings.slice(1).map((warning, idx) => (
+                            <li key={idx} className="text-sm text-red-700 flex items-start gap-2">
+                              <span className="text-red-400 mt-0.5">•</span>
+                              <span>{warning}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

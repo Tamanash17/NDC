@@ -6,7 +6,7 @@ import { useXmlViewer } from '@/core/context/XmlViewerContext';
 import { useDistributionContext } from '@/core/context/SessionStore';
 import { orderCreate } from '@/lib/ndc-api';
 import { Card, Input, Select, Alert } from '@/components/ui';
-import { User, Mail, Phone, ArrowLeft, ChevronRight, Wand2, CreditCard, Plane, Loader2, CheckCircle, Wallet, Clock, Calendar, AlertTriangle, Search, FileText } from 'lucide-react';
+import { User, Mail, Phone, ArrowLeft, ChevronRight, Wand2, CreditCard, Plane, Loader2, CheckCircle, Wallet, Clock, Calendar, AlertTriangle, Search, FileText, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 import type { FlightSegment } from '@/components/flights';
 
@@ -123,6 +123,20 @@ interface ContactForm {
   postalAddress?: PostalAddress;
 }
 
+// Manual passive segment entry
+interface ManualPassiveSegment {
+  id: string;
+  origin: string;
+  destination: string;
+  departureDate: string;
+  departureTime: string;
+  arrivalTime: string;
+  flightNumber: string;
+  marketingCarrier: string;
+  operatingCarrier: string;
+  rbd: string;
+}
+
 const TITLES = [
   { value: 'MR', label: 'Mr' },
   { value: 'MRS', label: 'Mrs' },
@@ -221,108 +235,78 @@ export function PassengersStep() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [autoPopulate, setAutoPopulate] = useState(false);
   const [includePassiveSegments, setIncludePassiveSegments] = useState(false);
+  const [passiveSegmentsExpanded, setPassiveSegmentsExpanded] = useState(true);
+  const [manualPassiveSegments, setManualPassiveSegments] = useState<ManualPassiveSegment[]>([
+    {
+      id: crypto.randomUUID(),
+      origin: '',
+      destination: '',
+      departureDate: '',
+      departureTime: '',
+      arrivalTime: '',
+      flightNumber: '',
+      marketingCarrier: 'QF',
+      operatingCarrier: 'QF',
+      rbd: 'Y',
+    },
+  ]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [bookingResult, setBookingResult] = useState<any>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
 
   const { addCapture } = useXmlViewer();
 
+  // Passive segment helper functions
+  const addPassiveSegment = () => {
+    setManualPassiveSegments(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        origin: '',
+        destination: '',
+        departureDate: '',
+        departureTime: '',
+        arrivalTime: '',
+        flightNumber: '',
+        marketingCarrier: 'QF',
+        operatingCarrier: 'QF',
+        rbd: 'Y',
+      },
+    ]);
+  };
+
+  const removePassiveSegment = (id: string) => {
+    setManualPassiveSegments(prev => prev.filter(seg => seg.id !== id));
+  };
+
+  const updatePassiveSegment = (id: string, field: keyof ManualPassiveSegment, value: string) => {
+    setManualPassiveSegments(prev =>
+      prev.map(seg =>
+        seg.id === id ? { ...seg, [field]: value } : seg
+      )
+    );
+  };
+
   /**
-   * Build passive segments that are DIFFERENT from the sold flights but realistic
-   * Creates companion flights on DIFFERENT dates/times with different routes
-   * Passive segments represent separate bookings that need to be added to the PNR
+   * Build passive segments from manual user entry
+   * Converts manual segment entries to API format
    */
   const buildPassiveSegments = () => {
-    const segments: Array<{
-      segmentId: string;
-      origin: string;
-      destination: string;
-      departureDateTime: string;
-      arrivalDateTime: string;
-      flightNumber: string;
-      operatingCarrier: string;
-      marketingCarrier: string;
-      journeyId: string;
-      rbd: string;
-      direction: 'outbound' | 'inbound'; // For display purposes
-    }> = [];
-
-    // Common Australian domestic airports for realistic passive segments
-    const domesticHubs = ['MEL', 'SYD', 'BNE', 'PER', 'ADL', 'OOL', 'CNS', 'HBA'];
-
-    // Generate a realistic passive segment - completely different from sold flight
-    const createPassiveSegment = (
-      selection: FlightSelectionItem | null,
-      direction: 'outbound' | 'inbound',
-      segmentIndex: number
-    ) => {
-      if (!selection?.journey?.segments?.[0]) return null;
-
-      const soldSegment = selection.journey.segments[0];
-      const soldDate = new Date(`${soldSegment.departureDate}T00:00:00`);
-
-      // Find airports NOT in the sold route for a completely different trip
-      const usedAirports = [soldSegment.origin, soldSegment.destination];
-      const availableHubs = domesticHubs.filter(h => !usedAirports.includes(h));
-
-      // Pick two different airports for the passive segment route
-      const passiveOrigin = availableHubs[segmentIndex % availableHubs.length] || 'MEL';
-      const passiveDestIdx = (segmentIndex + 2) % availableHubs.length;
-      const passiveDest = availableHubs[passiveDestIdx] !== passiveOrigin
-        ? availableHubs[passiveDestIdx]
-        : availableHubs[(passiveDestIdx + 1) % availableHubs.length] || 'SYD';
-
-      // Passive segment is 1-2 days BEFORE the sold flight (realistic pre-trip positioning)
-      const passiveDate = new Date(soldDate);
-      passiveDate.setDate(soldDate.getDate() - (direction === 'outbound' ? 2 : 1));
-
-      // Set a completely different time (morning flight for passive)
-      const departureHour = 7 + segmentIndex * 2; // 07:00 or 09:00
-      passiveDate.setHours(departureHour, 30, 0, 0);
-
-      // Arrival is ~2 hours after departure (typical domestic flight)
-      const arrivalDate = new Date(passiveDate);
-      arrivalDate.setHours(passiveDate.getHours() + 2);
-      arrivalDate.setMinutes(15);
-
-      // Generate realistic QF flight number (100-999 range)
-      const flightNum = String(400 + (segmentIndex + 1) * 23);
-
-      const formatDT = (d: Date) => {
-        const pad = (n: number) => n.toString().padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
-      };
-
-      return {
-        segmentId: `passive-${direction}-${segmentIndex + 1}`,
-        origin: passiveOrigin,
-        destination: passiveDest,
-        departureDateTime: formatDT(passiveDate),
-        arrivalDateTime: formatDT(arrivalDate),
-        flightNumber: flightNum,
-        operatingCarrier: 'QF',
-        marketingCarrier: 'QF',
-        journeyId: `passive-journey-${direction}`,
-        rbd: 'Y', // Economy class
-        direction,
-      };
-    };
-
-    // Add passive segment for outbound journey
-    const outboundPassive = createPassiveSegment(flightStore.selection.outbound, 'outbound', 0);
-    if (outboundPassive) {
-      segments.push(outboundPassive);
-    }
-
-    // Add passive segment for inbound journey if round-trip
-    if (flightStore.isRoundTrip && flightStore.selection.inbound) {
-      const inboundPassive = createPassiveSegment(flightStore.selection.inbound, 'inbound', 1);
-      if (inboundPassive) {
-        segments.push(inboundPassive);
-      }
-    }
-
-    return segments;
+    // Filter out incomplete segments and convert to API format
+    return manualPassiveSegments
+      .filter(seg => seg.origin && seg.destination && seg.departureDate && seg.departureTime && seg.flightNumber)
+      .map((seg, index) => ({
+        segmentId: `passive-${index + 1}`,
+        origin: seg.origin.toUpperCase(),
+        destination: seg.destination.toUpperCase(),
+        departureDateTime: `${seg.departureDate}T${seg.departureTime}:00`,
+        arrivalDateTime: `${seg.departureDate}T${seg.arrivalTime || seg.departureTime}:00`,
+        flightNumber: seg.flightNumber,
+        operatingCarrier: seg.operatingCarrier || 'QF',
+        marketingCarrier: seg.marketingCarrier || 'QF',
+        journeyId: `passive-journey-${index + 1}`,
+        rbd: seg.rbd || 'Y',
+      }));
   };
 
   // Auto-populate passenger details from test data
@@ -878,92 +862,200 @@ export function PassengersStep() {
           <span className="text-sm text-amber-600 ml-auto">(For testing only)</span>
         </label>
 
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={includePassiveSegments}
-            onChange={(e) => setIncludePassiveSegments(e.target.checked)}
-            className="w-5 h-5 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
-          />
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-amber-600" />
-            <span className="font-medium text-amber-800">Include Passive Segments</span>
-          </div>
-          <span className="text-sm text-amber-600 ml-auto">(Auto-synced with selected flights)</span>
-        </label>
-
-        {/* Passive Segment Preview */}
-        {includePassiveSegments && (
-          <div className="mt-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center">
-                <Plane className="w-3.5 h-3.5 text-purple-600" />
+        {/* Passive Segments Collapsible Section */}
+        <div className="border-t border-amber-200 pt-3">
+          <button
+            type="button"
+            onClick={() => setIncludePassiveSegments(!includePassiveSegments)}
+            className="w-full flex items-center justify-between gap-3 cursor-pointer hover:bg-amber-100/50 rounded-lg px-2 py-1 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={includePassiveSegments}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  setIncludePassiveSegments(e.target.checked);
+                }}
+                className="w-5 h-5 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+              />
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-amber-600" />
+                <span className="font-medium text-amber-800">Include Passive Segments</span>
               </div>
-              <span className="font-semibold text-purple-800">Passive Segments to Add</span>
-              <span className="text-xs text-purple-500 ml-auto">(QF - Qantas)</span>
             </div>
-            {buildPassiveSegments().length > 0 ? (
-              <div className="space-y-2">
-                {buildPassiveSegments().map((seg) => {
-                  const isOutbound = seg.direction === 'outbound';
-                  const date = seg.departureDateTime.split('T')[0];
-                  const depTime = seg.departureDateTime.split('T')[1].slice(0, 5);
-                  const arrTime = seg.arrivalDateTime.split('T')[1].slice(0, 5);
-                  const formattedDate = new Date(date).toLocaleDateString('en-AU', {
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                  });
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-amber-600">{manualPassiveSegments.length} segment(s)</span>
+              {includePassiveSegments ? (
+                <ChevronUp className="w-5 h-5 text-amber-600" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-amber-600" />
+              )}
+            </div>
+          </button>
 
-                  return (
-                    <div
-                      key={seg.segmentId}
-                      className={`flex items-center gap-3 p-3 rounded-lg border ${
-                        isOutbound
-                          ? 'bg-blue-50 border-blue-200'
-                          : 'bg-green-50 border-green-200'
-                      }`}
-                    >
-                      {/* Direction Badge */}
-                      <div
-                        className={`px-2 py-1 rounded-md text-xs font-bold uppercase ${
-                          isOutbound
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-green-100 text-green-700'
-                        }`}
-                      >
-                        {isOutbound ? 'Outbound' : 'Return'}
+          {/* Passive Segment Entry Form */}
+          {includePassiveSegments && (
+            <div className="mt-3 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center">
+                    <Plane className="w-3.5 h-3.5 text-purple-600" />
+                  </div>
+                  <span className="font-semibold text-purple-800">Passive Segments</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={addPassiveSegment}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Segment
+                </button>
+              </div>
+
+              {/* Segment Rows */}
+              <div className="space-y-4">
+                {manualPassiveSegments.map((seg, index) => (
+                  <div key={seg.id} className="p-4 bg-white rounded-lg border border-purple-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-semibold text-purple-700">Segment {index + 1}</span>
+                      {manualPassiveSegments.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removePassiveSegment(seg.id)}
+                          className="flex items-center gap-1 px-2 py-1 text-red-600 hover:bg-red-50 rounded-md text-sm transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Remove
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Row 1: Route & Flight Number */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 mb-3">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Origin *</label>
+                        <input
+                          type="text"
+                          value={seg.origin}
+                          onChange={(e) => updatePassiveSegment(seg.id, 'origin', e.target.value.toUpperCase())}
+                          placeholder="SYD"
+                          maxLength={3}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 uppercase"
+                        />
                       </div>
-
-                      {/* Flight Info */}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`font-bold ${isOutbound ? 'text-blue-800' : 'text-green-800'}`}>
-                            {seg.marketingCarrier}{seg.flightNumber}
-                          </span>
-                          <span className={`text-sm ${isOutbound ? 'text-blue-600' : 'text-green-600'}`}>
-                            {seg.origin}
-                          </span>
-                          <span className={`${isOutbound ? 'text-blue-400' : 'text-green-400'}`}>→</span>
-                          <span className={`text-sm ${isOutbound ? 'text-blue-600' : 'text-green-600'}`}>
-                            {seg.destination}
-                          </span>
-                        </div>
-                        <div className={`text-xs mt-1 ${isOutbound ? 'text-blue-500' : 'text-green-500'}`}>
-                          {formattedDate} • {depTime} - {arrTime} • Class: {seg.rbd}
-                        </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Destination *</label>
+                        <input
+                          type="text"
+                          value={seg.destination}
+                          onChange={(e) => updatePassiveSegment(seg.id, 'destination', e.target.value.toUpperCase())}
+                          placeholder="MEL"
+                          maxLength={3}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 uppercase"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Marketing *</label>
+                        <input
+                          type="text"
+                          value={seg.marketingCarrier}
+                          onChange={(e) => updatePassiveSegment(seg.id, 'marketingCarrier', e.target.value.toUpperCase())}
+                          placeholder="QF"
+                          maxLength={2}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 uppercase"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Flight # *</label>
+                        <input
+                          type="text"
+                          value={seg.flightNumber}
+                          onChange={(e) => updatePassiveSegment(seg.id, 'flightNumber', e.target.value)}
+                          placeholder="423"
+                          maxLength={4}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Operating</label>
+                        <input
+                          type="text"
+                          value={seg.operatingCarrier}
+                          onChange={(e) => updatePassiveSegment(seg.id, 'operatingCarrier', e.target.value.toUpperCase())}
+                          placeholder="QF"
+                          maxLength={2}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 uppercase"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">RBD</label>
+                        <input
+                          type="text"
+                          value={seg.rbd}
+                          onChange={(e) => updatePassiveSegment(seg.id, 'rbd', e.target.value.toUpperCase())}
+                          placeholder="Y"
+                          maxLength={1}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 uppercase"
+                        />
                       </div>
                     </div>
-                  );
-                })}
+
+                    {/* Row 2: Date & Times */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Date *</label>
+                        <input
+                          type="date"
+                          value={seg.departureDate}
+                          onChange={(e) => updatePassiveSegment(seg.id, 'departureDate', e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Departure *</label>
+                        <input
+                          type="time"
+                          value={seg.departureTime}
+                          onChange={(e) => updatePassiveSegment(seg.id, 'departureTime', e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Arrival</label>
+                        <input
+                          type="time"
+                          value={seg.arrivalTime}
+                          onChange={(e) => updatePassiveSegment(seg.id, 'arrivalTime', e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <div className="text-center py-3 text-purple-500 text-sm italic">
-                Select flights first to generate passive segments
-              </div>
-            )}
-          </div>
-        )}
+
+              {/* Preview of valid segments */}
+              {buildPassiveSegments().length > 0 && (
+                <div className="mt-4 pt-4 border-t border-purple-200">
+                  <div className="text-xs font-medium text-purple-600 mb-2">Valid segments to be included:</div>
+                  <div className="flex flex-wrap gap-2">
+                    {buildPassiveSegments().map((seg) => (
+                      <div
+                        key={seg.segmentId}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium"
+                      >
+                        <span>{seg.marketingCarrier}{seg.flightNumber}</span>
+                        <span className="text-purple-500">{seg.origin}→{seg.destination}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </Card>
 
       {/* Passenger Forms */}

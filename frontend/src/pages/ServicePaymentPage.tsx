@@ -82,7 +82,9 @@ export function ServicePaymentPage() {
   // State
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('CC');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false); // Prevent duplicate submissions
   const [error, setError] = useState<string | null>(null);
+  const [errorWarnings, setErrorWarnings] = useState<string[]>([]); // Separate warnings for detailed display
   const [success, setSuccess] = useState(false);
   const [paymentResult, setPaymentResult] = useState<any>(null);
 
@@ -142,6 +144,8 @@ export function ServicePaymentPage() {
   };
 
   const canSubmit = (): boolean => {
+    // Prevent submission if already processing or has been submitted
+    if (isProcessing || hasSubmitted) return false;
     if (!orderId || totalAmount <= 0) return false;
     switch (selectedMethod) {
       case 'CC':
@@ -173,10 +177,13 @@ export function ServicePaymentPage() {
 
   // Handle payment submission
   const handleSubmit = async () => {
-    if (!canSubmit()) return;
+    // Guard against duplicate submissions
+    if (!canSubmit() || isProcessing || hasSubmitted) return;
 
     setIsProcessing(true);
+    setHasSubmitted(true); // Mark as submitted to prevent duplicates
     setError(null);
+    setErrorWarnings([]);
     const startTime = Date.now();
 
     try {
@@ -255,11 +262,22 @@ export function ServicePaymentPage() {
     } catch (err: any) {
       console.error('[ServicePaymentPage] Payment error:', err);
 
-      let errorMessage =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        err.message ||
-        'Payment failed';
+      // Extract warnings array if present (for detailed display)
+      const warnings: string[] = err.response?.data?.warnings || [];
+      setErrorWarnings(warnings);
+
+      // Use first warning as main error message, or fall back to generic message
+      let errorMessage: string;
+      if (warnings.length > 0) {
+        // Use the first warning as the primary error message
+        errorMessage = warnings[0];
+      } else {
+        errorMessage =
+          err.response?.data?.error ||
+          err.response?.data?.message ||
+          err.message ||
+          'Payment failed';
+      }
 
       if (errorMessage === 'Request failed with status code 400' && err.response?.data) {
         const dataStr = typeof err.response.data === 'string'
@@ -282,6 +300,9 @@ export function ServicePaymentPage() {
         status: 'error',
         userAction: `Service Payment via ${selectedMethod} (FAILED)`,
       });
+
+      // Reset hasSubmitted on error so user can retry
+      setHasSubmitted(false);
     } finally {
       setIsProcessing(false);
     }
@@ -797,9 +818,23 @@ export function ServicePaymentPage() {
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                 <div className="flex gap-3">
                   <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  <div>
+                  <div className="flex-1">
                     <p className="font-semibold text-red-900">Payment Failed</p>
-                    <p className="text-sm text-red-700">{error}</p>
+                    <p className="text-sm text-red-700 mt-1">{error}</p>
+                    {/* Show additional warnings if there are more than one */}
+                    {errorWarnings.length > 1 && (
+                      <div className="mt-3 pt-3 border-t border-red-200">
+                        <p className="text-xs font-medium text-red-800 mb-2">Additional Warnings:</p>
+                        <ul className="space-y-1">
+                          {errorWarnings.slice(1).map((warning, idx) => (
+                            <li key={idx} className="text-sm text-red-700 flex items-start gap-2">
+                              <span className="text-red-400 mt-0.5">•</span>
+                              <span>{warning}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -844,7 +879,7 @@ export function ServicePaymentPage() {
 
               <button
                 onClick={handleSubmit}
-                disabled={!canSubmit() || isProcessing || isProdEnvironment}
+                disabled={!canSubmit() || isProcessing || hasSubmitted || isProdEnvironment}
                 className={`w-full mt-6 flex items-center justify-center gap-2 px-6 py-4 font-bold rounded-xl transition-colors ${
                   isProdEnvironment
                     ? 'bg-red-100 text-red-400 cursor-not-allowed border-2 border-red-200'
@@ -860,6 +895,11 @@ export function ServicePaymentPage() {
                   <>
                     <AlertTriangle className="w-5 h-5" />
                     Payment Disabled in PROD
+                  </>
+                ) : hasSubmitted ? (
+                  <>
+                    <Lock className="w-5 h-5" />
+                    Payment Submitted
                   </>
                 ) : (
                   <>
