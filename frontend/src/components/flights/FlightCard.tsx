@@ -42,7 +42,7 @@ export interface BundleOption {
     seatSelection: boolean;
     changes: string;
     cancellation: string;
-    otherInclusions?: string[];
+    otherInclusions?: ({ code: string; name: string } | string)[];
   };
   // Per-passenger-type offerItemIds - bundles have different IDs for ADT, CHD, INF
   // Key is paxRefId (e.g., "ADT0", "CHD0"), value is the offerItemId for that passenger
@@ -409,12 +409,16 @@ function BundleCard({ bundle, isSelected, onSelect }: BundleCardProps) {
           </span>
         </div>
 
-        {/* Other inclusions */}
+        {/* Other inclusions - format as "Name (CODE)" */}
         {bundle.inclusions.otherInclusions && bundle.inclusions.otherInclusions.length > 0 && (
           <div className="flex items-start gap-1.5 pt-1 border-t border-neutral-200">
             <span className="text-green-600 w-3 h-3 flex items-center justify-center flex-shrink-0">+</span>
             <span className="text-neutral-600 text-[10px]">
-              {bundle.inclusions.otherInclusions.slice(0, 3).join(', ')}
+              {bundle.inclusions.otherInclusions.slice(0, 3).map((other, idx) => {
+                const code = typeof other === 'string' ? other : other.code;
+                const name = typeof other === 'string' ? '' : other.name;
+                return name ? `${name} (${code})` : code;
+              }).join(', ')}
               {bundle.inclusions.otherInclusions.length > 3 && ` +${bundle.inclusions.otherInclusions.length - 3} more`}
             </span>
           </div>

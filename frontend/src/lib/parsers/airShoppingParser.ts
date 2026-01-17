@@ -488,28 +488,52 @@ export function parseAirShoppingResponse(data: any): ParsedAirShoppingResponse {
         // Build inclusions from API data if available, otherwise use fallback
         let inclusions: BundleOption['inclusions'];
         if (firstBundleOffer.inclusions) {
-          // Use actual inclusions from API
+          // Use actual inclusions from API - combine ALL inclusions into otherInclusions
+          // This matches ServiceListStep behavior where all inclusions are displayed from API
           const apiInclusions = firstBundleOffer.inclusions;
 
-          // Format baggage - combine all baggage inclusions
-          const baggageItems = apiInclusions.baggage.map(b => b.name || b.serviceCode).join(', ');
+          // Combine all inclusion types into a single array with {code, name} format
+          const allInclusions: { code: string; name: string }[] = [];
 
-          // Check if seats are included
-          const hasSeatSelection = apiInclusions.seats.length > 0;
+          // Add baggage inclusions
+          for (const b of apiInclusions.baggage) {
+            allInclusions.push({
+              code: b.serviceCode || '',
+              name: b.name || b.serviceCode || 'Baggage',
+            });
+          }
 
-          // Check if meals are included
-          const hasMeals = apiInclusions.meals.length > 0;
+          // Add seat inclusions
+          for (const s of apiInclusions.seats) {
+            allInclusions.push({
+              code: s.serviceCode || '',
+              name: s.name || s.serviceCode || 'Seat Selection',
+            });
+          }
 
-          // Format other inclusions
-          const otherItems = apiInclusions.other.map(o => o.name || o.serviceCode);
+          // Add meal inclusions
+          for (const m of apiInclusions.meals) {
+            allInclusions.push({
+              code: m.serviceCode || '',
+              name: m.name || m.serviceCode || 'Meals',
+            });
+          }
+
+          // Add other inclusions
+          for (const o of apiInclusions.other) {
+            allInclusions.push({
+              code: o.serviceCode || '',
+              name: o.name || o.serviceCode || '',
+            });
+          }
 
           inclusions = {
-            baggage: baggageItems || '7kg carry-on',
-            meals: hasMeals,
-            seatSelection: hasSeatSelection,
-            changes: tier >= 3 ? 'Included' : 'Fee applies',
-            cancellation: tier >= 3 ? 'Refundable' : (tier === 2 ? 'Credit voucher' : 'Non-refundable'),
-            otherInclusions: otherItems.length > 0 ? otherItems : undefined,
+            baggage: '',  // Not used - all inclusions in otherInclusions
+            meals: false,  // Not used - all inclusions in otherInclusions
+            seatSelection: false,  // Not used - all inclusions in otherInclusions
+            changes: '',  // Not used - all inclusions in otherInclusions
+            cancellation: '',  // Not used - all inclusions in otherInclusions
+            otherInclusions: allInclusions.length > 0 ? allInclusions : undefined,
           };
         } else {
           // Use fallback config

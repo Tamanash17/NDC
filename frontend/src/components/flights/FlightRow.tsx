@@ -347,12 +347,21 @@ function FlightRowExpanded({
                   {bundle.price === 0 ? 'Included' : `+${formatCurrency(bundle.price, bundle.currency)}`}
                 </div>
 
-                {/* Key Inclusions */}
+                {/* Key Inclusions - 100% from API response, same format as ServiceListStep */}
                 <div className="mt-3 space-y-1.5 text-xs">
-                  <InclusionItem included={true} text={bundle.inclusions.baggage || '7kg carry-on'} />
-                  <InclusionItem included={bundle.inclusions.seatSelection} text="Seat selection" />
-                  <InclusionItem included={bundle.inclusions.meals} text="Meals" />
-                  <InclusionItem included={bundle.inclusions.changes === 'Included'} text={bundle.inclusions.changes} />
+                  {bundle.inclusions.otherInclusions && bundle.inclusions.otherInclusions.length > 0 ? (
+                    bundle.inclusions.otherInclusions.map((other: { code: string; name: string } | string, idx: number) => {
+                      const code = typeof other === 'string' ? other : other.code;
+                      const name = typeof other === 'string' ? '' : other.name;
+                      // Format: "Name (CODE)" - same as ServiceListStep
+                      const displayText = name ? `${name} (${code})` : code;
+                      return (
+                        <InclusionItem key={`other-${idx}`} included={true} text={displayText} />
+                      );
+                    })
+                  ) : (
+                    <span className="text-neutral-400 text-xs">No inclusions</span>
+                  )}
                 </div>
 
                 {/* Selection Circle */}
@@ -398,7 +407,7 @@ function getBundleTierStyle(tier: number): string {
 }
 
 /**
- * Inclusion item with checkmark/x
+ * Inclusion item with checkmark - displays items from API response
  */
 function InclusionItem({ included, text }: { included: boolean; text: string }) {
   return (
