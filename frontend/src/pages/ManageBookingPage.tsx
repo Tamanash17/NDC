@@ -69,6 +69,8 @@ interface SegmentInfo {
   cabinCode?: string;
   rbd?: string;
   status?: string;
+  isPassive?: boolean; // SegmentTypeCode = 2 indicates passive segment
+  segmentTypeCode?: string;
 }
 
 interface PassengerInfo {
@@ -698,14 +700,29 @@ function SegmentWithPassengers({ segment, services, passengers, isOutbound }: {
 
   return (
     <div className="bg-white">
+      {/* Passive Segment Banner */}
+      {segment.isPassive && (
+        <div className="bg-amber-100 border-b border-amber-200 px-4 py-2 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-600" />
+          <span className="text-sm font-bold text-amber-800">PASSIVE SEGMENT</span>
+          <span className="text-sm text-amber-700">- External carrier ({segment.carrierCode}), not ticketed by Jetstar</span>
+        </div>
+      )}
       {/* Flight Info Header */}
-      <div className="p-4 bg-gray-50 border-b border-gray-100">
+      <div className={cn(
+        "p-4 border-b",
+        segment.isPassive ? "bg-amber-50 border-amber-100" : "bg-gray-50 border-gray-100"
+      )}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             {/* Flight Number */}
             <div className={cn(
               'px-3 py-2 rounded-lg font-mono font-bold text-sm',
-              isOutbound ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+              segment.isPassive
+                ? 'bg-amber-200 text-amber-800'
+                : isOutbound
+                  ? 'bg-orange-100 text-orange-700'
+                  : 'bg-blue-100 text-blue-700'
             )}>
               {segment.carrierCode} {segment.flightNumber}
             </div>
@@ -726,6 +743,13 @@ function SegmentWithPassengers({ segment, services, passengers, isOutbound }: {
                 <p className="text-xs font-semibold text-gray-500">{segment.destination}</p>
               </div>
             </div>
+
+            {/* Passive Badge in Simple View */}
+            {segment.isPassive && (
+              <span className="bg-amber-200 text-amber-800 px-2 py-1 rounded text-xs font-bold">
+                PASSIVE
+              </span>
+            )}
           </div>
 
           {/* Flight Details */}
@@ -736,6 +760,7 @@ function SegmentWithPassengers({ segment, services, passengers, isOutbound }: {
             </div>
             <div className="text-right border-l pl-4 border-gray-200">
               {segment.cabinClass && <p className="font-medium text-gray-700">{segment.cabinClass}</p>}
+              {segment.rbd && !segment.cabinClass && <p className="font-medium text-gray-700">RBD: {segment.rbd}</p>}
               {segment.aircraft && <p>{segment.aircraft}</p>}
             </div>
             <button
@@ -1309,12 +1334,30 @@ function FlightTimelineDev({ journeys, services, passengers }: { journeys: Journ
                 );
 
                 return (
-                  <div key={seg.segmentId} className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                  <div key={seg.segmentId} className={cn(
+                    "rounded-lg border overflow-hidden",
+                    seg.isPassive
+                      ? "bg-amber-50 border-amber-300"
+                      : "bg-gray-50 border-gray-200"
+                  )}>
+                    {/* Passive Segment Banner */}
+                    {seg.isPassive && (
+                      <div className="bg-amber-200 px-3 py-1.5 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-700" />
+                        <span className="text-xs font-bold text-amber-800">PASSIVE SEGMENT</span>
+                        <span className="text-xs text-amber-700">- Interline/External carrier, not ticketed by JQ</span>
+                      </div>
+                    )}
                     {/* Segment Header */}
                     <div className="p-3">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-3">
-                          <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded font-mono font-bold text-sm">
+                          <span className={cn(
+                            "px-2 py-1 rounded font-mono font-bold text-sm",
+                            seg.isPassive
+                              ? "bg-amber-200 text-amber-800"
+                              : "bg-orange-100 text-orange-700"
+                          )}>
                             {seg.carrierCode} {seg.flightNumber}
                           </span>
                           <span className="font-semibold">{seg.origin} → {seg.destination}</span>
@@ -1325,8 +1368,12 @@ function FlightTimelineDev({ journeys, services, passengers }: { journeys: Journ
                         </div>
                         <span className={cn(
                           'px-2 py-0.5 rounded text-xs font-semibold',
-                          seg.status === 'CONFIRMED' || seg.status === 'READY TO PROCEED' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'
-                        )}>{seg.status || 'CONFIRMED'}</span>
+                          seg.isPassive
+                            ? 'bg-amber-200 text-amber-800'
+                            : seg.status === 'CONFIRMED' || seg.status === 'READY TO PROCEED'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-gray-100 text-gray-700'
+                        )}>{seg.isPassive ? 'PASSIVE' : (seg.status || 'CONFIRMED')}</span>
                       </div>
 
                       {/* Segment IDs */}
@@ -1335,6 +1382,7 @@ function FlightTimelineDev({ journeys, services, passengers }: { journeys: Journ
                         {seg.marketingSegmentId && <CopyableBadge label="MktSegmentID" value={seg.marketingSegmentId} small />}
                         {seg.cabinClass && <CopyableBadge label="Cabin" value={`${seg.cabinClass} (${seg.cabinCode})`} small />}
                         {seg.rbd && <CopyableBadge label="RBD" value={seg.rbd} small />}
+                        {seg.isPassive && <CopyableBadge label="SegmentType" value="PASSIVE (2)" small />}
                         {seg.duration && <CopyableBadge label="Duration" value={seg.duration} small />}
                         {seg.aircraft && <CopyableBadge label="Aircraft" value={seg.aircraft} small />}
                       </div>
@@ -1700,6 +1748,10 @@ function parseBookingData(raw: any): ParsedBooking {
       const leg = legMap.get(oprSeg?.DatedOperatingLegRefID);
       const cabin = paxSeg?.CabinTypeAssociationChoice?.SegmentCabinType;
 
+      // Detect passive segment: SegmentTypeCode = 2 means passive
+      const segmentTypeCode = oprSeg?.SegmentTypeCode;
+      const isPassive = segmentTypeCode === '2' || segmentTypeCode === 2;
+
       return {
         segmentId: refId,
         marketingSegmentId: paxSeg?.DatedMarketingSegmentRefId,
@@ -1713,6 +1765,9 @@ function parseBookingData(raw: any): ParsedBooking {
         aircraft: leg?.CarrierAircraftType?.CarrierAircraftTypeCode,
         cabinClass: cabin?.CabinTypeName,
         cabinCode: cabin?.CabinTypeCode,
+        rbd: paxSeg?.MarketingCarrierRBD_Code,
+        isPassive,
+        segmentTypeCode: segmentTypeCode?.toString(),
       };
     });
 
