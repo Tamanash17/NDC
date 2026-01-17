@@ -3005,17 +3005,6 @@ function BundleCompactCard({ bundle, isSelected, onSelect, currentTier, showDebu
           <div className="font-bold text-lg text-neutral-900 mb-1">
             {bundle.tierName} {bundle.serviceCode && <span className="text-sm font-normal text-neutral-600">({bundle.serviceCode})</span>}
           </div>
-          {isUpgrade && (
-            <span className="inline-flex items-center gap-1 text-xs bg-emerald-500 text-white px-2 py-0.5 rounded-full">
-              <ArrowUpCircle className="w-3 h-3" />
-              Better value
-            </span>
-          )}
-          {isDowngrade && (
-            <span className="inline-flex items-center gap-1 text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full">
-              Downgrade
-            </span>
-          )}
         </div>
       </div>
 
@@ -3086,19 +3075,6 @@ function BundleUpgradeCard({ bundle, isSelected, onSelect, currentTier, showDebu
           </div>
 
           {/* Tier indicator badge */}
-          <div className="flex items-center gap-2">
-            {isUpgrade && (
-              <span className="inline-flex items-center gap-1.5 text-sm bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-3 py-1 rounded-full font-medium shadow-sm">
-                <ArrowUpCircle className="w-4 h-4" />
-                Better value
-              </span>
-            )}
-            {isDowngrade && (
-              <span className="inline-flex items-center gap-1.5 text-sm bg-amber-500 text-white px-3 py-1 rounded-full font-medium">
-                Downgrade
-              </span>
-            )}
-          </div>
         </div>
       </div>
 
