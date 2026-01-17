@@ -3665,14 +3665,8 @@ function CompactServiceSection({
                       "w-4 h-4 shrink-0",
                       isPaxSelected ? "text-white/80" : "text-neutral-400"
                     )} />
-                    {/* Label */}
+                    {/* Label - full width since price is shown at card level */}
                     <span className="truncate flex-1 text-left">{pax.displayLabel}</span>
-                    {/* Price indicator when not selected */}
-                    {!isPaxSelected && service.price > 0 && (
-                      <span className="text-[10px] text-neutral-400 shrink-0">
-                        +{formatCurrency(service.price, service.currency)}
-                      </span>
-                    )}
                   </button>
                 );
               };

@@ -317,7 +317,15 @@ function FlightRowExpanded({
         <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-3">
           Select Fare Bundle
         </h4>
-        <div className="grid grid-cols-4 gap-3">
+        <div className={cn(
+          'grid gap-3',
+          bundles.length === 1 && 'grid-cols-1 max-w-xs',
+          bundles.length === 2 && 'grid-cols-2 max-w-lg',
+          bundles.length === 3 && 'grid-cols-3 max-w-3xl',
+          bundles.length >= 4 && 'grid-cols-4',
+          bundles.length > 4 && bundles.length <= 6 && 'grid-cols-3 md:grid-cols-6',
+          bundles.length > 6 && 'grid-cols-4 md:grid-cols-4'
+        )}>
           {bundles.map((bundle) => {
             const isSelected = selectedBundleId === bundle.bundleId;
             const totalPrice = perPersonBaseFare + bundle.price;
