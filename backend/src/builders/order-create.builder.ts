@@ -129,20 +129,41 @@ function buildPassengerList(passengers: Passenger[]): string {
   // Find adults to associate with infants (INF must have ParentPaxRefID)
   const adults = passengers.filter(p => p.ptc === 'ADT');
 
+  // Debug: Log infant-parent association
+  const infants = passengers.filter(p => p.ptc === 'INF');
+  if (infants.length > 0) {
+    console.log('[OrderCreateBuilder] Infant-Parent Association:', {
+      infantCount: infants.length,
+      adultCount: adults.length,
+      infants: infants.map(inf => ({
+        paxId: inf.paxId,
+        parentPaxId: inf.parentPaxId,
+        hasParentPaxId: !!inf.parentPaxId,
+      })),
+      adults: adults.map(adt => adt.paxId),
+    });
+  }
+
   return `<PaxList>
 ${passengers.map((pax, index) => {
   // For infants, use parentPaxId from frontend if provided, otherwise auto-assign
   let parentRefXml = '';
   if (pax.ptc === 'INF') {
     // Use parentPaxId from frontend if provided (e.g., "ADT0")
+    // Element name is PaxRefID (not ParentPaxRefID) - verified from Postman collection
+    // Order: <PaxID> then <PaxRefID> then <PTC>
     if (pax.parentPaxId) {
-      parentRefXml = `<ParentPaxRefID>${escapeXml(pax.parentPaxId)}</ParentPaxRefID>\n`;
+      console.log(`[OrderCreateBuilder] INF ${pax.paxId}: Using frontend parentPaxId = ${pax.parentPaxId}`);
+      parentRefXml = `<PaxRefID>${escapeXml(pax.parentPaxId)}</PaxRefID>\n`;
     } else {
       // Fallback: auto-assign infant to corresponding adult by index
       const infIndex = parseInt(pax.paxId.replace('INF', ''), 10) || 0;
       const parentAdult = adults[infIndex % adults.length];
       if (parentAdult) {
-        parentRefXml = `<ParentPaxRefID>${escapeXml(parentAdult.paxId)}</ParentPaxRefID>\n`;
+        console.log(`[OrderCreateBuilder] INF ${pax.paxId}: Auto-assigned to ${parentAdult.paxId} (fallback)`);
+        parentRefXml = `<PaxRefID>${escapeXml(parentAdult.paxId)}</PaxRefID>\n`;
+      } else {
+        console.error(`[OrderCreateBuilder] INF ${pax.paxId}: NO PARENT FOUND! Adults count: ${adults.length}`);
       }
     }
   }
@@ -168,8 +189,8 @@ ${pax.identityDoc ? `<ExpiryDate>${formatDate(pax.identityDoc.expiryDate)}</Expi
 <GivenName>${escapeXml(pax.givenName)}</GivenName>
 <Surname>${escapeXml(pax.surname)}</Surname>
 </Individual>
-${pax.loyalty ? buildLoyalty(pax.loyalty) : ""}${parentRefXml}<PaxID>${escapeXml(pax.paxId)}</PaxID>
-<PTC>${escapeXml(pax.ptc)}</PTC>
+${pax.loyalty ? buildLoyalty(pax.loyalty) : ""}<PaxID>${escapeXml(pax.paxId)}</PaxID>
+${parentRefXml}<PTC>${escapeXml(pax.ptc)}</PTC>
 </Pax>`;
 }).join("")}
 </PaxList>`;
