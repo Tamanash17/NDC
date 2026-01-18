@@ -1495,14 +1495,23 @@ function CopyableBadge({ label, value, small = false }: { label: string; value: 
 // ============================================================================
 
 function parseBookingData(raw: any): ParsedBooking {
-  console.log('[parseBookingData] Raw input keys:', Object.keys(raw || {}));
+  const rawKeys = Object.keys(raw || {});
+  console.log('[parseBookingData] Raw input keys:', rawKeys);
+  console.log('[parseBookingData] Raw input sample:', JSON.stringify(raw).slice(0, 500));
 
-  // Backend parser returns: { order: {...}, warnings: [...] }
-  // The 'order' object contains orderId (lowercase), totalPrice, payments, DataLists
+  // Check various possible structures
+  // 1. Backend parser: { order: {...}, warnings: [...] }
+  // 2. Direct XML: { Response: { Order: {...} } }
+  // 3. Direct Order: { OrderID, TotalPrice, ... }
   const orderObj = raw?.order;
-  const hasBackendFormat = orderObj && typeof orderObj === 'object';
+  const responseOrder = raw?.Response?.Order;
+  const directOrder = raw?.OrderID ? raw : null;
 
-  console.log('[parseBookingData] hasBackendFormat:', hasBackendFormat);
+  const hasBackendFormat = orderObj && typeof orderObj === 'object';
+  const hasResponseFormat = responseOrder && typeof responseOrder === 'object';
+  const hasDirectFormat = directOrder && typeof directOrder === 'object';
+
+  console.log('[parseBookingData] hasBackendFormat:', hasBackendFormat, 'hasResponseFormat:', hasResponseFormat, 'hasDirectFormat:', hasDirectFormat);
 
   // Extract DataLists from multiple possible paths
   const dataLists = orderObj?.DataLists ||
@@ -1539,26 +1548,52 @@ function parseBookingData(raw: any): ParsedBooking {
     payments = orderObj.payments || [];
     orderItems = orderObj.orderItems || [];
   } else {
-    // Fallback: Raw XML-to-JSON format
+    // Fallback: Raw XML-to-JSON format or direct properties
     console.log('[parseBookingData] Using XML fallback format');
+
+    // Try multiple paths for Order
     const xmlOrder = raw?.Response?.Order || raw?.Order || raw?.order ||
                      raw?.IATA_OrderViewRS?.Response?.Order || {};
+
+    // PaymentFunctions might be at various levels
     const paymentFunctions = raw?.Response?.PaymentFunctions || raw?.PaymentFunctions ||
                              raw?.IATA_OrderViewRS?.PaymentFunctions || {};
 
     console.log('[parseBookingData] xmlOrder keys:', Object.keys(xmlOrder || {}));
+    console.log('[parseBookingData] paymentFunctions keys:', Object.keys(paymentFunctions || {}));
 
-    pnr = xmlOrder?.OrderID || xmlOrder?.orderId || '';
-    ownerCode = xmlOrder?.OwnerCode || xmlOrder?.ownerCode || 'JQ';
-    status = xmlOrder?.StatusCode || xmlOrder?.status || 'UNKNOWN';
-    creationDate = xmlOrder?.CreationDateTime;
+    // Check if Order properties are directly on raw (flat structure)
+    const orderSource = Object.keys(xmlOrder).length > 0 ? xmlOrder : raw;
+    console.log('[parseBookingData] Using orderSource with keys:', Object.keys(orderSource || {}).slice(0, 10));
 
-    const totalPrice = xmlOrder?.TotalPrice?.TotalAmount || xmlOrder?.totalPrice;
-    totalPriceValue = parseFloat(totalPrice?.['#text'] || totalPrice?.value || totalPrice || 0);
-    totalPriceCurrency = totalPrice?.['@CurCode'] || totalPrice?.currency || totalPrice?.CurCode || 'AUD';
+    pnr = orderSource?.OrderID || orderSource?.orderId || xmlOrder?.OrderID || '';
+    ownerCode = orderSource?.OwnerCode || orderSource?.ownerCode || 'JQ';
+    status = orderSource?.StatusCode || orderSource?.status || 'UNKNOWN';
+    creationDate = orderSource?.CreationDateTime;
 
-    payments = normalizeToArray(paymentFunctions?.PaymentProcessingSummary);
-    orderItems = normalizeToArray(xmlOrder?.OrderItem);
+    // Try multiple paths for total price
+    const totalPrice = orderSource?.TotalPrice?.TotalAmount ||
+                       orderSource?.TotalPrice ||
+                       orderSource?.totalPrice ||
+                       xmlOrder?.TotalPrice?.TotalAmount;
+
+    console.log('[parseBookingData] totalPrice object:', totalPrice);
+
+    totalPriceValue = parseFloat(totalPrice?.['#text'] || totalPrice?.value ||
+                                  (typeof totalPrice === 'number' ? totalPrice : 0));
+    totalPriceCurrency = totalPrice?.['@CurCode'] || totalPrice?.CurCode ||
+                         totalPrice?.currency || 'AUD';
+
+    // Try multiple paths for payments
+    const paymentSummaries = paymentFunctions?.PaymentProcessingSummary ||
+                             raw?.PaymentProcessingSummary ||
+                             raw?.Response?.PaymentProcessingSummary;
+    payments = normalizeToArray(paymentSummaries);
+
+    // Try multiple paths for order items
+    orderItems = normalizeToArray(orderSource?.OrderItem || xmlOrder?.OrderItem || raw?.OrderItem);
+
+    console.log('[parseBookingData] Found payments:', payments.length, 'orderItems:', orderItems.length);
   }
 
   console.log('[parseBookingData] Final - pnr:', pnr);
