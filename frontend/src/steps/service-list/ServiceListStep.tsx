@@ -153,6 +153,12 @@ export function ServiceListStep({ onComplete, onBack }: ServiceListStepProps) {
     const pax: PassengerInfo[] = [];
     const counts = flightStore.searchCriteria?.passengers || { adults: 1, children: 0, infants: 0 };
 
+    console.log('[ServiceListStep] Building passenger list from searchCriteria:', {
+      searchCriteria: flightStore.searchCriteria,
+      passengers: counts,
+      total: counts.adults + counts.children + counts.infants
+    });
+
     for (let i = 0; i < counts.adults; i++) {
       pax.push({
         paxId: `ADT${i}`,

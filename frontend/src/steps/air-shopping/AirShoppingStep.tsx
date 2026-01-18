@@ -409,10 +409,24 @@ export function AirShoppingStep({ workflowOptions, onComplete }: AirShoppingStep
       cabinClass,
     };
 
+    console.log('[AirShopping] handleSearch - Passenger counts:', { adults, children, infants, total: adults + children + infants });
+    console.log('[AirShopping] handleSearch - searchParamsData:', JSON.stringify(searchParamsData, null, 2));
+
     updateContext({ searchParams: searchParamsData });
     // Reset the entire flight selection store to clear ALL stale data from previous searches
     // This includes: selection, shoppingResponseId, searchCriteria, offerPriceData, pricing, etc.
     useFlightSelectionStore.getState().reset();
+
+    // Re-set search criteria AFTER reset so sidebar shows correct passenger counts
+    storeSearchCriteria({
+      origin,
+      destination,
+      departureDate,
+      returnDate: (tripType === 'return' || tripType === 'openjaw') ? returnDate : undefined,
+      passengers: { adults, children, infants },
+      cabinClass,
+    });
+
     setSelectionStep('search');
     setOutboundOffers([]);
     setReturnOffers([]);
