@@ -419,13 +419,33 @@ export function PassengersStep() {
     setAutoPopulate(checked);
 
     if (checked) {
-      // Generate dynamic infant birthdate (6-18 months old to ensure under 24 months at travel)
+      // Get departure date from search criteria or flight selection
+      const getDepartureDate = (): Date => {
+        // Try to get from search criteria
+        if (searchCriteria?.departureDate) {
+          const parsed = new Date(searchCriteria.departureDate);
+          if (!isNaN(parsed.getTime())) return parsed;
+        }
+        // Try to get from flight selection segments
+        const outboundSegs = flightStore.selection.outbound?.journey?.segments;
+        if (outboundSegs?.[0]?.departureTime) {
+          const parsed = new Date(outboundSegs[0].departureTime);
+          if (!isNaN(parsed.getTime())) return parsed;
+        }
+        // Fallback to today + 30 days
+        const fallback = new Date();
+        fallback.setDate(fallback.getDate() + 30);
+        return fallback;
+      };
+
+      const departureDate = getDepartureDate();
+
+      // Generate dynamic infant birthdate (6-18 months old AT DEPARTURE to ensure under 24 months)
       const generateInfantBirthdate = (infantIndex: number): string => {
-        const today = new Date();
-        // Make infant 6-18 months old (stagger by index to vary ages)
-        const monthsOld = 6 + (infantIndex * 4); // 6, 10, 14, 18 months
-        const birthDate = new Date(today);
-        birthDate.setMonth(birthDate.getMonth() - monthsOld);
+        // Calculate birth date so infant is 6-18 months old at departure
+        const monthsOldAtDeparture = 6 + (infantIndex * 4); // 6, 10, 14, 18 months at departure
+        const birthDate = new Date(departureDate);
+        birthDate.setMonth(birthDate.getMonth() - monthsOldAtDeparture);
         return birthDate.toISOString().split('T')[0];
       };
 
