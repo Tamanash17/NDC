@@ -109,7 +109,11 @@ interface PassengerServiceInfo {
   name: string;
   code?: string;
   segmentId?: string;
+  segmentRoute?: string;  // e.g., "AVV→SYD"
+  flightNumber?: string;  // e.g., "JQ 612"
   price?: { value: number; currency: string };
+  seatNumber?: string;  // e.g., "1E"
+  baggageWeight?: string;  // e.g., "10kg"
 }
 
 interface ServiceInfo {
@@ -123,6 +127,13 @@ interface ServiceInfo {
   deliveryStatusCode?: string;  // DeliveryStatusCode (CONFIRMED=Unpaid, READY TO PROCEED=Paid)
   paxIds: string[];  // PaxRefID list
   segmentIds: string[];  // PaxSegmentRefID list
+  // Seat details
+  seatNumber?: string;  // e.g., "1E"
+  seatRow?: string;
+  seatColumn?: string;
+  // Baggage details
+  baggageWeight?: number;
+  baggageUnit?: string;  // KGM
 }
 
 interface ContactInfo {
@@ -474,8 +485,8 @@ function SimpleView({ booking, onAction, navigate }: ViewProps) {
       {/* Flight Timeline with Services per Segment */}
       <FlightTimeline journeys={booking.journeys} />
 
-      {/* Passengers & Contact Details */}
-      <PassengersCardSimple passengers={booking.passengers} contactInfo={booking.contactInfo} />
+      {/* Passengers - Individual Cards with Services per Segment */}
+      <PassengersCardSimple passengers={booking.passengers} contactInfo={booking.contactInfo} journeys={booking.journeys} services={booking.services} />
 
       {/* Payment Summary */}
       <PaymentCard booking={booking} />
@@ -775,127 +786,113 @@ function LayoverIndicator({ arrivalTime, departureTime, city }: { arrivalTime: s
 // PASSENGERS & CONTACT DETAILS - Full passenger information
 // ============================================================================
 
-function PassengersCardSimple({ passengers, contactInfo }: { passengers: PassengerInfo[]; contactInfo?: ContactInfo }) {
+function PassengersCardSimple({ passengers, contactInfo, journeys, services }: {
+  passengers: PassengerInfo[];
+  contactInfo?: ContactInfo;
+  journeys: JourneyInfo[];
+  services: ServiceInfo[];
+}) {
   return (
-    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-slate-700 to-slate-800 px-6 py-4 text-white">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-white/20 rounded-lg">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="font-bold text-lg">Passengers & Contact Details</h3>
-            <p className="text-sm text-white/70">{passengers.length} traveler{passengers.length > 1 ? 's' : ''}</p>
-          </div>
-        </div>
-      </div>
+    <div className="space-y-4">
+      {passengers.map((pax, idx) => {
+        const PtcIcon = pax.ptc === 'CHD' ? Baby : pax.ptc === 'INF' ? Baby : User;
+        const ptcColors = {
+          ADT: { bg: '#dbeafe', text: '#2563eb', label: 'Adult', headerBg: 'from-blue-600 to-blue-700' },
+          CHD: { bg: '#f3e8ff', text: '#9333ea', label: 'Child', headerBg: 'from-purple-600 to-purple-700' },
+          INF: { bg: '#fce7f3', text: '#db2777', label: 'Infant', headerBg: 'from-pink-500 to-pink-600' },
+        };
+        const colors = ptcColors[pax.ptc as keyof typeof ptcColors] || ptcColors.ADT;
 
-      {/* Passenger List with Full Details */}
-      <div className="p-4 space-y-4">
-        {passengers.map((pax, idx) => {
-          const PtcIcon = pax.ptc === 'CHD' ? Baby : pax.ptc === 'INF' ? Baby : User;
-          const ptcColors = {
-            ADT: { bg: '#dbeafe', text: '#2563eb', label: 'Adult' },
-            CHD: { bg: '#f3e8ff', text: '#9333ea', label: 'Child' },
-            INF: { bg: '#fce7f3', text: '#db2777', label: 'Infant' },
-          };
-          const colors = ptcColors[pax.ptc as keyof typeof ptcColors] || ptcColors.ADT;
+        // Get all services for this passenger grouped by segment
+        const paxServices = services.filter(s => s.paxIds.includes(pax.paxId) && s.type !== 'FLIGHT');
 
-          return (
-            <div key={pax.paxId} className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
-              {/* Passenger Header */}
-              <div className="p-4 flex items-start justify-between border-b border-gray-200">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl" style={{ backgroundColor: colors.bg }}>
-                    <PtcIcon className="w-6 h-6" style={{ color: colors.text }} />
+        // Group services by segment
+        const servicesBySegment = new Map<string, ServiceInfo[]>();
+        paxServices.forEach(svc => {
+          svc.segmentIds.forEach(segId => {
+            if (!servicesBySegment.has(segId)) {
+              servicesBySegment.set(segId, []);
+            }
+            servicesBySegment.get(segId)!.push(svc);
+          });
+        });
+
+        return (
+          <div key={pax.paxId} className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
+            {/* Passenger Header */}
+            <div className={cn('px-6 py-4 bg-gradient-to-r text-white', colors.headerBg)}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
+                    <PtcIcon className="w-7 h-7" />
                   </div>
                   <div>
-                    <p className="text-lg font-bold text-gray-900">{pax.name}</p>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <span className="font-medium" style={{ color: colors.text }}>{colors.label}</span>
-                      {pax.birthdate && (
-                        <>
-                          <span>•</span>
-                          <span>DOB: {formatDateFull(pax.birthdate)}</span>
-                        </>
-                      )}
-                      {pax.gender && (
-                        <>
-                          <span>•</span>
-                          <span>{pax.gender === 'M' ? 'Male' : 'Female'}</span>
-                        </>
-                      )}
+                    <h3 className="text-2xl font-bold">{pax.name}</h3>
+                    <div className="flex items-center gap-3 text-sm text-white/80 mt-1">
+                      <span className="bg-white/20 px-2 py-0.5 rounded font-medium">{colors.label}</span>
+                      {pax.birthdate && <span>DOB: {formatDateFull(pax.birthdate)}</span>}
+                      {pax.gender && <span>{pax.gender === 'M' ? 'Male' : 'Female'}</span>}
                     </div>
                   </div>
                 </div>
-
-                {/* Badges */}
-                <div className="flex items-center gap-2">
-                  {pax.loyalty && (
-                    <div className="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5">
-                      <Star className="w-4 h-4" />
-                      <span>{pax.loyalty.program} - {pax.loyalty.number}</span>
+                {pax.loyalty && (
+                  <div className="bg-amber-400 text-amber-900 px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2">
+                    <Star className="w-5 h-5" />
+                    <div>
+                      <div>{pax.loyalty.program}</div>
+                      <div className="font-mono text-xs">{pax.loyalty.number}</div>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
+            </div>
 
-              {/* Passenger Details Grid */}
-              <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Passenger Details & Services */}
+            <div className="p-5">
+              {/* Personal Details Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
                 {/* Travel Document */}
                 {pax.document && (
-                  <div className="bg-white rounded-lg border border-gray-200 p-3">
-                    <p className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5" /> Travel Document
+                  <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
+                    <p className="text-xs font-bold text-slate-500 mb-3 flex items-center gap-2 uppercase tracking-wide">
+                      <FileText className="w-4 h-4" /> Travel Document
                     </p>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <p className="text-xs text-gray-400">Type</p>
-                        <p className="font-medium text-gray-700">
-                          {pax.document.type === 'PT' ? 'Passport' : pax.document.type}
-                        </p>
+                        <p className="text-[10px] text-slate-400 uppercase">Type</p>
+                        <p className="font-semibold text-slate-700">{pax.document.type === 'PT' ? 'Passport' : pax.document.type}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-400">Number</p>
-                        <p className="font-medium font-mono text-gray-700">{pax.document.number}</p>
+                        <p className="text-[10px] text-slate-400 uppercase">Number</p>
+                        <p className="font-mono font-semibold text-slate-700">{pax.document.number}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-400">Country</p>
-                        <p className="font-medium text-gray-700">{pax.document.country}</p>
+                        <p className="text-[10px] text-slate-400 uppercase">Country</p>
+                        <p className="font-semibold text-slate-700">{pax.document.country}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-400">Expiry</p>
-                        <p className="font-medium text-gray-700">{formatDateFull(pax.document.expiry)}</p>
+                        <p className="text-[10px] text-slate-400 uppercase">Expiry</p>
+                        <p className="font-semibold text-slate-700">{formatDateFull(pax.document.expiry)}</p>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Contact Info (from booking, shown for first passenger) */}
+                {/* Contact Info */}
                 {idx === 0 && (pax.email || pax.phone || contactInfo) && (
-                  <div className="bg-white rounded-lg border border-gray-200 p-3">
-                    <p className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5" /> Contact Information
+                  <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
+                    <p className="text-xs font-bold text-slate-500 mb-3 flex items-center gap-2 uppercase tracking-wide">
+                      <User className="w-4 h-4" /> Contact
                     </p>
-                    <div className="space-y-2 text-sm">
+                    <div className="space-y-2">
                       {(pax.email || contactInfo?.email) && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400 text-xs w-12">Email:</span>
-                          <span className="font-medium text-gray-700">{pax.email || contactInfo?.email}</span>
-                        </div>
+                        <p className="text-sm"><span className="text-slate-400">Email:</span> <span className="font-medium text-slate-700">{pax.email || contactInfo?.email}</span></p>
                       )}
                       {(pax.phone || contactInfo?.phone) && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400 text-xs w-12">Phone:</span>
-                          <span className="font-medium text-gray-700">{pax.phone || contactInfo?.phone}</span>
-                        </div>
+                        <p className="text-sm"><span className="text-slate-400">Phone:</span> <span className="font-medium text-slate-700">{pax.phone || contactInfo?.phone}</span></p>
                       )}
                       {contactInfo?.city && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400 text-xs w-12">City:</span>
-                          <span className="font-medium text-gray-700">{contactInfo.city}, {contactInfo.country}</span>
-                        </div>
+                        <p className="text-sm"><span className="text-slate-400">Location:</span> <span className="font-medium text-slate-700">{contactInfo.city}, {contactInfo.country}</span></p>
                       )}
                     </div>
                   </div>
@@ -903,26 +900,131 @@ function PassengersCardSimple({ passengers, contactInfo }: { passengers: Passeng
 
                 {/* Loyalty Program */}
                 {pax.loyalty && (
-                  <div className="bg-amber-50 rounded-lg border border-amber-200 p-3">
-                    <p className="text-xs font-semibold text-amber-700 mb-2 flex items-center gap-1.5">
-                      <Award className="w-3.5 h-3.5" /> Frequent Flyer
+                  <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
+                    <p className="text-xs font-bold text-amber-600 mb-3 flex items-center gap-2 uppercase tracking-wide">
+                      <Award className="w-4 h-4" /> Frequent Flyer
                     </p>
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-amber-100 rounded-lg">
-                        <Star className="w-5 h-5 text-amber-600" />
+                      <div className="p-2.5 bg-amber-100 rounded-lg">
+                        <Star className="w-6 h-6 text-amber-600" />
                       </div>
                       <div>
-                        <p className="font-bold text-gray-900">{pax.loyalty.program} Frequent Flyer</p>
-                        <p className="text-sm text-gray-600 font-mono">{pax.loyalty.number}</p>
+                        <p className="font-bold text-slate-800">{pax.loyalty.program} Frequent Flyer</p>
+                        <p className="text-sm text-slate-600 font-mono">{pax.loyalty.number}</p>
                       </div>
                     </div>
                   </div>
                 )}
               </div>
+
+              {/* Services by Journey/Segment */}
+              {journeys.length > 0 && paxServices.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold text-slate-500 mb-3 flex items-center gap-2 uppercase tracking-wide">
+                    <Package className="w-4 h-4" /> Services & Add-ons by Flight
+                  </p>
+                  <div className="space-y-3">
+                    {journeys.map(journey => (
+                      <div key={journey.journeyId} className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
+                        {/* Journey Header */}
+                        <div className={cn(
+                          'px-4 py-2 text-sm font-semibold flex items-center gap-2',
+                          journey.direction === 'outbound' ? 'bg-orange-100 text-orange-700' :
+                          journey.direction === 'inbound' ? 'bg-blue-100 text-blue-700' :
+                          'bg-emerald-100 text-emerald-700'
+                        )}>
+                          <Plane className={cn('w-4 h-4', journey.direction === 'inbound' && 'rotate-180')} />
+                          <span>{journey.directionLabel}: {journey.origin} → {journey.destination}</span>
+                        </div>
+
+                        {/* Segments with Services */}
+                        <div className="divide-y divide-gray-200">
+                          {journey.segments.map(seg => {
+                            const segServices = servicesBySegment.get(seg.segmentId) || [];
+                            // Get specific service types
+                            const seatService = segServices.find(s => s.type === 'SEAT');
+                            const baggageServices = segServices.filter(s => s.type === 'BAGGAGE');
+                            const bundleServices = segServices.filter(s => s.type === 'BUNDLE');
+                            const mealServices = segServices.filter(s => s.type === 'MEAL');
+                            const otherServices = segServices.filter(s => !['SEAT', 'BAGGAGE', 'BUNDLE', 'MEAL'].includes(s.type));
+
+                            if (segServices.length === 0) return null;
+
+                            return (
+                              <div key={seg.segmentId} className="p-3">
+                                {/* Flight info */}
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="bg-slate-700 text-white px-2 py-0.5 rounded text-xs font-mono font-bold">
+                                    {seg.carrierCode} {seg.flightNumber}
+                                  </span>
+                                  <span className="text-sm text-slate-600">{seg.origin} → {seg.destination}</span>
+                                  <span className="text-xs text-slate-400">{formatDateShort(seg.departureTime)}</span>
+                                </div>
+
+                                {/* Services Grid */}
+                                <div className="flex flex-wrap gap-2">
+                                  {/* Seat */}
+                                  {seatService && (
+                                    <div className="inline-flex items-center gap-1.5 bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm">
+                                      <Armchair className="w-4 h-4" />
+                                      <span className="font-bold">Seat {seatService.seatNumber}</span>
+                                      {seatService.price.value > 0 && (
+                                        <span className="text-purple-500 text-xs">({formatCurrency(seatService.price.value, seatService.price.currency)})</span>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Baggage */}
+                                  {baggageServices.map((bag, i) => (
+                                    <div key={i} className="inline-flex items-center gap-1.5 bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-sm">
+                                      <Luggage className="w-4 h-4" />
+                                      <span className="font-bold">{bag.baggageWeight ? `${bag.baggageWeight}kg` : bag.name}</span>
+                                      {bag.price.value > 0 && (
+                                        <span className="text-blue-500 text-xs">({formatCurrency(bag.price.value, bag.price.currency)})</span>
+                                      )}
+                                    </div>
+                                  ))}
+
+                                  {/* Bundles */}
+                                  {bundleServices.map((bundle, i) => (
+                                    <div key={i} className="inline-flex items-center gap-1.5 bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg text-sm">
+                                      <Package className="w-4 h-4" />
+                                      <span className="font-bold">{bundle.name}</span>
+                                      {bundle.price.value > 0 && (
+                                        <span className="text-orange-500 text-xs">({formatCurrency(bundle.price.value, bundle.price.currency)})</span>
+                                      )}
+                                    </div>
+                                  ))}
+
+                                  {/* Meals */}
+                                  {mealServices.map((meal, i) => (
+                                    <div key={i} className="inline-flex items-center gap-1.5 bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-sm">
+                                      <Utensils className="w-4 h-4" />
+                                      <span className="font-bold">{meal.name}</span>
+                                    </div>
+                                  ))}
+
+                                  {/* Other SSRs */}
+                                  {otherServices.map((svc, i) => (
+                                    <div key={i} className="inline-flex items-center gap-1.5 bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-sm">
+                                      <Tag className="w-4 h-4" />
+                                      <span className="font-medium">{svc.name}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1847,16 +1949,36 @@ function parseBookingData(raw: any): ParsedBooking {
     }
   });
 
+  // Parse baggage allowances for weight info
+  const baggageAllowanceList = normalizeToArray(dataLists?.BaggageAllowanceList?.BaggageAllowance);
+  const baggageAllowanceMap = new Map<string, { weight: number; unit: string; type: string }>();
+  baggageAllowanceList.forEach((ba: any) => {
+    const weight = ba.WeightAllowance?.MaximumWeightMeasure;
+    const unit = ba.WeightAllowance?.WeightUnitOfMeasurement || 'KGM';
+    baggageAllowanceMap.set(ba.BaggageAllowanceID, {
+      weight: parseFloat(weight) || 0,
+      unit,
+      type: ba.TypeCode || 'Checked',
+    });
+  });
+
   // Parse service definitions for better name/code mapping
   const serviceDefList = normalizeToArray(dataLists?.ServiceDefinitionList?.ServiceDefinition);
-  const serviceDefMap = new Map<string, { code: string; name: string; description?: string }>();
+  const serviceDefMap = new Map<string, { code: string; name: string; description?: string; baggageWeight?: number; baggageUnit?: string }>();
   serviceDefList.forEach((sd: any) => {
     const descriptions = normalizeToArray(sd.Desc);
     const descText = descriptions.find((d: any) => d.DescText && !d.MarkupStyleText)?.DescText || '';
+
+    // Check for baggage allowance reference
+    const baggageRefId = sd.ServiceDefinitionAssociation?.BaggageAllowanceRef?.BaggageAllowanceRefID;
+    const baggageInfo = baggageRefId ? baggageAllowanceMap.get(baggageRefId) : undefined;
+
     serviceDefMap.set(sd.ServiceDefinitionID, {
       code: sd.ServiceCode || sd.ServiceDefinitionID,
       name: sd.Name || descText || sd.ServiceDefinitionID,
       description: descText,
+      baggageWeight: baggageInfo?.weight,
+      baggageUnit: baggageInfo?.unit,
     });
   });
 
@@ -1877,6 +1999,9 @@ function parseBookingData(raw: any): ParsedBooking {
     const paxIds: string[] = [];
     const segmentIds: string[] = [];
     let serviceDefId: string | null = null;
+    let seatRow: string | undefined;
+    let seatColumn: string | undefined;
+    let seatNumber: string | undefined;
 
     itemServices.forEach((svc: any) => {
       // Get PaxRefID
@@ -1888,6 +2013,23 @@ function parseBookingData(raw: any): ParsedBooking {
         // Direct PaxSegmentRef (for FLIGHT items)
         const directSegRef = assoc.PaxSegmentRef?.PaxSegmentRefID;
         if (directSegRef) segmentIds.push(directSegRef);
+
+        // SeatOnLeg - extract seat details
+        const seatOnLeg = assoc.SeatOnLeg;
+        if (seatOnLeg) {
+          const seat = seatOnLeg.Seat;
+          if (seat) {
+            seatRow = seat.RowNumber?.toString();
+            seatColumn = seat.ColumnID;
+            seatNumber = `${seatRow || ''}${seatColumn || ''}`;
+          }
+          // Get segment from SeatAssignmentAssociations
+          const seatAssoc = seatOnLeg.SeatAssignmentAssociations;
+          if (seatAssoc) {
+            const segRef = seatAssoc.PaxSegmentRef?.PaxSegmentRefID;
+            if (segRef) segmentIds.push(segRef);
+          }
+        }
 
         // Through ServiceDefinitionRef -> OrderFlightAssociations (for ancillary services)
         const svcDefRef = assoc.ServiceDefinitionRef;
@@ -1967,7 +2109,16 @@ function parseBookingData(raw: any): ParsedBooking {
     // Get DeliveryStatusCode - per NDC reference: CONFIRMED=Unpaid, READY TO PROCEED=Paid
     const deliveryStatusCode = item.DeliveryStatusCode;
 
-    console.log('[parseBookingData] OrderItem:', itemId, '| Type:', type, '| Name:', name, '| Code:', code, '| Status:', item.StatusCode, '| DeliveryStatus:', deliveryStatusCode, '| Pax:', uniquePaxIds, '| Segments:', uniqueSegmentIds);
+    // Get baggage weight from service definition if this is a baggage item
+    let baggageWeight: number | undefined;
+    let baggageUnit: string | undefined;
+    if (serviceDefId && serviceDefMap.has(serviceDefId)) {
+      const svcDef = serviceDefMap.get(serviceDefId)!;
+      baggageWeight = svcDef.baggageWeight;
+      baggageUnit = svcDef.baggageUnit;
+    }
+
+    console.log('[parseBookingData] OrderItem:', itemId, '| Type:', type, '| Name:', name, '| Code:', code, '| Seat:', seatNumber, '| Baggage:', baggageWeight, '| Status:', item.StatusCode, '| Pax:', uniquePaxIds, '| Segments:', uniqueSegmentIds);
 
     return {
       orderItemId: itemId,  // OrderItemID
@@ -1983,21 +2134,51 @@ function parseBookingData(raw: any): ParsedBooking {
       deliveryStatusCode: deliveryStatusCode,  // DeliveryStatusCode (NDC payment indicator)
       paxIds: uniquePaxIds,
       segmentIds: uniqueSegmentIds,
+      // Seat details
+      seatNumber,
+      seatRow,
+      seatColumn,
+      // Baggage details
+      baggageWeight,
+      baggageUnit,
     };
   });
 
-  // Map services to passengers
+  // Map services to passengers with segment details
   services.forEach(svc => {
     if (svc.type !== 'FLIGHT') {
       svc.paxIds.forEach(paxId => {
         const pax = passengers.find(p => p.paxId === paxId);
         if (pax) {
-          pax.services.push({
-            type: svc.type,
-            name: svc.name,
-            code: svc.code,
-            price: svc.price,
+          // For each segment this service applies to
+          svc.segmentIds.forEach(segId => {
+            // Find segment info for route display
+            const segment = journeys.flatMap(j => j.segments).find(s => s.segmentId === segId);
+            const segmentRoute = segment ? `${segment.origin}→${segment.destination}` : undefined;
+            const flightNumber = segment ? `${segment.carrierCode} ${segment.flightNumber}` : undefined;
+
+            pax.services.push({
+              type: svc.type,
+              name: svc.name,
+              code: svc.code,
+              price: svc.price,
+              segmentId: segId,
+              segmentRoute,
+              flightNumber,
+              seatNumber: svc.seatNumber,
+              baggageWeight: svc.baggageWeight ? `${svc.baggageWeight}kg` : undefined,
+            });
           });
+
+          // If no segment IDs, still add the service (journey-level service)
+          if (svc.segmentIds.length === 0) {
+            pax.services.push({
+              type: svc.type,
+              name: svc.name,
+              code: svc.code,
+              price: svc.price,
+            });
+          }
         }
       });
     }
