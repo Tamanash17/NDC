@@ -1587,8 +1587,11 @@ function parseBookingData(raw: any): ParsedBooking {
     // Try multiple paths for payments
     const paymentSummaries = paymentFunctions?.PaymentProcessingSummary ||
                              raw?.PaymentProcessingSummary ||
-                             raw?.Response?.PaymentProcessingSummary;
+                             raw?.Response?.PaymentProcessingSummary ||
+                             raw?.PaymentList?.Payment ||
+                             dataLists?.PaymentList?.Payment;
     payments = normalizeToArray(paymentSummaries);
+    console.log('[parseBookingData] Payment sources tried, found:', payments.length);
 
     // Try multiple paths for order items
     orderItems = normalizeToArray(orderSource?.OrderItem || xmlOrder?.OrderItem || raw?.OrderItem);
@@ -1952,13 +1955,17 @@ function parseBookingData(raw: any): ParsedBooking {
 
   // Get payment status (using already extracted values)
   let paymentStatus = 'UNKNOWN';
-  if (parsedPayments.some(p => p.status === 'SUCCESSFUL')) {
+  if (parsedPayments.some(p => p.status === 'SUCCESSFUL' || p.status === 'COMPLETED')) {
     paymentStatus = 'SUCCESSFUL';
   } else if (parsedPayments.some(p => p.status === 'PENDING')) {
     paymentStatus = 'PENDING';
   } else if (status === 'OPENED') {
     paymentStatus = 'PENDING';
+  } else if (status === 'CONFIRMED' || status === 'TICKETED') {
+    // If order is confirmed/ticketed but no payment info, assume paid
+    paymentStatus = totalPriceValue > 0 ? 'PAID' : 'SUCCESSFUL';
   }
+  console.log('[parseBookingData] Derived paymentStatus:', paymentStatus, 'from payments:', parsedPayments.length, 'orderStatus:', status);
 
   // Extract warnings
   const warnings = normalizeToArray(raw?.warnings || raw?.Response?.Warning).map((w: any) => ({
