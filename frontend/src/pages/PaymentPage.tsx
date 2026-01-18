@@ -856,8 +856,13 @@ export function PaymentPage() {
 
                     // Calculate percentage relative to total amount
                     const calculatePercentage = (fee: number) => {
-                      if (totalAmount <= 0) return 0;
+                      if (totalAmount <= 0) return '0.00';
                       return ((fee / totalAmount) * 100).toFixed(2);
+                    };
+
+                    // Format amount with currency code (e.g., "AUD 5.00")
+                    const formatWithCurrencyCode = (amount: number) => {
+                      return `${currency} ${amount.toFixed(2)}`;
                     };
 
                     return (
@@ -868,17 +873,19 @@ export function PaymentPage() {
                             <div className="flex items-center justify-between">
                               <span className="font-semibold text-amber-900">Card Surcharges</span>
                               {isFixedAmount && validFees.length > 0 ? (
+                                // Fixed amount: Show currency code + amount (e.g., "AUD 5.00 (Fixed)")
                                 <span className="text-sm text-amber-800">
-                                  <span className="font-mono font-semibold">{formatCurrency(validFees[0].ccSurcharge, currency)}</span>
+                                  <span className="font-mono font-semibold">{formatWithCurrencyCode(validFees[0].ccSurcharge)}</span>
                                   <span className="text-amber-600 ml-1">(Fixed)</span>
                                 </span>
                               ) : validFees.length > 0 ? (
+                                // Percentage-based: Show percentage per card brand (e.g., "Visa 1.50% | MC 1.50%")
                                 <span className="text-sm text-amber-800">
                                   {displayFees.map((fee, idx) => {
                                     const brandName = fee.cardBrand === 'VI' ? 'Visa' :
                                                      fee.cardBrand === 'MC' ? 'MC' :
                                                      fee.cardBrand === 'AX' ? 'Amex' : fee.cardBrand;
-                                    const pct = fee.ccSurcharge > 0 ? calculatePercentage(fee.ccSurcharge) : '0';
+                                    const pct = fee.ccSurcharge > 0 ? calculatePercentage(fee.ccSurcharge) : '0.00';
                                     return (
                                       <span key={fee.cardBrand}>
                                         {idx > 0 && <span className="mx-1 text-amber-400">|</span>}
