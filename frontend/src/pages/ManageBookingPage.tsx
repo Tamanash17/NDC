@@ -956,15 +956,25 @@ function PassengersCardSimple({ passengers, contactInfo, journeys, services }: {
                             const mealServices = segServices.filter(s => s.type === 'MEAL');
                             const otherServices = segServices.filter(s => !['SEAT', 'BAGGAGE', 'BUNDLE', 'MEAL'].includes(s.type));
 
-                            if (segServices.length === 0) return null;
-
+                            // Show segment even if no services (for passive indicator or just listing)
                             return (
-                              <div key={seg.segmentId} className="p-3">
+                              <div key={seg.segmentId} className={cn(
+                                "p-3",
+                                seg.isPassive && "bg-amber-50"
+                              )}>
                                 {/* Flight info */}
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="bg-slate-700 text-white px-2 py-0.5 rounded text-xs font-mono font-bold">
+                                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded text-xs font-mono font-bold",
+                                    seg.isPassive ? "bg-amber-500 text-white" : "bg-slate-700 text-white"
+                                  )}>
                                     {seg.carrierCode} {seg.flightNumber}
                                   </span>
+                                  {seg.isPassive && (
+                                    <span className="bg-amber-200 text-amber-800 px-2 py-0.5 rounded text-xs font-bold">
+                                      PASSIVE
+                                    </span>
+                                  )}
                                   <span className="text-sm text-slate-600">{seg.origin} → {seg.destination}</span>
                                   <span className="text-xs text-slate-400">{formatDateShort(seg.departureTime)}</span>
                                 </div>
@@ -1817,8 +1827,21 @@ function parseBookingData(raw: any): ParsedBooking {
       const cabin = paxSeg?.CabinTypeAssociationChoice?.SegmentCabinType;
 
       // Detect passive segment: SegmentTypeCode = 2 means passive
+      // Also check StatusCode = "2" or "PASSIVE" as alternative indicators
       const segmentTypeCode = oprSeg?.SegmentTypeCode;
-      const isPassive = segmentTypeCode === '2' || segmentTypeCode === 2;
+      const oprStatusCode = oprSeg?.StatusCode;
+      const mktStatusCode = mktSeg?.StatusCode;
+      console.log('[parseBookingData] Segment passive check:', {
+        refId,
+        oprSeg: oprSeg ? Object.keys(oprSeg) : null,
+        segmentTypeCode,
+        oprStatusCode,
+        mktStatusCode,
+        fullOprSeg: oprSeg
+      });
+      const isPassive = segmentTypeCode === '2' || segmentTypeCode === 2 ||
+                        oprStatusCode === '2' || oprStatusCode === 2 ||
+                        mktStatusCode === '2' || mktStatusCode === 2;
 
       // Extract operating carrier info if different from marketing
       const operatingCarrier = oprSeg?.OperatingCarrier;
