@@ -153,9 +153,21 @@ export interface CCFeeResult {
 }
 
 export async function longSell(request: LongSellRequest): Promise<CCFeeResult> {
+  console.log(`[LongSell] ===== REQUEST FOR ${request.cardBrand} =====`);
+  console.log('[LongSell] Request payload:', JSON.stringify(request, null, 2));
+
   const response = await ndcClient.post('/ndc/long-sell', request);
   // Backend returns { success, data: { cardBrand, ccSurcharge, surchargeType, currency }, requestXml, responseXml }
   const data = response.data.data || response.data;
+
+  console.log(`[LongSell] ===== RESPONSE FOR ${request.cardBrand} =====`);
+  console.log('[LongSell] Success:', response.data.success);
+  console.log('[LongSell] CC Surcharge:', data.ccSurcharge);
+  console.log('[LongSell] Request XML:', response.data.requestXml?.substring(0, 500) + '...');
+  console.log('[LongSell] Response XML:', response.data.responseXml?.substring(0, 1000) + '...');
+  console.log('[LongSell] Full Response XML:');
+  console.log(response.data.responseXml);
+
   return {
     cardBrand: request.cardBrand,
     ccSurcharge: data.ccSurcharge || 0,
@@ -178,13 +190,28 @@ export async function fetchAllCCFees(
 
   // Make requests SEQUENTIALLY to avoid DuplicateLeg errors
   // The Jetstar API doesn't allow concurrent Long Sell requests
+  console.log('[LongSell] ===== FETCHING CC FEES =====');
+  console.log('[LongSell] Segments:', JSON.stringify(segments, null, 2));
+  console.log('[LongSell] Journeys:', JSON.stringify(journeys, null, 2));
+  console.log('[LongSell] Passengers:', JSON.stringify(passengers, null, 2));
+  console.log('[LongSell] Currency:', currency);
+
   for (const cardBrand of cardBrands) {
     try {
       const result = await longSell({ segments, journeys, passengers, cardBrand, currency });
       results.push(result);
     } catch (err: any) {
-      console.error(`[LongSell] Error for ${cardBrand}:`, err.message);
+      console.error(`[LongSell] ===== ERROR FOR ${cardBrand} =====`);
+      console.error(`[LongSell] Error message:`, err.message);
+      console.error(`[LongSell] Error response status:`, err.response?.status);
+      console.error(`[LongSell] Error response data:`, err.response?.data);
       const responseData = err.response?.data;
+      if (responseData?.requestXml) {
+        console.error(`[LongSell] Request XML:`, responseData.requestXml);
+      }
+      if (responseData?.responseXml) {
+        console.error(`[LongSell] Response XML:`, responseData.responseXml);
+      }
       results.push({
         cardBrand,
         ccSurcharge: 0,
