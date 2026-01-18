@@ -516,7 +516,9 @@ function DeveloperView({ booking, onAction, navigate }: ViewProps) {
 
 function BookingStatusBanner({ booking }: { booking: ParsedBooking }) {
   const getStatusConfig = () => {
-    if (booking.paymentStatus === 'SUCCESSFUL') {
+    // NDC Payment Status: SUCCESSFUL, PENDING, FAILED (per NDC_GATEWAY_REFERENCE.md)
+    // Also handle PAID for backwards compatibility
+    if (booking.paymentStatus === 'SUCCESSFUL' || booking.paymentStatus === 'PAID') {
       return {
         bg: 'from-emerald-500 to-emerald-600',
         icon: CheckCircle,
@@ -532,12 +534,12 @@ function BookingStatusBanner({ booking }: { booking: ParsedBooking }) {
         subheadline: 'Complete payment to secure your booking.',
       };
     }
-    if (booking.paymentStatus === 'FAILED' || booking.status === 'CANCELLED') {
+    if (booking.paymentStatus === 'FAILED' || booking.paymentStatus === 'CANCELLED' || booking.status === 'CANCELLED' || booking.status === 'CLOSED') {
       return {
         bg: 'from-red-500 to-red-600',
         icon: XCircle,
-        headline: 'Booking Issue',
-        subheadline: 'There is a problem with your booking.',
+        headline: booking.status === 'CLOSED' || booking.status === 'CANCELLED' ? 'Booking Cancelled' : 'Payment Failed',
+        subheadline: booking.status === 'CLOSED' || booking.status === 'CANCELLED' ? 'This booking has been cancelled.' : 'There was a problem processing your payment.',
       };
     }
     return {
@@ -1953,17 +1955,48 @@ function parseBookingData(raw: any): ParsedBooking {
     }
   });
 
-  // Get payment status (using already extracted values)
+  // Get payment status using NDC standard codes from NDC_GATEWAY_REFERENCE.md
+  // Priority order:
+  // 1. Payment status from PaymentProcessingSummary (SUCCESSFUL, PENDING, FAILED)
+  // 2. DeliveryStatusCode from OrderItems (CONFIRMED = Unpaid, READY TO PROCEED = Paid)
+  // 3. Order status as fallback (OPENED = hold/pending, CLOSED = cancelled)
   let paymentStatus = 'UNKNOWN';
+
+  // Check actual payment records first
   if (parsedPayments.some(p => p.status === 'SUCCESSFUL' || p.status === 'COMPLETED')) {
     paymentStatus = 'SUCCESSFUL';
   } else if (parsedPayments.some(p => p.status === 'PENDING')) {
     paymentStatus = 'PENDING';
-  } else if (status === 'OPENED') {
-    paymentStatus = 'PENDING';
-  } else if (status === 'CONFIRMED' || status === 'TICKETED') {
-    // If order is confirmed/ticketed but no payment info, assume paid
-    paymentStatus = totalPriceValue > 0 ? 'PAID' : 'SUCCESSFUL';
+  } else if (parsedPayments.some(p => p.status === 'FAILED')) {
+    paymentStatus = 'FAILED';
+  } else {
+    // No payment records found - check DeliveryStatusCode from OrderItems
+    // Per NDC reference: CONFIRMED = Unpaid, READY TO PROCEED = Paid
+    const deliveryStatuses = normalizedOrderItems.map((item: any) =>
+      item.DeliveryStatusCode || item.StatusCode
+    ).filter(Boolean);
+
+    console.log('[parseBookingData] DeliveryStatusCodes from OrderItems:', deliveryStatuses);
+
+    // Check if all items are "READY TO PROCEED" (paid) or have no delivery status
+    const allPaid = deliveryStatuses.length > 0 &&
+      deliveryStatuses.every((s: string) => s === 'READY TO PROCEED' || s === 'DELIVERED' || s === 'TICKETED');
+    const anyUnpaid = deliveryStatuses.some((s: string) => s === 'CONFIRMED');
+
+    if (allPaid) {
+      paymentStatus = 'SUCCESSFUL';
+    } else if (anyUnpaid) {
+      paymentStatus = 'PENDING';
+    } else if (status === 'OPENED') {
+      // Order is on HOLD per NDC reference
+      paymentStatus = 'PENDING';
+    } else if (status === 'CLOSED') {
+      // Order cancelled/completed
+      paymentStatus = totalPriceValue > 0 ? 'SUCCESSFUL' : 'CANCELLED';
+    } else if (status === 'CONFIRMED' || status === 'TICKETED') {
+      // Ticketed means payment was successful
+      paymentStatus = 'SUCCESSFUL';
+    }
   }
   console.log('[parseBookingData] Derived paymentStatus:', paymentStatus, 'from payments:', parsedPayments.length, 'orderStatus:', status);
 
