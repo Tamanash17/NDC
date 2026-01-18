@@ -624,14 +624,12 @@ function FlightTimeline({ journeys }: { journeys: JourneyInfo[] }) {
   );
 }
 
-// Ultra-compact journey card - just flight info, no passengers
+// Compact but readable journey card
 function JourneyCard({ journey }: { journey: JourneyInfo }) {
   const isOutbound = journey.direction === 'outbound';
   const isInbound = journey.direction === 'inbound';
   const hasPassiveSegment = journey.segments.some(s => s.isPassive);
 
-  // Colors based on direction
-  const accentColor = isOutbound ? 'orange' : isInbound ? 'blue' : 'emerald';
   const headerBg = isOutbound
     ? 'bg-orange-500'
     : isInbound
@@ -639,54 +637,79 @@ function JourneyCard({ journey }: { journey: JourneyInfo }) {
       : 'bg-emerald-500';
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      {/* Single-line header */}
-      <div className={cn('px-3 py-1.5 text-white text-sm flex items-center justify-between', headerBg)}>
-        <div className="flex items-center gap-2">
-          <Plane className={cn('w-3.5 h-3.5', isInbound && 'rotate-180')} />
-          <span className="font-semibold">{journey.directionLabel}</span>
-          <span className="opacity-90">{journey.origin} → {journey.destination}</span>
+    <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className={cn('px-4 py-2.5 text-white flex items-center justify-between', headerBg)}>
+        <div className="flex items-center gap-3">
+          <Plane className={cn('w-4 h-4', isInbound && 'rotate-180')} />
+          <span className="font-bold text-lg">{journey.directionLabel}</span>
+          <span className="text-lg">{journey.origin} → {journey.destination}</span>
           {hasPassiveSegment && (
-            <span className="bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded text-xs font-bold">PASSIVE</span>
+            <span className="bg-amber-400 text-amber-900 px-2 py-0.5 rounded text-xs font-bold ml-2">PASSIVE</span>
           )}
         </div>
-        <span className="opacity-90">{formatDateShort(journey.segments[0]?.departureTime)} • {formatDuration(journey.duration)}</span>
+        <div className="text-right">
+          <span className="text-sm opacity-90">{formatDateFull(journey.segments[0]?.departureTime)}</span>
+          <span className="mx-2 opacity-60">•</span>
+          <span className="font-semibold">{formatDuration(journey.duration)}</span>
+        </div>
       </div>
 
-      {/* Inline segments - single row */}
-      <div className="px-2 py-1.5 flex items-center gap-1 text-xs bg-gray-50">
+      {/* Segments */}
+      <div className="px-4 py-3 bg-gray-50 flex flex-wrap items-center gap-2">
         {journey.segments.map((seg, idx) => (
           <div key={seg.segmentId} className="contents">
-            {/* Segment chip */}
+            {/* Segment card */}
             <div className={cn(
-              "inline-flex items-center gap-1.5 px-2 py-1 rounded border",
+              "inline-flex items-center gap-3 px-3 py-2 rounded-lg border shadow-sm",
               seg.isPassive
-                ? "bg-amber-50 border-amber-300 text-amber-900"
+                ? "bg-amber-50 border-amber-300"
                 : "bg-white border-gray-200"
             )}>
+              {/* Flight number */}
               <span className={cn(
-                "font-mono font-bold px-1 rounded text-[10px]",
-                seg.isPassive ? "bg-amber-200" : "bg-blue-100 text-blue-700"
+                "font-mono font-bold px-2 py-1 rounded text-sm",
+                seg.isPassive ? "bg-amber-200 text-amber-800" : "bg-blue-100 text-blue-700"
               )}>
-                {seg.carrierCode}{seg.flightNumber}
+                {seg.carrierCode} {seg.flightNumber}
               </span>
-              <span className="font-semibold">{formatTime(seg.departureTime)}</span>
-              <span className="text-gray-400">{seg.origin}</span>
-              <span className="text-gray-300">→</span>
-              <span className="font-semibold">{formatTime(seg.arrivalTime)}</span>
-              <span className="text-gray-400">{seg.destination}</span>
+
+              {/* Departure */}
+              <div className="text-center">
+                <div className="text-lg font-bold text-gray-900">{formatTime(seg.departureTime)}</div>
+                <div className="text-xs text-gray-500 font-medium">{seg.origin}</div>
+              </div>
+
+              {/* Arrow */}
+              <div className="flex items-center text-gray-300 px-1">
+                <div className="w-4 h-px bg-gray-300"></div>
+                <Plane className="w-3 h-3 mx-1 text-gray-400" />
+                <div className="w-4 h-px bg-gray-300"></div>
+              </div>
+
+              {/* Arrival */}
+              <div className="text-center">
+                <div className="text-lg font-bold text-gray-900">{formatTime(seg.arrivalTime)}</div>
+                <div className="text-xs text-gray-500 font-medium">{seg.destination}</div>
+              </div>
+
+              {/* Cabin/RBD */}
               {(seg.cabinClass || seg.rbd) && (
-                <span className="text-gray-400 border-l border-gray-200 pl-1.5">
-                  {seg.cabinClass || `RBD:${seg.rbd}`}
+                <span className="text-xs text-gray-500 border-l border-gray-200 pl-3 ml-1">
+                  {seg.cabinClass || `RBD: ${seg.rbd}`}
                 </span>
               )}
             </div>
 
-            {/* Layover badge */}
+            {/* Layover */}
             {idx < journey.segments.length - 1 && (
-              <span className="bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-medium whitespace-nowrap">
-                {calculateLayover(seg.arrivalTime, journey.segments[idx + 1].departureTime)} {seg.destination}
-              </span>
+              <div className="flex items-center px-2">
+                <div className="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{calculateLayover(seg.arrivalTime, journey.segments[idx + 1].departureTime)}</span>
+                  <span className="text-orange-500">{seg.destination}</span>
+                </div>
+              </div>
             )}
           </div>
         ))}
