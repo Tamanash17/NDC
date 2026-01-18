@@ -58,14 +58,14 @@ const TEST_PASSENGERS = {
   ],
   infants: [
     {
-      title: 'MR', firstName: 'Baby', middleName: 'Lee', lastName: 'Smith', dateOfBirth: '2024-01-20', gender: 'M' as const,
+      title: 'MR', firstName: 'Baby', middleName: 'Lee', lastName: 'Smith', dateOfBirth: '', // Will be set dynamically
       residenceCountry: 'AU',
-      passport: { number: 'PI1234567', issuingCountry: 'AU', issueDate: '2024-01-20', expiryDate: '2029-01-20', citizenship: 'AU' },
+      passport: { number: 'PI1234567', issuingCountry: 'AU', issueDate: '', expiryDate: '', citizenship: 'AU' },
     },
     {
-      title: 'MISS', firstName: 'Lily', middleName: 'Ann', lastName: 'Johnson', dateOfBirth: '2023-11-05', gender: 'F' as const,
+      title: 'MISS', firstName: 'Lily', middleName: 'Ann', lastName: 'Johnson', dateOfBirth: '', // Will be set dynamically
       residenceCountry: 'AU',
-      passport: { number: 'PI2345678', issuingCountry: 'AU', issueDate: '2023-11-05', expiryDate: '2028-11-05', citizenship: 'AU' },
+      passport: { number: 'PI2345678', issuingCountry: 'AU', issueDate: '', expiryDate: '', citizenship: 'AU' },
     },
   ],
   contact: {
@@ -419,6 +419,30 @@ export function PassengersStep() {
     setAutoPopulate(checked);
 
     if (checked) {
+      // Generate dynamic infant birthdate (6-18 months old to ensure under 24 months at travel)
+      const generateInfantBirthdate = (infantIndex: number): string => {
+        const today = new Date();
+        // Make infant 6-18 months old (stagger by index to vary ages)
+        const monthsOld = 6 + (infantIndex * 4); // 6, 10, 14, 18 months
+        const birthDate = new Date(today);
+        birthDate.setMonth(birthDate.getMonth() - monthsOld);
+        return birthDate.toISOString().split('T')[0];
+      };
+
+      // Generate passport dates for infant based on birthdate
+      const generateInfantPassport = (birthdate: string, basePassport: any) => {
+        const birth = new Date(birthdate);
+        const issueDate = new Date(birth);
+        issueDate.setMonth(issueDate.getMonth() + 1); // Issued 1 month after birth
+        const expiryDate = new Date(issueDate);
+        expiryDate.setFullYear(expiryDate.getFullYear() + 5); // 5 year validity
+        return {
+          ...basePassport,
+          issueDate: issueDate.toISOString().split('T')[0],
+          expiryDate: expiryDate.toISOString().split('T')[0],
+        };
+      };
+
       // Fill passengers with test data based on their type
       let adultIdx = 0;
       let childIdx = 0;
@@ -426,14 +450,24 @@ export function PassengersStep() {
 
       const filledPassengers = passengers.map((pax) => {
         let testData;
+        let dateOfBirth: string;
+        let passport: any;
+
         if (pax.ptc === 'ADT') {
           testData = TEST_PASSENGERS.adults[adultIdx % TEST_PASSENGERS.adults.length];
+          dateOfBirth = testData.dateOfBirth;
+          passport = testData.passport;
           adultIdx++;
         } else if (pax.ptc === 'CHD') {
           testData = TEST_PASSENGERS.children[childIdx % TEST_PASSENGERS.children.length];
+          dateOfBirth = testData.dateOfBirth;
+          passport = testData.passport;
           childIdx++;
         } else {
+          // Infant - use dynamic birthdate to ensure under 24 months
           testData = TEST_PASSENGERS.infants[infantIdx % TEST_PASSENGERS.infants.length];
+          dateOfBirth = generateInfantBirthdate(infantIdx);
+          passport = generateInfantPassport(dateOfBirth, testData.passport);
           infantIdx++;
         }
 
@@ -443,10 +477,10 @@ export function PassengersStep() {
           firstName: testData.firstName,
           middleName: 'middleName' in testData ? testData.middleName : undefined,
           lastName: testData.lastName,
-          dateOfBirth: testData.dateOfBirth,
+          dateOfBirth,
           gender: testData.gender,
           residenceCountry: 'residenceCountry' in testData ? testData.residenceCountry : undefined,
-          passport: testData.passport,
+          passport,
           frequentFlyer: 'frequentFlyer' in testData ? testData.frequentFlyer : undefined,
           // For infants, auto-assign to first adult (ADT0) when using test data
           parentPaxIndex: pax.ptc === 'INF' ? 0 : undefined,
