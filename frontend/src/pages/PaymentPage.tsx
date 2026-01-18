@@ -122,6 +122,7 @@ export function PaymentPage() {
   const [errorWarnings, setErrorWarnings] = useState<string[]>([]); // Separate warnings for detailed display
   const [success, setSuccess] = useState(false);
   const [paymentResult, setPaymentResult] = useState<any>(null);
+  const [paidAmount, setPaidAmount] = useState<number>(0); // Track actual amount paid (including CC fee)
 
   // CC fees state
   const [ccFees, setCCFees] = useState<CCFeeResult[]>([]);
@@ -368,10 +369,25 @@ export function PaymentPage() {
     const startTime = Date.now();
 
     try {
-      // Build base payment request
+      // Calculate total payment amount including CC fee
+      let paymentTotal = totalAmount;
+      if (selectedMethod === 'CC') {
+        const currentFee = getCurrentCardFee();
+        if (currentFee && currentFee.ccSurcharge > 0) {
+          paymentTotal = totalAmount + currentFee.ccSurcharge;
+          console.log('[PaymentPage] CC fee applied:', {
+            baseAmount: totalAmount,
+            ccFee: currentFee.ccSurcharge,
+            totalPayment: paymentTotal,
+            cardBrand: detectCardBrand(cardForm.cardNumber),
+          });
+        }
+      }
+
+      // Build base payment request with total (including CC fee for card payments)
       let payment: any = {
         amount: {
-          value: totalAmount,
+          value: paymentTotal,
           currency,
         },
       };
@@ -448,6 +464,7 @@ export function PaymentPage() {
       });
 
       setPaymentResult(response.data);
+      setPaidAmount(paymentTotal); // Store actual amount paid
       setSuccess(true);
 
       console.log('[PaymentPage] Payment successful:', response.data);
@@ -554,7 +571,7 @@ export function PaymentPage() {
               <div className="flex justify-between items-center py-3">
                 <span className="text-slate-600">Amount Paid</span>
                 <span className="text-2xl font-bold text-emerald-600">
-                  {formatCurrency(totalAmount, currency)}
+                  {formatCurrency(paidAmount || totalAmount, currency)}
                 </span>
               </div>
             </div>
@@ -766,11 +783,19 @@ export function PaymentPage() {
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
                       maxLength={19}
                     />
-                    {cardForm.cardNumber && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        Detected: {CARD_BRANDS.find((b) => b.code === detectCardBrand(cardForm.cardNumber))?.name || 'Unknown'}
-                      </p>
-                    )}
+                    {cardForm.cardNumber && (() => {
+                      const brand = detectCardBrand(cardForm.cardNumber);
+                      const brandInfo = CARD_BRANDS.find((b) => b.code === brand);
+                      return (
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200">
+                            <span className="font-mono font-bold text-slate-700 text-sm">{brand}</span>
+                            <span className="text-slate-400 mx-1.5">|</span>
+                            <span className="text-slate-600 text-sm">{brandInfo?.name || 'Unknown'}</span>
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div>
@@ -834,7 +859,7 @@ export function PaymentPage() {
                     </div>
                   </div>
 
-                  {/* CC Surcharge Display */}
+                  {/* CC Surcharge Display - Shows fee for currently detected card */}
                   {isLoadingCCFees && (
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
                       <div className="flex items-center gap-3">
@@ -845,33 +870,55 @@ export function PaymentPage() {
                   )}
 
                   {!isLoadingCCFees && ccFees.length > 0 && (() => {
-                    // Filter to only show VI, MC, AX (exclude JCB)
-                    const displayFees = ccFees.filter(f => ['VI', 'MC', 'AX'].includes(f.cardBrand));
-                    const validFees = displayFees.filter(f => !f.error && f.ccSurcharge > 0);
+                    // Get current card's fee
+                    const currentFee = getCurrentCardFee();
+                    const detectedBrand = cardForm.cardNumber ? detectCardBrand(cardForm.cardNumber) : null;
 
-                    // Determine if percentage-based or fixed amount
-                    // Rule: If all amounts are the same = fixed, if different = percentage-based
-                    const uniqueAmounts = new Set(validFees.map(f => f.ccSurcharge));
-                    const isFixedAmount = uniqueAmounts.size === 1 && validFees.length > 1;
+                    // Format amount with symbol ($, €) if available, otherwise use currency code
+                    const formatSurchargeAmount = (amount: number) => {
+                      const currenciesWithSymbols = ['AUD', 'USD', 'NZD', 'SGD', 'CAD', 'HKD', 'EUR', 'GBP', 'JPY', 'CNY', 'INR', 'THB'];
+                      if (currenciesWithSymbols.includes(currency)) {
+                        return formatCurrency(amount, currency);
+                      }
+                      return `${currency} ${amount.toFixed(2)}`;
+                    };
 
-                    // Calculate percentage relative to total amount
+                    // Calculate percentage
                     const calculatePercentage = (fee: number) => {
                       if (totalAmount <= 0) return '0.00';
                       return ((fee / totalAmount) * 100).toFixed(2);
                     };
 
-                    // Format amount with symbol ($, €) if available, otherwise use currency code (AUD, JPY)
-                    // Common currencies have symbols: AUD/USD/NZD/SGD ($), EUR (€), GBP (£), JPY (¥), INR (₹)
-                    const formatSurchargeAmount = (amount: number) => {
-                      // Currencies that have distinct symbols
-                      const currenciesWithSymbols = ['AUD', 'USD', 'NZD', 'SGD', 'CAD', 'HKD', 'EUR', 'GBP', 'JPY', 'CNY', 'INR', 'THB'];
-                      if (currenciesWithSymbols.includes(currency)) {
-                        // Use Intl formatter for symbol-based display
-                        return formatCurrency(amount, currency);
-                      }
-                      // Fallback to currency code + amount for currencies without common symbols
-                      return `${currency} ${amount.toFixed(2)}`;
-                    };
+                    // If user has entered a card number, show specific fee for that card
+                    if (detectedBrand && currentFee && currentFee.ccSurcharge > 0) {
+                      const brandName = CARD_BRANDS.find(b => b.code === detectedBrand)?.name || detectedBrand;
+                      const pct = calculatePercentage(currentFee.ccSurcharge);
+
+                      return (
+                        <div className="bg-orange-50 border border-orange-300 rounded-xl p-4">
+                          <div className="flex items-center gap-3">
+                            <CreditCard className="w-5 h-5 text-orange-600 flex-shrink-0" />
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="font-semibold text-orange-900">{brandName} Surcharge</span>
+                                <span className="text-lg font-bold text-orange-700">
+                                  {formatSurchargeAmount(currentFee.ccSurcharge)}
+                                </span>
+                              </div>
+                              <div className="text-sm text-orange-600">
+                                {pct}% of booking total
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // No card entered yet - show summary of all card surcharges
+                    const displayFees = ccFees.filter(f => ['VI', 'MC', 'AX'].includes(f.cardBrand));
+                    const validFees = displayFees.filter(f => !f.error && f.ccSurcharge > 0);
+                    const uniqueAmounts = new Set(validFees.map(f => f.ccSurcharge));
+                    const isFixedAmount = uniqueAmounts.size === 1 && validFees.length > 1;
 
                     return (
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -881,13 +928,11 @@ export function PaymentPage() {
                             <div className="flex items-center justify-between">
                               <span className="font-semibold text-amber-900">Card Surcharges</span>
                               {isFixedAmount && validFees.length > 0 ? (
-                                // Fixed amount: Show with symbol ($5.00) or code (MYR 5.00) + "(Fixed)"
                                 <span className="text-sm text-amber-800">
                                   <span className="font-mono font-semibold">{formatSurchargeAmount(validFees[0].ccSurcharge)}</span>
                                   <span className="text-amber-600 ml-1">(Fixed)</span>
                                 </span>
                               ) : validFees.length > 0 ? (
-                                // Percentage-based: Show percentage per card brand (e.g., "Visa 1.50% | MC 1.50%")
                                 <span className="text-sm text-amber-800">
                                   {displayFees.map((fee, idx) => {
                                     const brandName = fee.cardBrand === 'VI' ? 'Visa' :
@@ -907,6 +952,7 @@ export function PaymentPage() {
                                 <span className="text-sm text-emerald-700">No surcharge</span>
                               )}
                             </div>
+                            <p className="text-xs text-amber-600 mt-1">Enter card number to see applicable fee</p>
                           </div>
                         </div>
                       </div>
@@ -1135,11 +1181,47 @@ export function PaymentPage() {
                 </div>
               </div>
 
-              {/* Total */}
-              <div className="border-t border-slate-200 pt-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600">Total Due</span>
-                  <span className="text-2xl font-bold text-orange-600">{formatCurrency(totalAmount, currency)}</span>
+              {/* Total with CC Fee breakdown */}
+              <div className="border-t border-slate-200 pt-4 space-y-3">
+                {/* Base Amount */}
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Booking Total</span>
+                  <span className="font-semibold text-slate-900">{formatCurrency(totalAmount, currency)}</span>
+                </div>
+
+                {/* CC Fee - only show if card payment and fee detected */}
+                {selectedMethod === 'CC' && (() => {
+                  const currentFee = getCurrentCardFee();
+                  const detectedBrand = cardForm.cardNumber ? detectCardBrand(cardForm.cardNumber) : null;
+                  const brandInfo = detectedBrand ? CARD_BRANDS.find(b => b.code === detectedBrand) : null;
+
+                  if (currentFee && currentFee.ccSurcharge > 0) {
+                    return (
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-600 flex items-center gap-1">
+                          Card Fee
+                          <span className="text-xs text-slate-400">({brandInfo?.name || detectedBrand})</span>
+                        </span>
+                        <span className="font-semibold text-orange-600">+ {formatCurrency(currentFee.ccSurcharge, currency)}</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Total Due */}
+                <div className="flex justify-between items-center pt-2 border-t border-dashed border-slate-200">
+                  <span className="font-semibold text-slate-700">Total Due</span>
+                  <span className="text-2xl font-bold text-orange-600">
+                    {(() => {
+                      if (selectedMethod === 'CC') {
+                        const currentFee = getCurrentCardFee();
+                        const fee = (currentFee && currentFee.ccSurcharge > 0) ? currentFee.ccSurcharge : 0;
+                        return formatCurrency(totalAmount + fee, currency);
+                      }
+                      return formatCurrency(totalAmount, currency);
+                    })()}
+                  </span>
                 </div>
               </div>
 
@@ -1176,7 +1258,14 @@ export function PaymentPage() {
                 ) : (
                   <>
                     <Lock className="w-5 h-5" />
-                    Pay {formatCurrency(totalAmount, currency)}
+                    Pay {(() => {
+                      if (selectedMethod === 'CC') {
+                        const currentFee = getCurrentCardFee();
+                        const fee = (currentFee && currentFee.ccSurcharge > 0) ? currentFee.ccSurcharge : 0;
+                        return formatCurrency(totalAmount + fee, currency);
+                      }
+                      return formatCurrency(totalAmount, currency);
+                    })()}
                   </>
                 )}
               </button>
