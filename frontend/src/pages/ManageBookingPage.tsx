@@ -56,22 +56,29 @@ interface JourneyInfo {
 }
 
 interface SegmentInfo {
-  segmentId: string;
-  marketingSegmentId?: string;
+  segmentId: string;  // PaxSegmentID
+  marketingSegmentId?: string;  // DatedMarketingSegmentId
+  operatingSegmentId?: string;  // DatedOperatingSegmentId
+  operatingLegId?: string;  // DatedOperatingLegID
   flightNumber: string;
   carrierCode: string;
+  operatingCarrierCode?: string;  // Operating carrier if different
+  operatingFlightNumber?: string;
   origin: string;
   destination: string;
   departureTime: string;
   arrivalTime: string;
+  departureTerminal?: string;
+  arrivalTerminal?: string;
   duration?: string;
   aircraft?: string;
   cabinClass?: string;
   cabinCode?: string;
-  rbd?: string;
+  rbd?: string;  // MarketingCarrierRBD_Code
+  fareBasisCode?: string;
   status?: string;
   isPassive?: boolean; // SegmentTypeCode = 2 indicates passive segment
-  segmentTypeCode?: string;
+  segmentTypeCode?: string;  // Raw NDC SegmentTypeCode
 }
 
 interface PassengerInfo {
@@ -106,14 +113,16 @@ interface PassengerServiceInfo {
 }
 
 interface ServiceInfo {
-  orderItemId: string;
+  orderItemId: string;  // OrderItemID
+  serviceDefinitionId?: string;  // ServiceDefinitionRefID
   type: string;
   name: string;
-  code?: string;
+  code?: string;  // ServiceCode
   price: { value: number; currency: string };
-  status: string;
-  paxIds: string[];
-  segmentIds: string[];
+  status: string;  // StatusCode (ACTIVE, etc.)
+  deliveryStatusCode?: string;  // DeliveryStatusCode (CONFIRMED=Unpaid, READY TO PROCEED=Paid)
+  paxIds: string[];  // PaxRefID list
+  segmentIds: string[];  // PaxSegmentRefID list
 }
 
 interface ContactInfo {
@@ -1255,16 +1264,30 @@ function FlightTimelineDev({ journeys, services, passengers }: { journeys: Journ
                         )}>{seg.isPassive ? 'PASSIVE' : (seg.status || 'CONFIRMED')}</span>
                       </div>
 
-                      {/* Segment IDs */}
+                      {/* Segment IDs - NDC Reference IDs */}
                       <div className="mt-2 flex flex-wrap gap-2">
                         <CopyableBadge label="PaxSegmentID" value={seg.segmentId} small />
-                        {seg.marketingSegmentId && <CopyableBadge label="MktSegmentID" value={seg.marketingSegmentId} small />}
-                        {seg.cabinClass && <CopyableBadge label="Cabin" value={`${seg.cabinClass} (${seg.cabinCode})`} small />}
-                        {seg.rbd && <CopyableBadge label="RBD" value={seg.rbd} small />}
-                        {seg.isPassive && <CopyableBadge label="SegmentType" value="PASSIVE (2)" small />}
-                        {seg.duration && <CopyableBadge label="Duration" value={seg.duration} small />}
-                        {seg.aircraft && <CopyableBadge label="Aircraft" value={seg.aircraft} small />}
+                        {seg.marketingSegmentId && <CopyableBadge label="DatedMktSegmentId" value={seg.marketingSegmentId} small />}
+                        {seg.operatingSegmentId && <CopyableBadge label="DatedOprSegmentId" value={seg.operatingSegmentId} small />}
+                        {seg.operatingLegId && <CopyableBadge label="DatedOprLegID" value={seg.operatingLegId} small />}
                       </div>
+                      {/* Segment Details */}
+                      <div className="mt-1.5 flex flex-wrap gap-2">
+                        {seg.cabinClass && <CopyableBadge label="CabinTypeName" value={seg.cabinClass} small />}
+                        {seg.cabinCode && <CopyableBadge label="CabinTypeCode" value={seg.cabinCode} small />}
+                        {seg.rbd && <CopyableBadge label="RBD_Code" value={seg.rbd} small />}
+                        {seg.segmentTypeCode && <CopyableBadge label="SegmentTypeCode" value={seg.segmentTypeCode} small />}
+                        {seg.duration && <CopyableBadge label="Duration" value={seg.duration} small />}
+                        {seg.aircraft && <CopyableBadge label="AircraftTypeCode" value={seg.aircraft} small />}
+                        {seg.departureTerminal && <CopyableBadge label="DepTerminal" value={seg.departureTerminal} small />}
+                        {seg.arrivalTerminal && <CopyableBadge label="ArrTerminal" value={seg.arrivalTerminal} small />}
+                      </div>
+                      {/* Operating Carrier if different */}
+                      {seg.operatingCarrierCode && seg.operatingCarrierCode !== seg.carrierCode && (
+                        <div className="mt-1.5 flex flex-wrap gap-2">
+                          <CopyableBadge label="OperatingCarrier" value={`${seg.operatingCarrierCode} ${seg.operatingFlightNumber || ''}`} small />
+                        </div>
+                      )}
                     </div>
 
                     {/* Services for this segment */}
@@ -1295,13 +1318,24 @@ function FlightTimelineDev({ journeys, services, passengers }: { journeys: Journ
                                       'px-1.5 py-0.5 rounded text-[10px] font-semibold',
                                       svc.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'
                                     )}>{svc.status}</span>
+                                    {/* DeliveryStatusCode - NDC payment indicator */}
+                                    {svc.deliveryStatusCode && (
+                                      <span className={cn(
+                                        'px-1.5 py-0.5 rounded text-[10px] font-semibold',
+                                        svc.deliveryStatusCode === 'READY TO PROCEED' ? 'bg-blue-100 text-blue-700' :
+                                        svc.deliveryStatusCode === 'CONFIRMED' ? 'bg-amber-100 text-amber-700' :
+                                        'bg-gray-100 text-gray-600'
+                                      )}>{svc.deliveryStatusCode}</span>
+                                    )}
                                   </div>
                                   <span className="font-bold text-sm">{formatCurrency(svc.price.value, svc.price.currency)}</span>
                                 </div>
                                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                                   <CopyableBadge label="OrderItemID" value={svc.orderItemId} small />
+                                  {svc.serviceDefinitionId && <CopyableBadge label="ServiceDefID" value={svc.serviceDefinitionId} small />}
                                   {svc.code && <CopyableBadge label="ServiceCode" value={svc.code} small />}
-                                  <CopyableBadge label="Type" value={svc.type} small />
+                                  <CopyableBadge label="StatusCode" value={svc.status} small />
+                                  {svc.deliveryStatusCode && <CopyableBadge label="DeliveryStatusCode" value={svc.deliveryStatusCode} small />}
                                   {svc.paxIds.map((id, i) => (
                                     <CopyableBadge key={i} label={`PaxRefID`} value={id} small />
                                   ))}
@@ -1669,22 +1703,31 @@ function parseBookingData(raw: any): ParsedBooking {
       const segmentTypeCode = oprSeg?.SegmentTypeCode;
       const isPassive = segmentTypeCode === '2' || segmentTypeCode === 2;
 
+      // Extract operating carrier info if different from marketing
+      const operatingCarrier = oprSeg?.OperatingCarrier;
+
       return {
-        segmentId: refId,
-        marketingSegmentId: paxSeg?.DatedMarketingSegmentRefId,
+        segmentId: refId,  // PaxSegmentID
+        marketingSegmentId: paxSeg?.DatedMarketingSegmentRefId,  // DatedMarketingSegmentId
+        operatingSegmentId: mktSeg?.DatedOperatingSegmentRefId,  // DatedOperatingSegmentId
+        operatingLegId: oprSeg?.DatedOperatingLegRefID,  // DatedOperatingLegID
         flightNumber: mktSeg?.MarketingCarrierFlightNumberText || '',
         carrierCode: mktSeg?.CarrierDesigCode || '',
+        operatingCarrierCode: operatingCarrier?.AirlineDesigCode,
+        operatingFlightNumber: operatingCarrier?.OperatingCarrierFlightNumberText,
         origin: mktSeg?.Dep?.IATA_LocationCode || '',
         destination: mktSeg?.Arrival?.IATA_LocationCode || '',
         departureTime: mktSeg?.Dep?.AircraftScheduledDateTime || '',
         arrivalTime: mktSeg?.Arrival?.AircraftScheduledDateTime || '',
+        departureTerminal: mktSeg?.Dep?.TerminalName,
+        arrivalTerminal: mktSeg?.Arrival?.TerminalName,
         duration: oprSeg?.Duration,
         aircraft: leg?.CarrierAircraftType?.CarrierAircraftTypeCode,
         cabinClass: cabin?.CabinTypeName,
         cabinCode: cabin?.CabinTypeCode,
         rbd: paxSeg?.MarketingCarrierRBD_Code,
         isPassive,
-        segmentTypeCode: segmentTypeCode?.toString(),
+        segmentTypeCode: segmentTypeCode?.toString(),  // Raw NDC code (1=Active, 2=Passive)
       };
     });
 
@@ -1921,10 +1964,14 @@ function parseBookingData(raw: any): ParsedBooking {
     const uniquePaxIds = [...new Set(paxIds.filter(Boolean))];
     const uniqueSegmentIds = [...new Set(segmentIds.filter(Boolean))];
 
-    console.log('[parseBookingData] OrderItem:', itemId, '| Type:', type, '| Name:', name, '| Code:', code, '| Pax:', uniquePaxIds, '| Segments:', uniqueSegmentIds);
+    // Get DeliveryStatusCode - per NDC reference: CONFIRMED=Unpaid, READY TO PROCEED=Paid
+    const deliveryStatusCode = item.DeliveryStatusCode;
+
+    console.log('[parseBookingData] OrderItem:', itemId, '| Type:', type, '| Name:', name, '| Code:', code, '| Status:', item.StatusCode, '| DeliveryStatus:', deliveryStatusCode, '| Pax:', uniquePaxIds, '| Segments:', uniqueSegmentIds);
 
     return {
-      orderItemId: itemId,
+      orderItemId: itemId,  // OrderItemID
+      serviceDefinitionId: serviceDefId || undefined,  // ServiceDefinitionRefID
       type,
       name,
       code,
@@ -1932,7 +1979,8 @@ function parseBookingData(raw: any): ParsedBooking {
         value: parseFloat(price.TotalAmount?.['#text'] || price.TotalAmount || 0),
         currency: price.TotalAmount?.['@CurCode'] || 'AUD',
       },
-      status: item.StatusCode || 'ACTIVE',
+      status: item.StatusCode || 'ACTIVE',  // StatusCode
+      deliveryStatusCode: deliveryStatusCode,  // DeliveryStatusCode (NDC payment indicator)
       paxIds: uniquePaxIds,
       segmentIds: uniqueSegmentIds,
     };
