@@ -463,7 +463,7 @@ function SimpleView({ booking, onAction, navigate }: ViewProps) {
       <BookingStatusBanner booking={booking} />
 
       {/* Flight Timeline with Services per Segment */}
-      <FlightTimeline journeys={booking.journeys} services={booking.services} passengers={booking.passengers} />
+      <FlightTimeline journeys={booking.journeys} />
 
       {/* Passengers & Contact Details */}
       <PassengersCardSimple passengers={booking.passengers} contactInfo={booking.contactInfo} />
@@ -611,177 +611,86 @@ function StatusPill({ label, value }: { label: string; value: string }) {
 }
 
 // ============================================================================
-// FLIGHT TIMELINE (Simple) - Shows journeys with segments and full passenger details
+// FLIGHT TIMELINE (Simple) - Compact journeys display
 // ============================================================================
 
-function FlightTimeline({ journeys, services, passengers }: { journeys: JourneyInfo[]; services: ServiceInfo[]; passengers: PassengerInfo[] }) {
+function FlightTimeline({ journeys }: { journeys: JourneyInfo[] }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-2">
       {journeys.map((journey) => (
-        <JourneyCard key={journey.journeyId} journey={journey} services={services} passengers={passengers} />
+        <JourneyCard key={journey.journeyId} journey={journey} />
       ))}
     </div>
   );
 }
 
-function JourneyCard({ journey, services, passengers }: { journey: JourneyInfo; services: ServiceInfo[]; passengers: PassengerInfo[] }) {
-  const [showPassengers, setShowPassengers] = useState(false);
+// Ultra-compact journey card - just flight info, no passengers
+function JourneyCard({ journey }: { journey: JourneyInfo }) {
   const isOutbound = journey.direction === 'outbound';
   const isInbound = journey.direction === 'inbound';
-
-  // Determine header color
-  const headerColorClass = isOutbound
-    ? 'bg-gradient-to-r from-orange-500 to-orange-600'
-    : isInbound
-      ? 'bg-gradient-to-r from-blue-500 to-blue-600'
-      : 'bg-gradient-to-r from-emerald-500 to-emerald-600';
-
   const hasPassiveSegment = journey.segments.some(s => s.isPassive);
 
+  // Colors based on direction
+  const accentColor = isOutbound ? 'orange' : isInbound ? 'blue' : 'emerald';
+  const headerBg = isOutbound
+    ? 'bg-orange-500'
+    : isInbound
+      ? 'bg-blue-500'
+      : 'bg-emerald-500';
+
   return (
-    <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-      {/* Compact Journey Header */}
-      <div className={cn('px-4 py-2 text-white flex items-center justify-between', headerColorClass)}>
-        <div className="flex items-center gap-3">
-          <Plane className={cn('w-4 h-4', isInbound && 'rotate-180')} />
-          <span className="text-xs font-medium opacity-80">{journey.directionLabel}</span>
-          <span className="font-bold">{journey.origin} → {journey.destination}</span>
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      {/* Single-line header */}
+      <div className={cn('px-3 py-1.5 text-white text-sm flex items-center justify-between', headerBg)}>
+        <div className="flex items-center gap-2">
+          <Plane className={cn('w-3.5 h-3.5', isInbound && 'rotate-180')} />
+          <span className="font-semibold">{journey.directionLabel}</span>
+          <span className="opacity-90">{journey.origin} → {journey.destination}</span>
+          {hasPassiveSegment && (
+            <span className="bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded text-xs font-bold">PASSIVE</span>
+          )}
         </div>
-        <div className="flex items-center gap-3 text-sm">
-          <span>{formatDateFull(journey.segments[0]?.departureTime)}</span>
-          <span className="opacity-80">{formatDuration(journey.duration)} • {journey.segments.length} seg</span>
-        </div>
+        <span className="opacity-90">{formatDateShort(journey.segments[0]?.departureTime)} • {formatDuration(journey.duration)}</span>
       </div>
 
-      {/* Passive Warning */}
-      {hasPassiveSegment && (
-        <div className="bg-amber-100 px-3 py-1 flex items-center gap-2 text-xs">
-          <AlertTriangle className="w-3 h-3 text-amber-600" />
-          <span className="font-bold text-amber-800">PASSIVE</span>
-          <span className="text-amber-700">- External carrier, not ticketed by Jetstar</span>
-        </div>
-      )}
-
-      {/* Ultra Compact Segments - Horizontal Flow */}
-      <div className="px-3 py-2 bg-gray-50 flex items-center gap-2 overflow-x-auto">
+      {/* Inline segments - single row */}
+      <div className="px-2 py-1.5 flex items-center gap-1 text-xs bg-gray-50">
         {journey.segments.map((seg, idx) => (
-          <div key={seg.segmentId} className="flex items-center">
-            {/* Segment Pill */}
+          <div key={seg.segmentId} className="contents">
+            {/* Segment chip */}
             <div className={cn(
-              "flex items-center gap-2 px-3 py-2 rounded-lg border text-sm",
-              seg.isPassive ? "bg-amber-50 border-amber-300" : "bg-white border-gray-200"
+              "inline-flex items-center gap-1.5 px-2 py-1 rounded border",
+              seg.isPassive
+                ? "bg-amber-50 border-amber-300 text-amber-900"
+                : "bg-white border-gray-200"
             )}>
-              {/* Flight Badge */}
               <span className={cn(
-                "px-1.5 py-0.5 rounded font-mono text-xs font-bold",
-                seg.isPassive ? "bg-amber-200 text-amber-800" : "bg-blue-100 text-blue-700"
+                "font-mono font-bold px-1 rounded text-[10px]",
+                seg.isPassive ? "bg-amber-200" : "bg-blue-100 text-blue-700"
               )}>
-                {seg.carrierCode} {seg.flightNumber}
+                {seg.carrierCode}{seg.flightNumber}
               </span>
-
-              {/* Times */}
-              <div className="flex items-center gap-1">
-                <span className="font-bold text-gray-900">{formatTime(seg.departureTime)}</span>
-                <span className="text-gray-400 text-xs">{seg.origin}</span>
-              </div>
-
-              <Plane className="w-3 h-3 text-gray-400" />
-
-              <div className="flex items-center gap-1">
-                <span className="font-bold text-gray-900">{formatTime(seg.arrivalTime)}</span>
-                <span className="text-gray-400 text-xs">{seg.destination}</span>
-              </div>
-
-              {/* Cabin/RBD */}
-              {seg.cabinClass && (
-                <span className="text-xs text-gray-500 border-l pl-2 border-gray-200">{seg.cabinClass}</span>
-              )}
-              {seg.rbd && !seg.cabinClass && (
-                <span className="text-xs text-gray-500 border-l pl-2 border-gray-200">RBD:{seg.rbd}</span>
-              )}
-
-              {seg.isPassive && (
-                <span className="text-xs font-bold text-amber-600">PASSIVE</span>
+              <span className="font-semibold">{formatTime(seg.departureTime)}</span>
+              <span className="text-gray-400">{seg.origin}</span>
+              <span className="text-gray-300">→</span>
+              <span className="font-semibold">{formatTime(seg.arrivalTime)}</span>
+              <span className="text-gray-400">{seg.destination}</span>
+              {(seg.cabinClass || seg.rbd) && (
+                <span className="text-gray-400 border-l border-gray-200 pl-1.5">
+                  {seg.cabinClass || `RBD:${seg.rbd}`}
+                </span>
               )}
             </div>
 
-            {/* Layover */}
+            {/* Layover badge */}
             {idx < journey.segments.length - 1 && (
-              <div className="flex items-center px-1">
-                <div className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs font-medium whitespace-nowrap flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  {calculateLayover(seg.arrivalTime, journey.segments[idx + 1].departureTime)}
-                  <span className="text-orange-500">{seg.destination}</span>
-                </div>
-              </div>
+              <span className="bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-medium whitespace-nowrap">
+                {calculateLayover(seg.arrivalTime, journey.segments[idx + 1].departureTime)} {seg.destination}
+              </span>
             )}
           </div>
         ))}
       </div>
-
-      {/* Passengers Toggle */}
-      <button
-        onClick={() => setShowPassengers(!showPassengers)}
-        className="w-full px-3 py-2 flex items-center justify-between bg-white hover:bg-gray-50 transition-colors text-sm"
-      >
-        <div className="flex items-center gap-2 text-gray-600">
-          <Users className="w-4 h-4" />
-          <span>{passengers.length} Passenger{passengers.length > 1 ? 's' : ''}</span>
-        </div>
-        <div className="flex items-center gap-1 text-gray-400 text-xs">
-          {showPassengers ? 'Hide' : 'Show'}
-          {showPassengers ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-        </div>
-      </button>
-
-      {/* Passengers (Collapsed by default) */}
-      {showPassengers && (
-        <div className="px-3 pb-3 space-y-2 border-t border-gray-100">
-          {passengers.map((pax) => {
-            const paxServices = services.filter(svc => svc.paxIds.includes(pax.paxId));
-            const PtcIcon = pax.ptc === 'CHD' || pax.ptc === 'INF' ? Baby : User;
-
-            return (
-              <div key={pax.paxId} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                <div className="flex items-center gap-2">
-                  <PtcIcon className={cn(
-                    'w-4 h-4',
-                    pax.ptc === 'ADT' ? 'text-blue-500' : 'text-purple-500'
-                  )} />
-                  <span className="font-medium text-gray-900">{pax.name}</span>
-                  <span className="text-xs text-gray-400">
-                    {pax.ptc === 'ADT' ? 'Adult' : pax.ptc === 'CHD' ? 'Child' : 'Infant'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {pax.loyalty && (
-                    <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-xs flex items-center gap-1">
-                      <Star className="w-3 h-3" /> {pax.loyalty.program}
-                    </span>
-                  )}
-                  {pax.document && (
-                    <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-xs">{pax.document.country}</span>
-                  )}
-                  {paxServices.map((svc, idx) => (
-                    <span key={idx} className={cn(
-                      "px-1.5 py-0.5 rounded text-xs flex items-center gap-0.5",
-                      svc.type === 'BAGGAGE' ? 'bg-blue-50 text-blue-600' :
-                      svc.type === 'SEAT' ? 'bg-purple-50 text-purple-600' :
-                      svc.type === 'MEAL' ? 'bg-green-50 text-green-600' :
-                      'bg-gray-50 text-gray-600'
-                    )}>
-                      {svc.type === 'BAGGAGE' && <Luggage className="w-3 h-3" />}
-                      {svc.type === 'SEAT' && <Armchair className="w-3 h-3" />}
-                      {svc.type === 'MEAL' && <Utensils className="w-3 h-3" />}
-                      {svc.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
