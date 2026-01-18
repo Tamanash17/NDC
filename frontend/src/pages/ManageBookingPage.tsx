@@ -2136,15 +2136,20 @@ function formatCurrency(value: number, currency: string): string {
 // Convert ISO 8601 duration (PT2H40M) to readable format (2h 40m)
 function formatDuration(duration: string | undefined): string {
   if (!duration) return '';
-  // Handle ISO 8601 duration format: PT1H25M, PT6H20M, etc.
-  const match = duration.match(/PT(?:(\d+)D)?(?:(\d+)H)?(?:(\d+)M)?/);
+  // Handle ISO 8601 duration format: P1DT5H30M, PT1H25M, P2D, etc.
+  // Format: P[n]Y[n]M[n]DT[n]H[n]M[n]S - T separates date from time parts
+  // Days come BEFORE the T, hours/minutes come AFTER the T
+  const match = duration.match(/P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?/);
   if (!match) return duration; // Return as-is if not ISO format
   const days = match[1] ? parseInt(match[1]) : 0;
   const hours = match[2] ? parseInt(match[2]) : 0;
   const mins = match[3] ? parseInt(match[3]) : 0;
+
+  // Convert days to hours for cleaner display
+  const totalHours = days * 24 + hours;
+
   const parts: string[] = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
+  if (totalHours > 0) parts.push(`${totalHours}h`);
   if (mins > 0) parts.push(`${mins}m`);
   return parts.join(' ') || '0m';
 }
