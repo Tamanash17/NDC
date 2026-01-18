@@ -624,90 +624,104 @@ function FlightTimeline({ journeys }: { journeys: JourneyInfo[] }) {
   );
 }
 
-// Compact but readable journey card
+// Clean journey card with visual hierarchy
 function JourneyCard({ journey }: { journey: JourneyInfo }) {
   const isOutbound = journey.direction === 'outbound';
   const isInbound = journey.direction === 'inbound';
   const hasPassiveSegment = journey.segments.some(s => s.isPassive);
 
-  const headerBg = isOutbound
-    ? 'bg-orange-500'
-    : isInbound
-      ? 'bg-blue-500'
-      : 'bg-emerald-500';
-
   return (
-    <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
       {/* Header */}
-      <div className={cn('px-4 py-2.5 text-white flex items-center justify-between', headerBg)}>
-        <div className="flex items-center gap-3">
-          <Plane className={cn('w-4 h-4', isInbound && 'rotate-180')} />
-          <span className="font-bold text-lg">{journey.directionLabel}</span>
-          <span className="text-lg">{journey.origin} → {journey.destination}</span>
+      <div className={cn(
+        'px-6 py-4 flex items-center justify-between',
+        isOutbound ? 'bg-gradient-to-r from-orange-500 to-orange-400' :
+        isInbound ? 'bg-gradient-to-r from-blue-600 to-blue-500' :
+        'bg-gradient-to-r from-emerald-600 to-emerald-500'
+      )}>
+        <div className="flex items-center gap-4 text-white">
+          <div className="bg-white/20 p-2.5 rounded-xl">
+            <Plane className={cn('w-5 h-5', isInbound && 'rotate-180')} />
+          </div>
+          <div>
+            <div className="text-white/80 text-sm font-medium">{journey.directionLabel}</div>
+            <div className="text-2xl font-bold">{journey.origin} → {journey.destination}</div>
+          </div>
           {hasPassiveSegment && (
-            <span className="bg-amber-400 text-amber-900 px-2 py-0.5 rounded text-xs font-bold ml-2">PASSIVE</span>
+            <span className="bg-amber-400 text-amber-900 px-3 py-1 rounded-full text-xs font-bold">
+              PASSIVE
+            </span>
           )}
         </div>
-        <div className="text-right">
-          <span className="text-sm opacity-90">{formatDateFull(journey.segments[0]?.departureTime)}</span>
-          <span className="mx-2 opacity-60">•</span>
-          <span className="font-semibold">{formatDuration(journey.duration)}</span>
+        <div className="text-white text-right">
+          <div className="text-white/80 text-sm">{formatDateFull(journey.segments[0]?.departureTime)}</div>
+          <div className="text-xl font-bold">{formatDuration(journey.duration)}</div>
         </div>
       </div>
 
       {/* Segments */}
-      <div className="px-4 py-3 bg-gray-50 flex flex-wrap items-center gap-2">
+      <div className="p-5 space-y-4">
         {journey.segments.map((seg, idx) => (
-          <div key={seg.segmentId} className="contents">
-            {/* Segment card */}
+          <div key={seg.segmentId}>
+            {/* Segment */}
             <div className={cn(
-              "inline-flex items-center gap-3 px-3 py-2 rounded-lg border shadow-sm",
-              seg.isPassive
-                ? "bg-amber-50 border-amber-300"
-                : "bg-white border-gray-200"
+              "flex items-center justify-between p-4 rounded-xl",
+              seg.isPassive ? "bg-amber-50 border-2 border-amber-300" : "bg-gray-50"
             )}>
-              {/* Flight number */}
-              <span className={cn(
-                "font-mono font-bold px-2 py-1 rounded text-sm",
-                seg.isPassive ? "bg-amber-200 text-amber-800" : "bg-blue-100 text-blue-700"
-              )}>
-                {seg.carrierCode} {seg.flightNumber}
-              </span>
-
-              {/* Departure */}
-              <div className="text-center">
-                <div className="text-lg font-bold text-gray-900">{formatTime(seg.departureTime)}</div>
-                <div className="text-xs text-gray-500 font-medium">{seg.origin}</div>
+              {/* Left: Flight number */}
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "px-3 py-2 rounded-lg font-mono text-sm font-bold",
+                  seg.isPassive ? "bg-amber-300 text-amber-900" : "bg-blue-600 text-white"
+                )}>
+                  {seg.carrierCode} {seg.flightNumber}
+                </div>
+                {seg.isPassive && (
+                  <span className="text-amber-700 text-xs font-bold bg-amber-200 px-2 py-1 rounded">PASSIVE</span>
+                )}
               </div>
 
-              {/* Arrow */}
-              <div className="flex items-center text-gray-300 px-1">
-                <div className="w-4 h-px bg-gray-300"></div>
-                <Plane className="w-3 h-3 mx-1 text-gray-400" />
-                <div className="w-4 h-px bg-gray-300"></div>
+              {/* Center: Times */}
+              <div className="flex items-center gap-8">
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-gray-900">{formatTime(seg.departureTime)}</div>
+                  <div className="text-sm text-gray-500 font-medium">{seg.origin}</div>
+                </div>
+
+                <div className="flex flex-col items-center gap-1">
+                  <div className="text-xs text-gray-400">{formatDuration(seg.duration)}</div>
+                  <div className="flex items-center">
+                    <div className="w-16 h-0.5 bg-gray-300"></div>
+                    <Plane className="w-4 h-4 text-gray-400 mx-2" />
+                    <div className="w-16 h-0.5 bg-gray-300"></div>
+                  </div>
+                  <div className="text-xs text-gray-400">Direct</div>
+                </div>
+
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-gray-900">{formatTime(seg.arrivalTime)}</div>
+                  <div className="text-sm text-gray-500 font-medium">{seg.destination}</div>
+                </div>
               </div>
 
-              {/* Arrival */}
-              <div className="text-center">
-                <div className="text-lg font-bold text-gray-900">{formatTime(seg.arrivalTime)}</div>
-                <div className="text-xs text-gray-500 font-medium">{seg.destination}</div>
+              {/* Right: Cabin */}
+              <div className="text-right min-w-[80px]">
+                {seg.cabinClass ? (
+                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg text-sm font-medium">
+                    {seg.cabinClass}
+                  </span>
+                ) : seg.rbd ? (
+                  <span className="text-gray-500 text-sm bg-gray-100 px-3 py-1.5 rounded-lg">RBD: {seg.rbd}</span>
+                ) : null}
               </div>
-
-              {/* Cabin/RBD */}
-              {(seg.cabinClass || seg.rbd) && (
-                <span className="text-xs text-gray-500 border-l border-gray-200 pl-3 ml-1">
-                  {seg.cabinClass || `RBD: ${seg.rbd}`}
-                </span>
-              )}
             </div>
 
             {/* Layover */}
             {idx < journey.segments.length - 1 && (
-              <div className="flex items-center px-2">
-                <div className="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{calculateLayover(seg.arrivalTime, journey.segments[idx + 1].departureTime)}</span>
-                  <span className="text-orange-500">{seg.destination}</span>
+              <div className="flex justify-center py-3">
+                <div className="inline-flex items-center gap-2 bg-orange-100 text-orange-700 px-4 py-2 rounded-full text-sm font-medium">
+                  <Clock className="w-4 h-4" />
+                  {calculateLayover(seg.arrivalTime, journey.segments[idx + 1].departureTime)} layover in {seg.destination}
                 </div>
               </div>
             )}
