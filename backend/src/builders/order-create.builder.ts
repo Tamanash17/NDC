@@ -126,8 +126,25 @@ ${itemIds.map(itemId => `<SelectedOfferItem>
 }
 
 function buildPassengerList(passengers: Passenger[]): string {
+  // Find adults to associate with infants (INF must have ParentPaxRefID)
+  // Each infant is assigned to the next available adult in order (INF0 -> ADT0, INF1 -> ADT1, etc.)
+  const adults = passengers.filter(p => p.ptc === 'ADT');
+
   return `<PaxList>
-${passengers.map((pax) => `<Pax>
+${passengers.map((pax, index) => {
+  // For infants, find the parent adult (INFn -> ADTn, with wraparound if more infants than adults)
+  let parentRefXml = '';
+  if (pax.ptc === 'INF') {
+    // Extract infant index from paxId (e.g., "INF0" -> 0, "INF1" -> 1)
+    const infIndex = parseInt(pax.paxId.replace('INF', ''), 10) || 0;
+    // Assign to corresponding adult (with wraparound if needed)
+    const parentAdult = adults[infIndex % adults.length];
+    if (parentAdult) {
+      parentRefXml = `<ParentPaxRefID>${escapeXml(parentAdult.paxId)}</ParentPaxRefID>\n`;
+    }
+  }
+
+  return `<Pax>
 <ContactInfoRefID>CI1</ContactInfoRefID>
 <IdentityDoc>
 <Birthdate>${formatDate(pax.birthdate)}</Birthdate>
@@ -148,10 +165,10 @@ ${pax.identityDoc ? `<ExpiryDate>${formatDate(pax.identityDoc.expiryDate)}</Expi
 <GivenName>${escapeXml(pax.givenName)}</GivenName>
 <Surname>${escapeXml(pax.surname)}</Surname>
 </Individual>
-${pax.loyalty ? buildLoyalty(pax.loyalty) : ""}
-<PaxID>${escapeXml(pax.paxId)}</PaxID>
+${pax.loyalty ? buildLoyalty(pax.loyalty) : ""}${parentRefXml}<PaxID>${escapeXml(pax.paxId)}</PaxID>
 <PTC>${escapeXml(pax.ptc)}</PTC>
-</Pax>`).join("")}
+</Pax>`;
+}).join("")}
 </PaxList>`;
 }
 
