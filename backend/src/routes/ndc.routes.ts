@@ -1179,6 +1179,7 @@ router.post("/process-payment", async (req: any, res: any) => {
 
 // Long Sell - CC surcharge fee calculation via OfferPrice with PaymentFunctions
 router.post("/long-sell", async (req: any, res: any) => {
+  const startTime = Date.now();
   try {
     console.log("[NDC] ===== LONG SELL (CC FEE) REQUEST =====");
     console.log("[NDC] Request body:", JSON.stringify(req.body, null, 2));
@@ -1213,6 +1214,7 @@ router.post("/long-sell", async (req: any, res: any) => {
       req.ndcEnvironment
     );
 
+    const duration = Date.now() - startTime;
     console.log("[NDC] Long Sell XML Response (first 2000 chars):\n", xmlResponse.substring(0, 2000));
 
     // Parse CC surcharge from response
@@ -1252,6 +1254,21 @@ router.post("/long-sell", async (req: any, res: any) => {
       }
     }
 
+    // Log to XML transaction logger for Visa (VI) only to avoid duplicate logs
+    // This gives us one representative Long Sell log per booking flow
+    if (cardBrand === 'VI') {
+      const cardBrandName = 'Visa';
+      await xmlTransactionLogger.logTransaction({
+        operation: `LongSell_${cardBrand}`,
+        requestXml: xmlRequest,
+        responseXml: xmlResponse,
+        success: true,
+        duration,
+        userAction: `User requested CC surcharge calculation for ${cardBrandName} (${cardBrand})`,
+      });
+      console.log(`[NDC] Long Sell transaction logged for ${cardBrandName}`);
+    }
+
     res.json({
       success: true,
       data: {
@@ -1264,6 +1281,7 @@ router.post("/long-sell", async (req: any, res: any) => {
       responseXml: xmlResponse,
     });
   } catch (error: any) {
+    const duration = Date.now() - startTime;
     console.error("[NDC] Long Sell Error:", error.message);
     console.error("[NDC] Long Sell Error Status:", error.response?.status);
     console.error("[NDC] Long Sell Error Data:", error.response?.data);
@@ -1282,6 +1300,21 @@ router.post("/long-sell", async (req: any, res: any) => {
         const errorMatch = data.match(/<(?:Error|Message|Fault|Description)[^>]*>([^<]+)<\//i);
         errorMessage = errorMatch ? errorMatch[1] : (data.length > 500 ? data.substring(0, 500) + '...' : data);
       }
+    }
+
+    // Log error for Visa to capture any issues
+    const { cardBrand } = req.body || {};
+    if (cardBrand === 'VI') {
+      await xmlTransactionLogger.logTransaction({
+        operation: `LongSell_${cardBrand}`,
+        requestXml: req.body?.xmlRequest || 'Request not available',
+        responseXml: typeof error.response?.data === 'string' ? error.response.data : JSON.stringify(error.response?.data || {}),
+        success: false,
+        duration,
+        errorCode: headerErrorCode || String(statusCode),
+        errorMessage,
+        userAction: `User requested CC surcharge calculation for Visa (VI) - FAILED`,
+      });
     }
 
     res.status(statusCode).json({
