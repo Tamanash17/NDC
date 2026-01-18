@@ -806,6 +806,12 @@ function PassengersCardSimple({ passengers, contactInfo, journeys, services }: {
         // Get all services for this passenger grouped by segment
         const paxServices = services.filter(s => s.paxIds.includes(pax.paxId) && s.type !== 'FLIGHT');
 
+        // Debug logging
+        console.log('[PassengersCardSimple] Passenger:', pax.paxId, pax.name);
+        console.log('[PassengersCardSimple] Total services:', services.length);
+        console.log('[PassengersCardSimple] Services for pax:', paxServices.length);
+        console.log('[PassengersCardSimple] Service paxIds sample:', services.slice(0, 3).map(s => ({ id: s.orderItemId, paxIds: s.paxIds, type: s.type })));
+
         // Group services by segment
         const servicesBySegment = new Map<string, ServiceInfo[]>();
         paxServices.forEach(svc => {
@@ -816,6 +822,8 @@ function PassengersCardSimple({ passengers, contactInfo, journeys, services }: {
             servicesBySegment.get(segId)!.push(svc);
           });
         });
+
+        console.log('[PassengersCardSimple] Services by segment:', Array.from(servicesBySegment.entries()).map(([k, v]) => ({ segId: k, count: v.length })));
 
         return (
           <div key={pax.paxId} className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
