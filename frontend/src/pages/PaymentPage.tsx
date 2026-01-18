@@ -860,8 +860,16 @@ export function PaymentPage() {
                       return ((fee / totalAmount) * 100).toFixed(2);
                     };
 
-                    // Format amount with currency code (e.g., "AUD 5.00")
-                    const formatWithCurrencyCode = (amount: number) => {
+                    // Format amount with symbol ($, €) if available, otherwise use currency code (AUD, JPY)
+                    // Common currencies have symbols: AUD/USD/NZD/SGD ($), EUR (€), GBP (£), JPY (¥), INR (₹)
+                    const formatSurchargeAmount = (amount: number) => {
+                      // Currencies that have distinct symbols
+                      const currenciesWithSymbols = ['AUD', 'USD', 'NZD', 'SGD', 'CAD', 'HKD', 'EUR', 'GBP', 'JPY', 'CNY', 'INR', 'THB'];
+                      if (currenciesWithSymbols.includes(currency)) {
+                        // Use Intl formatter for symbol-based display
+                        return formatCurrency(amount, currency);
+                      }
+                      // Fallback to currency code + amount for currencies without common symbols
                       return `${currency} ${amount.toFixed(2)}`;
                     };
 
@@ -873,9 +881,9 @@ export function PaymentPage() {
                             <div className="flex items-center justify-between">
                               <span className="font-semibold text-amber-900">Card Surcharges</span>
                               {isFixedAmount && validFees.length > 0 ? (
-                                // Fixed amount: Show currency code + amount (e.g., "AUD 5.00 (Fixed)")
+                                // Fixed amount: Show with symbol ($5.00) or code (MYR 5.00) + "(Fixed)"
                                 <span className="text-sm text-amber-800">
-                                  <span className="font-mono font-semibold">{formatWithCurrencyCode(validFees[0].ccSurcharge)}</span>
+                                  <span className="font-mono font-semibold">{formatSurchargeAmount(validFees[0].ccSurcharge)}</span>
                                   <span className="text-amber-600 ml-1">(Fixed)</span>
                                 </span>
                               ) : validFees.length > 0 ? (
