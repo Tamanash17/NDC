@@ -829,29 +829,24 @@ function PassengersCardSimple({ passengers, contactInfo, journeys, services }: {
           <div key={pax.paxId} className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
             {/* Passenger Header */}
             <div className={cn('px-6 py-4 bg-gradient-to-r text-white', colors.headerBg)}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
-                    <PtcIcon className="w-7 h-7" />
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-bold">{pax.name}</h3>
-                    <div className="flex items-center gap-3 text-sm text-white/80 mt-1">
-                      <span className="bg-white/20 px-2 py-0.5 rounded font-medium">{colors.label}</span>
-                      {pax.birthdate && <span>DOB: {formatDateFull(pax.birthdate)}</span>}
-                      {pax.gender && <span>{pax.gender === 'M' ? 'Male' : 'Female'}</span>}
-                    </div>
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
+                  <PtcIcon className="w-7 h-7" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold">{pax.name}</h3>
+                  <div className="flex items-center gap-3 text-sm text-white/80 mt-1 flex-wrap">
+                    <span className="bg-white/20 px-2 py-0.5 rounded font-medium">{colors.label}</span>
+                    {pax.birthdate && <span>DOB: {formatDateFull(pax.birthdate)}</span>}
+                    {pax.gender && <span>{pax.gender === 'M' ? 'Male' : 'Female'}</span>}
+                    {pax.loyalty && (
+                      <span className="flex items-center gap-1">
+                        <Star className="w-3.5 h-3.5" />
+                        {pax.loyalty.program} {pax.loyalty.number}
+                      </span>
+                    )}
                   </div>
                 </div>
-                {pax.loyalty && (
-                  <div className="bg-amber-400 text-amber-900 px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2">
-                    <Star className="w-5 h-5" />
-                    <div>
-                      <div>{pax.loyalty.program}</div>
-                      <div className="font-mono text-xs">{pax.loyalty.number}</div>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -902,24 +897,6 @@ function PassengersCardSimple({ passengers, contactInfo, journeys, services }: {
                       {contactInfo?.city && (
                         <p className="text-sm"><span className="text-slate-400">Location:</span> <span className="font-medium text-slate-700">{contactInfo.city}, {contactInfo.country}</span></p>
                       )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Loyalty Program */}
-                {pax.loyalty && (
-                  <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
-                    <p className="text-xs font-bold text-amber-600 mb-3 flex items-center gap-2 uppercase tracking-wide">
-                      <Award className="w-4 h-4" /> Frequent Flyer
-                    </p>
-                    <div className="flex items-center gap-3">
-                      <div className="p-2.5 bg-amber-100 rounded-lg">
-                        <Star className="w-6 h-6 text-amber-600" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-800">{pax.loyalty.program} Frequent Flyer</p>
-                        <p className="text-sm text-slate-600 font-mono">{pax.loyalty.number}</p>
-                      </div>
                     </div>
                   </div>
                 )}
