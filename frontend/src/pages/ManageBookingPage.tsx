@@ -813,14 +813,37 @@ function PassengersCardSimple({ passengers, contactInfo, journeys, services }: {
         console.log('[PassengersCardSimple] Service paxIds sample:', services.slice(0, 3).map(s => ({ id: s.orderItemId, paxIds: s.paxIds, type: s.type })));
 
         // Group services by segment
+        // For BUNDLE services, expand them to all segments in the same journey
         const servicesBySegment = new Map<string, ServiceInfo[]>();
+
         paxServices.forEach(svc => {
-          svc.segmentIds.forEach(segId => {
-            if (!servicesBySegment.has(segId)) {
-              servicesBySegment.set(segId, []);
+          if (svc.type === 'BUNDLE' && svc.segmentIds.length > 0) {
+            // Find which journey this bundle belongs to (by its first segment)
+            const firstSegId = svc.segmentIds[0];
+            const journey = journeys.find(j => j.segments.some(s => s.segmentId === firstSegId));
+
+            if (journey) {
+              // Add bundle to ALL segments in this journey
+              journey.segments.forEach(seg => {
+                if (!servicesBySegment.has(seg.segmentId)) {
+                  servicesBySegment.set(seg.segmentId, []);
+                }
+                // Avoid duplicates
+                const existing = servicesBySegment.get(seg.segmentId)!;
+                if (!existing.some(s => s.orderItemId === svc.orderItemId)) {
+                  existing.push(svc);
+                }
+              });
             }
-            servicesBySegment.get(segId)!.push(svc);
-          });
+          } else {
+            // Non-bundle services: just add to their specific segments
+            svc.segmentIds.forEach(segId => {
+              if (!servicesBySegment.has(segId)) {
+                servicesBySegment.set(segId, []);
+              }
+              servicesBySegment.get(segId)!.push(svc);
+            });
+          }
         });
 
         console.log('[PassengersCardSimple] Services by segment:', Array.from(servicesBySegment.entries()).map(([k, v]) => ({ segId: k, count: v.length })));
