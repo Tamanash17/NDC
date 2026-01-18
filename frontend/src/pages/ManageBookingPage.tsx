@@ -1646,18 +1646,22 @@ function parseBookingData(raw: any): ParsedBooking {
   console.log('[parseBookingData] Raw input sample:', JSON.stringify(raw).slice(0, 500));
 
   // Check various possible structures
-  // 1. Backend parser: { order: {...}, warnings: [...] }
-  // 2. Direct XML: { Response: { Order: {...} } }
-  // 3. Direct Order: { OrderID, TotalPrice, ... }
+  // 1. Backend parser nested: { order: {...}, warnings: [...] }
+  // 2. Backend parser flat: { orderId, orderItems, totalPrice, ... } (camelCase directly on raw)
+  // 3. Direct XML: { Response: { Order: {...} } }
+  // 4. Direct Order XML: { OrderID, TotalPrice, ... }
   const orderObj = raw?.order;
   const responseOrder = raw?.Response?.Order;
-  const directOrder = raw?.OrderID ? raw : null;
+  const directOrderXml = raw?.OrderID ? raw : null;
+
+  // Check for flat backend format (camelCase properties directly on raw)
+  const hasFlatBackendFormat = raw?.orderId && raw?.orderItems;
 
   const hasBackendFormat = orderObj && typeof orderObj === 'object';
   const hasResponseFormat = responseOrder && typeof responseOrder === 'object';
-  const hasDirectFormat = directOrder && typeof directOrder === 'object';
+  const hasDirectFormat = directOrderXml && typeof directOrderXml === 'object';
 
-  console.log('[parseBookingData] hasBackendFormat:', hasBackendFormat, 'hasResponseFormat:', hasResponseFormat, 'hasDirectFormat:', hasDirectFormat);
+  console.log('[parseBookingData] hasBackendFormat:', hasBackendFormat, 'hasFlatBackendFormat:', hasFlatBackendFormat, 'hasResponseFormat:', hasResponseFormat, 'hasDirectFormat:', hasDirectFormat);
 
   // Extract DataLists from multiple possible paths
   const dataLists = orderObj?.DataLists ||
@@ -1677,22 +1681,25 @@ function parseBookingData(raw: any): ParsedBooking {
   let payments: any[];
   let orderItems: any[];
 
-  if (hasBackendFormat) {
-    // Backend parsed format (camelCase properties)
-    console.log('[parseBookingData] Using backend format');
-    console.log('[parseBookingData] orderObj keys:', Object.keys(orderObj));
-    console.log('[parseBookingData] orderObj.orderId:', orderObj.orderId);
-    console.log('[parseBookingData] orderObj.totalPrice:', orderObj.totalPrice);
-    console.log('[parseBookingData] orderObj.payments:', orderObj.payments);
+  if (hasBackendFormat || hasFlatBackendFormat) {
+    // Backend parsed format (camelCase properties) - either nested under 'order' or flat on raw
+    const source = hasBackendFormat ? orderObj : raw;
+    console.log('[parseBookingData] Using backend format (nested:', hasBackendFormat, 'flat:', hasFlatBackendFormat, ')');
+    console.log('[parseBookingData] source keys:', Object.keys(source));
+    console.log('[parseBookingData] source.orderId:', source.orderId);
+    console.log('[parseBookingData] source.totalPrice:', source.totalPrice);
+    console.log('[parseBookingData] source.orderItems count:', source.orderItems?.length);
 
-    pnr = orderObj.orderId || '';
-    ownerCode = orderObj.ownerCode || 'JQ';
-    status = orderObj.status || 'UNKNOWN';
-    creationDate = orderObj.creationDateTime;
-    totalPriceValue = orderObj.totalPrice?.value || 0;
-    totalPriceCurrency = orderObj.totalPrice?.currency || 'AUD';
-    payments = orderObj.payments || [];
-    orderItems = orderObj.orderItems || [];
+    pnr = source.orderId || '';
+    ownerCode = source.ownerCode || 'JQ';
+    status = source.status || 'UNKNOWN';
+    creationDate = source.creationDateTime;
+    totalPriceValue = source.totalPrice?.value || 0;
+    totalPriceCurrency = source.totalPrice?.currency || 'AUD';
+    payments = source.payments || [];
+    orderItems = source.orderItems || [];
+
+    console.log('[parseBookingData] Parsed orderItems:', orderItems.length);
   } else {
     // Fallback: Raw XML-to-JSON format or direct properties
     console.log('[parseBookingData] Using XML fallback format');
@@ -1993,10 +2000,89 @@ function parseBookingData(raw: any): ParsedBooking {
   console.log('[parseBookingData] ServiceDefinitions:', serviceDefMap);
 
   // Parse order items (already extracted at top as orderItems array)
-  const normalizedOrderItems = normalizeToArray(orderItems);
-  console.log('[parseBookingData] Found OrderItems:', normalizedOrderItems.length);
+  // Also check for serviceItems from backend (more detailed service info)
+  const serviceItemsFromBackend = normalizeToArray(raw?.serviceItems);
+  const seatAssignmentsFromBackend = normalizeToArray(raw?.seatAssignments);
 
-  const services: ServiceInfo[] = normalizedOrderItems.map((item: any) => {
+  const normalizedOrderItems = normalizeToArray(orderItems);
+  console.log('[parseBookingData] Found OrderItems:', normalizedOrderItems.length, 'ServiceItems:', serviceItemsFromBackend.length, 'SeatAssignments:', seatAssignmentsFromBackend.length);
+
+  // If backend provides serviceItems, use those (they have better structure)
+  let services: ServiceInfo[] = [];
+
+  if (serviceItemsFromBackend.length > 0) {
+    // Use backend's parsed serviceItems
+    console.log('[parseBookingData] Using backend serviceItems format');
+
+    // Create seat assignment lookup
+    const seatMap = new Map<string, { row: string; column: string; segmentRefId: string }>();
+    seatAssignmentsFromBackend.forEach((sa: any) => {
+      const key = `${sa.paxRefId}-${sa.segmentRefId}`;
+      seatMap.set(key, { row: sa.row, column: sa.column, segmentRefId: sa.segmentRefId });
+    });
+
+    services = serviceItemsFromBackend.map((item: any) => {
+      const paxIds = normalizeToArray(item.paxRefIds);
+      const segmentIds = normalizeToArray(item.segmentRefIds);
+
+      // Check for seat assignment for this item
+      let seatNumber: string | undefined;
+      let seatRow: string | undefined;
+      let seatColumn: string | undefined;
+
+      if (item.seatAssignment) {
+        seatRow = item.seatAssignment.row;
+        seatColumn = item.seatAssignment.column;
+        seatNumber = `${seatRow}${seatColumn}`;
+      } else if (item.serviceType === 'SEAT' && paxIds.length > 0 && segmentIds.length > 0) {
+        // Look up seat from seatAssignments
+        const seatKey = `${paxIds[0]}-${segmentIds[0]}`;
+        const seat = seatMap.get(seatKey);
+        if (seat) {
+          seatRow = seat.row;
+          seatColumn = seat.column;
+          seatNumber = `${seatRow}${seatColumn}`;
+        }
+      }
+
+      // Get baggage weight from service definition if available
+      const svcDefId = item.serviceDefinitionRefId;
+      let baggageWeight: number | undefined;
+      let baggageUnit: string | undefined;
+      if (svcDefId && serviceDefMap.has(svcDefId)) {
+        const svcDef = serviceDefMap.get(svcDefId)!;
+        baggageWeight = svcDef.baggageWeight;
+        baggageUnit = svcDef.baggageUnit;
+      }
+
+      console.log('[parseBookingData] ServiceItem:', item.orderItemId, '| Type:', item.serviceType, '| Name:', item.serviceName, '| Seat:', seatNumber, '| Pax:', paxIds, '| Segments:', segmentIds);
+
+      return {
+        orderItemId: item.orderItemId || '',
+        serviceDefinitionId: svcDefId,
+        type: item.serviceType || 'OTHER',
+        name: item.serviceName || item.serviceCode || item.orderItemId,
+        code: item.serviceCode,
+        price: {
+          value: item.price?.value || 0,
+          currency: item.price?.currency || 'AUD',
+        },
+        status: 'ACTIVE',
+        deliveryStatusCode: undefined,
+        paxIds,
+        segmentIds,
+        seatNumber,
+        seatRow,
+        seatColumn,
+        baggageWeight,
+        baggageUnit,
+      };
+    });
+  } else {
+    // Fall back to XML format parsing
+    console.log('[parseBookingData] Using XML OrderItems format');
+
+    services = normalizedOrderItems.map((item: any) => {
     const itemId = item.OrderItemID || '';
     const price = item.Price || {};
 
@@ -2151,6 +2237,9 @@ function parseBookingData(raw: any): ParsedBooking {
       baggageUnit,
     };
   });
+  } // End of XML parsing else block
+
+  console.log('[parseBookingData] Total services parsed:', services.length);
 
   // Map services to passengers with segment details
   services.forEach(svc => {
