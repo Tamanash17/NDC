@@ -1815,6 +1815,12 @@ function parseBookingData(raw: any): ParsedBooking {
   const oprMap = new Map(operatingSegments.map((o: any) => [o.DatedOperatingSegmentId, o]));
   const legMap = new Map(operatingLegs.map((l: any) => [l.DatedOperatingLegID, l]));
 
+  console.log('[parseBookingData] Segment maps:', {
+    paxSegments: paxSegments.map((ps: any) => ({ id: ps.PaxSegmentID, mktRef: ps.DatedMarketingSegmentRefId })),
+    mktMap: Array.from(mktMap.entries()).map(([k, v]) => ({ key: k, oprRef: v.DatedOperatingSegmentRefId })),
+    oprMap: Array.from(oprMap.entries()).map(([k, v]) => ({ key: k, segTypeCode: v.SegmentTypeCode }))
+  });
+
   // Parse journeys
   const paxJourneys = normalizeToArray(dataLists?.PaxJourneyList?.PaxJourney);
   const journeys: JourneyInfo[] = paxJourneys.map((j: any, idx: number) => {
