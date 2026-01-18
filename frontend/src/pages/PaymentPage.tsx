@@ -254,10 +254,25 @@ export function PaymentPage() {
 
       console.log('[PaymentPage] Fetching CC fees with:', { segments, journeys, passengers });
 
+      const startTime = Date.now();
       const fees = await fetchAllCCFees(segments, journeys, passengers, currency);
+      const duration = Date.now() - startTime;
       setCCFees(fees);
 
       console.log('[PaymentPage] CC fees fetched:', fees);
+
+      // Add Long Sell calls to XML Logs panel (only log Visa to avoid duplicates)
+      const visaFee = fees.find(f => f.cardBrand === 'VI');
+      if (visaFee && visaFee.requestXml) {
+        addCapture({
+          operation: 'LongSell (CC Surcharge)',
+          request: visaFee.requestXml || '',
+          response: visaFee.rawResponse || '',
+          duration,
+          status: visaFee.error ? 'error' : 'success',
+          userAction: `Fetched CC surcharge for Visa: ${visaFee.ccSurcharge > 0 ? `$${visaFee.ccSurcharge.toFixed(2)}` : 'No fee'}`,
+        });
+      }
     } catch (err: any) {
       console.error('[PaymentPage] Error fetching CC fees:', err);
       setCCFeesError(err.message || 'Failed to fetch CC fees');
