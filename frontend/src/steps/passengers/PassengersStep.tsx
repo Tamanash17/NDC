@@ -106,6 +106,7 @@ interface PassengerForm {
   residenceCountry?: string;
   passport?: PassportForm;
   frequentFlyer?: FrequentFlyerForm;
+  parentPaxIndex?: number; // For infants: index of accompanying adult (0 = first adult, 1 = second adult, etc.)
 }
 
 interface PostalAddress {
@@ -447,6 +448,8 @@ export function PassengersStep() {
           residenceCountry: 'residenceCountry' in testData ? testData.residenceCountry : undefined,
           passport: testData.passport,
           frequentFlyer: 'frequentFlyer' in testData ? testData.frequentFlyer : undefined,
+          // For infants, auto-assign to first adult (ADT0) when using test data
+          parentPaxIndex: pax.ptc === 'INF' ? 0 : undefined,
         };
       });
 
@@ -463,7 +466,12 @@ export function PassengersStep() {
   const updatePassenger = (index: number, field: keyof PassengerForm, value: string) => {
     setPassengers(prev => {
       const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
+      // Handle parentPaxIndex as number
+      if (field === 'parentPaxIndex') {
+        updated[index] = { ...updated[index], parentPaxIndex: parseInt(value, 10) };
+      } else {
+        updated[index] = { ...updated[index], [field]: value };
+      }
       return updated;
     });
     // Clear error for this field
@@ -537,6 +545,12 @@ export function PassengersStep() {
           paxId = `INF${infIdx++}`;
         }
 
+        // For infants, compute the parent adult's PaxID (e.g., parentPaxIndex=0 -> "ADT0")
+        // NDC requires infants to have a ParentPaxRefID linking to accompanying adult
+        const parentPaxId = p.ptc === 'INF' && p.parentPaxIndex !== undefined
+          ? `ADT${p.parentPaxIndex}`
+          : undefined;
+
         return {
           paxId,
           ptc: p.ptc,
@@ -546,6 +560,7 @@ export function PassengersStep() {
           surname: p.lastName,
           birthdate: p.dateOfBirth,
           gender: p.gender as 'M' | 'F',
+          parentPaxId, // For infants: reference to accompanying adult
           identityDoc: p.passport?.number ? {
             type: 'PP' as const,
             number: p.passport.number,
@@ -1245,6 +1260,20 @@ export function PassengersStep() {
               options={COUNTRIES}
               placeholder="Select"
             />
+
+            {/* Parent Adult Selection - Only for Infants */}
+            {pax.ptc === 'INF' && paxCount.adults > 0 && (
+              <Select
+                label="Accompanying Adult"
+                value={pax.parentPaxIndex?.toString() ?? '0'}
+                onChange={(e) => updatePassenger(index, 'parentPaxIndex', e.target.value)}
+                options={Array.from({ length: paxCount.adults }, (_, i) => ({
+                  value: i.toString(),
+                  label: `Adult ${i + 1}${passengers.find(p => p.ptc === 'ADT' && passengers.filter(pp => pp.ptc === 'ADT').indexOf(p) === i)?.firstName ? ` (${passengers.filter(p => p.ptc === 'ADT')[i]?.firstName || ''} ${passengers.filter(p => p.ptc === 'ADT')[i]?.lastName || ''})`.trim() : ''}`,
+                }))}
+                required
+              />
+            )}
           </div>
 
           {/* Passport Details */}

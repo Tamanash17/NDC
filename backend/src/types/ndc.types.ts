@@ -121,6 +121,7 @@ export interface Passenger {
   identityDoc?: PassengerIdentityDoc;
   loyalty?: PassengerLoyalty;
   infantAssocPaxId?: string;
+  parentPaxId?: string; // For infants: reference to accompanying adult's paxId (e.g., "ADT0")
 }
 
 export interface PassengerCount {

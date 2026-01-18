@@ -127,20 +127,23 @@ ${itemIds.map(itemId => `<SelectedOfferItem>
 
 function buildPassengerList(passengers: Passenger[]): string {
   // Find adults to associate with infants (INF must have ParentPaxRefID)
-  // Each infant is assigned to the next available adult in order (INF0 -> ADT0, INF1 -> ADT1, etc.)
   const adults = passengers.filter(p => p.ptc === 'ADT');
 
   return `<PaxList>
 ${passengers.map((pax, index) => {
-  // For infants, find the parent adult (INFn -> ADTn, with wraparound if more infants than adults)
+  // For infants, use parentPaxId from frontend if provided, otherwise auto-assign
   let parentRefXml = '';
   if (pax.ptc === 'INF') {
-    // Extract infant index from paxId (e.g., "INF0" -> 0, "INF1" -> 1)
-    const infIndex = parseInt(pax.paxId.replace('INF', ''), 10) || 0;
-    // Assign to corresponding adult (with wraparound if needed)
-    const parentAdult = adults[infIndex % adults.length];
-    if (parentAdult) {
-      parentRefXml = `<ParentPaxRefID>${escapeXml(parentAdult.paxId)}</ParentPaxRefID>\n`;
+    // Use parentPaxId from frontend if provided (e.g., "ADT0")
+    if (pax.parentPaxId) {
+      parentRefXml = `<ParentPaxRefID>${escapeXml(pax.parentPaxId)}</ParentPaxRefID>\n`;
+    } else {
+      // Fallback: auto-assign infant to corresponding adult by index
+      const infIndex = parseInt(pax.paxId.replace('INF', ''), 10) || 0;
+      const parentAdult = adults[infIndex % adults.length];
+      if (parentAdult) {
+        parentRefXml = `<ParentPaxRefID>${escapeXml(parentAdult.paxId)}</ParentPaxRefID>\n`;
+      }
     }
   }
 
