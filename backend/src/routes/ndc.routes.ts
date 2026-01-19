@@ -1489,12 +1489,8 @@ router.post("/cc-fees", async (req: any, res: any) => {
     });
 
     // Detailed logging for debugging Long Sell extraction
-    console.log("[NDC] Order detail - Passengers:", JSON.stringify(order.passengers, null, 2));
-    console.log("[NDC] Order detail - marketingSegments:", JSON.stringify(order.marketingSegments, null, 2));
-    console.log("[NDC] Order detail - segments:", JSON.stringify(order.segments, null, 2));
-    console.log("[NDC] Order detail - journeys:", JSON.stringify(order.journeys, null, 2));
-    console.log("[NDC] Order detail - DataLists?.PaxJourneyList:", JSON.stringify(order.DataLists?.PaxJourneyList, null, 2));
-    console.log("[NDC] Order detail - DataLists?.DatedMarketingSegmentList:", JSON.stringify(order.DataLists?.DatedMarketingSegmentList, null, 2));
+    // Reduced logging to avoid Railway rate limit
+    console.log("[NDC] Order detail summary - passengers:", order.passengers?.length, "segments:", order.segments?.length, "journeys:", order.journeys?.length);
 
     // Step 2: Build Long Sell request from order
     console.log("[NDC] Step 2: Building Long Sell request from order...");
@@ -1551,10 +1547,8 @@ router.post("/cc-fees", async (req: any, res: any) => {
           req.ndcEnvironment
         );
 
-        // Log the full response for debugging
-        console.log(`[NDC] Long Sell Response for ${cardBrand} (length: ${xmlResponse?.length || 0}):`);
-        console.log(`[NDC] Response type: ${typeof xmlResponse}`);
-        console.log(`[NDC] Full Response XML:\n`, xmlResponse);
+        // Log response summary (not full XML to avoid Railway rate limit)
+        console.log(`[NDC] Long Sell Response for ${cardBrand}: length=${xmlResponse?.length || 0}, hasPaymentSurcharge=${xmlResponse?.includes('PaymentSurcharge')}`);
 
         // Parse CC surcharge from response
         let ccSurcharge = 0;
