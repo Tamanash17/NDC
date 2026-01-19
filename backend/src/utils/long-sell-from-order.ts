@@ -127,7 +127,9 @@ function buildSegments(order: OrderExtended): LongSellSegment[] {
 
   // Prefer marketingSegments (parsed from DatedMarketingSegmentList)
   if (order.marketingSegments && order.marketingSegments.length > 0) {
+    console.log("[LongSellFromOrder] Building segments from marketingSegments:");
     order.marketingSegments.forEach((seg, idx) => {
+      console.log(`  - Segment ${seg.segmentId}: ${seg.origin}->${seg.destination}, RBD=${seg.classOfService || 'MISSING'}`);
       segments.push({
         segmentId: seg.segmentId || `seg-${idx}`,
         origin: seg.origin,

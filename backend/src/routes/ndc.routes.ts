@@ -1489,8 +1489,14 @@ router.post("/cc-fees", async (req: any, res: any) => {
     });
 
     // Detailed logging for debugging Long Sell extraction
-    // Reduced logging to avoid Railway rate limit
+    // Log segment RBDs to debug fare mismatch issue
     console.log("[NDC] Order detail summary - passengers:", order.passengers?.length, "segments:", order.segments?.length, "journeys:", order.journeys?.length);
+    if (order.marketingSegments) {
+      console.log("[NDC] Marketing segments with RBD:");
+      order.marketingSegments.forEach(seg => {
+        console.log(`  - ${seg.segmentId}: ${seg.origin}->${seg.destination} RBD=${seg.classOfService || 'MISSING'}`);
+      });
+    }
 
     // Step 2: Build Long Sell request from order
     console.log("[NDC] Step 2: Building Long Sell request from order...");

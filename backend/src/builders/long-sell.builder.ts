@@ -224,12 +224,14 @@ export function buildLongSellXml(input: LongSellRequest): string {
   // Build ShoppingRequestPaxSegmentList using actual segment IDs
   // CRITICAL: Include MarketingCarrierRBD_Code to ensure correct fare class pricing
   // Based on order-create.builder.ts, RBD goes inside PaxSegment element
+  console.log("[LongSellBuilder] Building PaxSegmentList with RBD:");
   const paxSegmentList = segments.map((seg) => {
     const marketingId = getMarketingSegmentId(seg.segmentId);
     const cleanId = getCleanSegmentId(seg.segmentId);
     // RBD element for booking class - critical for matching original fare
     const rbdElement = seg.rbd ? `
           <MarketingCarrierRBD_Code>${escapeXml(seg.rbd)}</MarketingCarrierRBD_Code>` : '';
+    console.log(`  - Segment ${cleanId}: RBD=${seg.rbd || 'MISSING'}, rbdElement=${rbdElement ? 'YES' : 'NO'}`);
     return `
         <PaxSegment>
           <CabinTypeAssociationChoice>
