@@ -1184,7 +1184,7 @@ router.post("/long-sell", async (req: any, res: any) => {
     console.log("[NDC] ===== LONG SELL (CC FEE) REQUEST =====");
     console.log("[NDC] Request body:", JSON.stringify(req.body, null, 2));
 
-    const { segments, journeys, passengers, cardBrand, currency, distributionChain } = req.body;
+    const { segments, journeys, passengers, cardBrand, currency, distributionChain, bundles, ssrs, seats } = req.body;
 
     if (!segments || !journeys || !passengers || !cardBrand) {
       return res.status(400).json({
@@ -1192,6 +1192,15 @@ router.post("/long-sell", async (req: any, res: any) => {
         error: "Missing required fields: segments, journeys, passengers, cardBrand",
       });
     }
+
+    console.log("[NDC] Long Sell items:", {
+      segments: segments?.length || 0,
+      journeys: journeys?.length || 0,
+      passengers: passengers?.length || 0,
+      bundles: bundles?.length || 0,
+      ssrs: ssrs?.length || 0,
+      seats: seats?.length || 0,
+    });
 
     // Build XML using the Long Sell builder
     const xmlRequest = buildLongSellXml({
@@ -1201,6 +1210,9 @@ router.post("/long-sell", async (req: any, res: any) => {
       cardBrand,
       currency: currency || 'AUD',
       distributionChain,
+      bundles,
+      ssrs,
+      seats,
     });
 
     console.log("[NDC] Long Sell XML Request:\n", xmlRequest);

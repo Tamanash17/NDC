@@ -135,12 +135,38 @@ export interface LongSellPassenger {
   ptc: 'ADT' | 'CHD' | 'INF';
 }
 
+// Bundle selection per journey
+export interface LongSellBundle {
+  bundleCode: string; // e.g., 'P200' for STARTER PLUS
+  journeyIndex: number; // 0 = outbound, 1 = inbound
+  paxIds: string[]; // e.g., ['ADT0', 'ADT1', 'CHD0', 'CHD1'] - excludes INF
+}
+
+// SSR (Special Service Request) like UPFX (Upfront Seating)
+export interface LongSellSSR {
+  ssrCode: string; // e.g., 'UPFX'
+  segmentIndex: number; // which segment this SSR is for
+  paxId: string; // which passenger
+}
+
+// Seat selection
+export interface LongSellSeat {
+  segmentIndex: number; // which segment this seat is for
+  paxId: string; // which passenger
+  row: string; // e.g., '2'
+  column: string; // e.g., 'D'
+}
+
 export interface LongSellRequest {
   segments: LongSellSegment[];
   journeys: LongSellJourney[];
   passengers: LongSellPassenger[];
   cardBrand: string;
   currency: string;
+  // Optional: Additional items for accurate total pricing
+  bundles?: LongSellBundle[];
+  ssrs?: LongSellSSR[];
+  seats?: LongSellSeat[];
 }
 
 export interface CCFeeResult {
@@ -181,7 +207,10 @@ export async function fetchAllCCFees(
   segments: LongSellSegment[],
   journeys: LongSellJourney[],
   passengers: LongSellPassenger[],
-  currency: string
+  currency: string,
+  bundles?: LongSellBundle[],
+  ssrs?: LongSellSSR[],
+  seats?: LongSellSeat[]
 ): Promise<CCFeeResult[]> {
   // Card brand codes: VI=Visa, MC=Mastercard, AX=Amex
   // JCB removed as per requirements
@@ -191,14 +220,17 @@ export async function fetchAllCCFees(
   // Make requests SEQUENTIALLY to avoid DuplicateLeg errors
   // The Jetstar API doesn't allow concurrent Long Sell requests
   console.log('[LongSell] ===== FETCHING CC FEES =====');
-  console.log('[LongSell] Segments:', JSON.stringify(segments, null, 2));
-  console.log('[LongSell] Journeys:', JSON.stringify(journeys, null, 2));
-  console.log('[LongSell] Passengers:', JSON.stringify(passengers, null, 2));
+  console.log('[LongSell] Segments:', segments.length);
+  console.log('[LongSell] Journeys:', journeys.length);
+  console.log('[LongSell] Passengers:', passengers.length);
+  console.log('[LongSell] Bundles:', bundles?.length || 0);
+  console.log('[LongSell] SSRs:', ssrs?.length || 0);
+  console.log('[LongSell] Seats:', seats?.length || 0);
   console.log('[LongSell] Currency:', currency);
 
   for (const cardBrand of cardBrands) {
     try {
-      const result = await longSell({ segments, journeys, passengers, cardBrand, currency });
+      const result = await longSell({ segments, journeys, passengers, cardBrand, currency, bundles, ssrs, seats });
       results.push(result);
     } catch (err: any) {
       console.error(`[LongSell] ===== ERROR FOR ${cardBrand} =====`);

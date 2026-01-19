@@ -1,6 +1,16 @@
 // ============================================================================
 // LONG SELL XML BUILDER
 // Used for CC surcharge fee calculation via OfferPrice with PaymentFunctions
+//
+// This builder creates a STANDALONE OfferPrice request with flight details
+// and PaymentFunctions to calculate the CC surcharge for a specific card brand.
+// It uses dummy IDs internally - completely independent of AirShopping IDs.
+//
+// The request includes ALL booking items to get accurate surcharge:
+// - Flight fares (per journey, per passenger type)
+// - Bundles (e.g., STARTER PLUS P200)
+// - SSRs (e.g., UPFX - Upfront Seating)
+// - Seats (with row/column)
 // ============================================================================
 
 import { escapeXml } from "./base.builder.js";
@@ -31,6 +41,28 @@ export interface LongSellPassenger {
   ptc: 'ADT' | 'CHD' | 'INF';
 }
 
+// Bundle selection per journey
+export interface LongSellBundle {
+  bundleCode: string; // e.g., 'P200' for STARTER PLUS
+  journeyIndex: number; // 0 = outbound, 1 = inbound
+  paxIds: string[]; // e.g., ['ADT0', 'ADT1', 'CHD0', 'CHD1'] - excludes INF
+}
+
+// SSR (Special Service Request) like UPFX (Upfront Seating)
+export interface LongSellSSR {
+  ssrCode: string; // e.g., 'UPFX'
+  segmentIndex: number; // which segment this SSR is for
+  paxId: string; // which passenger
+}
+
+// Seat selection
+export interface LongSellSeat {
+  segmentIndex: number; // which segment this seat is for
+  paxId: string; // which passenger
+  row: string; // e.g., '2'
+  column: string; // e.g., 'D'
+}
+
 export interface LongSellRequest {
   segments: LongSellSegment[];
   journeys: LongSellJourney[];
@@ -38,6 +70,10 @@ export interface LongSellRequest {
   cardBrand: string; // VI, MC, AX, JCB, etc.
   currency: string;
   distributionChain?: DistributionChain;
+  // Optional: Additional items for accurate total pricing
+  bundles?: LongSellBundle[];
+  ssrs?: LongSellSSR[];
+  seats?: LongSellSeat[];
 }
 
 function buildDistributionChain(chain?: DistributionChain): string {
@@ -78,9 +114,24 @@ export function buildLongSellXml(input: LongSellRequest): string {
     cardBrand,
     currency,
     distributionChain,
+    bundles = [],
+    ssrs = [],
+    seats = [],
   } = input;
 
-  // Build DatedMarketingSegmentList with proper ID format
+  // Generate dummy segment IDs mapping
+  const segmentIdMap = new Map<number, string>();
+  segments.forEach((_, idx) => {
+    segmentIdMap.set(idx, `seg${String(idx + 1).padStart(9, '0')}`);
+  });
+
+  // Generate dummy journey IDs mapping
+  const journeyIdMap = new Map<number, string>();
+  journeys.forEach((_, idx) => {
+    journeyIdMap.set(idx, `fl${String(idx + 1).padStart(9, '0')}`);
+  });
+
+  // Build DatedMarketingSegmentList with proper ID format (dummy IDs)
   const segmentList = segments.map((seg, idx) => {
     const segNum = String(idx + 1).padStart(9, '0');
     return `
@@ -122,7 +173,13 @@ export function buildLongSellXml(input: LongSellRequest): string {
           ${segmentRefs}</PaxJourney>`;
   }).join("");
 
-  // Build PaxList with proper PaxID format (PaxID1, PaxID2, etc.)
+  // Build PaxList with PaxID format matching the example (PaxID1, PaxID2, etc.)
+  // Also create a mapping from frontend paxId (ADT0, CHD0) to Long Sell paxId (PaxID1, PaxID2)
+  const paxIdMapping = new Map<string, string>();
+  passengers.forEach((pax, idx) => {
+    paxIdMapping.set(pax.paxId, `PaxID${idx + 1}`);
+  });
+
   const paxList = passengers.map((pax, idx) => `
         <Pax>
           <PaxID>PaxID${idx + 1}</PaxID>
@@ -144,16 +201,84 @@ export function buildLongSellXml(input: LongSellRequest): string {
         </PaxSegment>`;
   }).join("");
 
-  // Build AcceptOrderItemList - one per journey with proper OwnerCode
-  const acceptOrderItemList = journeys.map((journey, idx) => `
-        <CreateOrderItem>
-          <OfferItemType>
-            <FlightItem>
-              <OriginDestRefID>OriginDestID${idx + 1}</OriginDestRefID>
-            </FlightItem>
-          </OfferItemType>
-          <OwnerCode>JQ</OwnerCode>
-        </CreateOrderItem>`).join("");
+  // ========================================================================
+  // BUILD ACCEPT ORDER ITEM LIST - Include ALL booking items
+  // Match the exact structure from OfferPrice example (no OfferItemID element)
+  // ========================================================================
+  let orderItemXml = '';
+
+  // Helper to map frontend paxId (ADT0, CHD0) to Long Sell paxId (PaxID1, PaxID2)
+  const mapPaxId = (frontendPaxId: string): string => {
+    return paxIdMapping.get(frontendPaxId) || frontendPaxId;
+  };
+
+  // 1. Flight items - one per journey (no OfferItemID, matches example structure)
+  journeys.forEach((_, journeyIdx) => {
+    orderItemXml += `
+                <CreateOrderItem>
+                     <OfferItemType>
+                        <FlightItem>
+                            <OriginDestRefID>OriginDestID${journeyIdx + 1}</OriginDestRefID>
+                        </FlightItem>
+                     </OfferItemType>
+                     <OwnerCode>JQ</OwnerCode>
+                </CreateOrderItem>`;
+  });
+
+  // 2. Bundle items - one per bundle selection per paying passenger
+  // Note: Bundles apply to ADT and CHD, not INF
+  bundles.forEach((bundle) => {
+    const journeyId = journeyIdMap.get(bundle.journeyIndex) || `fl${String(bundle.journeyIndex + 1).padStart(9, '0')}`;
+    // Map each paxId to the Long Sell format
+    const mappedPaxIds = bundle.paxIds.map(id => mapPaxId(id));
+    const paxRefs = mappedPaxIds.map(id => `<PaxRefID>${escapeXml(id)}</PaxRefID>`).join('');
+    orderItemXml += `
+                <CreateOrderItem>
+                     <OfferItemType>
+                        <SvcItem>
+                            <SvcCode>${escapeXml(bundle.bundleCode)}</SvcCode>
+                            <PaxJourneyRefID>${journeyId}</PaxJourneyRefID>
+                        </SvcItem>
+                     </OfferItemType>
+                     ${paxRefs}
+                     <OwnerCode>JQ</OwnerCode>
+                </CreateOrderItem>`;
+  });
+
+  // 3. SSR items - one per SSR per passenger per segment
+  ssrs.forEach((ssr) => {
+    const segmentId = segmentIdMap.get(ssr.segmentIndex) || `seg${String(ssr.segmentIndex + 1).padStart(9, '0')}`;
+    const mappedPaxId = mapPaxId(ssr.paxId);
+    orderItemXml += `
+                <CreateOrderItem>
+                     <OfferItemType>
+                        <SvcItem>
+                            <SvcCode>${escapeXml(ssr.ssrCode)}</SvcCode>
+                            <PaxSegmentRefID>${segmentId}</PaxSegmentRefID>
+                        </SvcItem>
+                     </OfferItemType>
+                     <PaxRefID>${escapeXml(mappedPaxId)}</PaxRefID>
+                     <OwnerCode>JQ</OwnerCode>
+                </CreateOrderItem>`;
+  });
+
+  // 4. Seat items - one per seat selection
+  seats.forEach((seat) => {
+    const segmentId = segmentIdMap.get(seat.segmentIndex) || `seg${String(seat.segmentIndex + 1).padStart(9, '0')}`;
+    const mappedPaxId = mapPaxId(seat.paxId);
+    orderItemXml += `
+                <CreateOrderItem>
+                     <OfferItemType>
+                        <SeatItem>
+                            <PaxSegmentRefID>${segmentId}</PaxSegmentRefID>
+                            <SeatRowNumber>${escapeXml(seat.row)}</SeatRowNumber>
+                            <ColumnID>${escapeXml(seat.column)}</ColumnID>
+                        </SeatItem>
+                     </OfferItemType>
+                     <PaxRefID>${escapeXml(mappedPaxId)}</PaxRefID>
+                     <OwnerCode>JQ</OwnerCode>
+                </CreateOrderItem>`;
+  });
 
   // Get current timestamp for request tracking
   const timestamp = new Date().toISOString();
@@ -168,6 +293,9 @@ export function buildLongSellXml(input: LongSellRequest): string {
     infCount > 0 ? `${infCount} Infant${infCount > 1 ? 's' : ''}` : ''
   ].filter(Boolean).join(', ');
 
+  // Count total items for header comment
+  const totalItems = journeys.length + bundles.length + ssrs.length + seats.length;
+
   // Build header comments with request details
   const headerComments = `<!-- ================================================================ -->
 <!-- NDC OfferPrice Request - Credit Card Surcharge Calculation -->
@@ -175,7 +303,9 @@ export function buildLongSellXml(input: LongSellRequest): string {
 <!-- Payment Mode: Credit Card (${escapeXml(cardBrand)}) -->
 <!-- Passengers: ${paxBreakdown} -->
 <!-- Currency: ${escapeXml(currency)} -->
-<!-- Journeys: ${journeys.length} journey(s) selected -->
+<!-- Journeys: ${journeys.length} journey(s), Segments: ${segments.length} -->
+<!-- Bundles: ${bundles.length}, SSRs: ${ssrs.length}, Seats: ${seats.length} -->
+<!-- Total Items: ${totalItems} -->
 <!-- ================================================================ -->
 `;
 
@@ -200,10 +330,11 @@ ${headerComments}<IATA_OfferPriceRQ Version="8.000" xmlns="${JETSTAR_NAMESPACE}"
       <!-- Shopping request passenger segment list -->
       <ShoppingRequestPaxSegmentList>${paxSegmentList}</ShoppingRequestPaxSegmentList>
     </DataLists>
-    <!-- Priced offer selection -->
-    <PricedOffer xmlns="${COMMON_TYPES_NAMESPACE}">
-      <AcceptOrderItemList>${acceptOrderItemList}</AcceptOrderItemList>
-    </PricedOffer>
+    <!-- Priced offer selection with all booking items -->
+        <PricedOffer xmlns="${COMMON_TYPES_NAMESPACE}">
+            <AcceptOrderItemList>${orderItemXml}
+            </AcceptOrderItemList>
+        </PricedOffer>
     <!-- Payment functions for surcharge calculation -->
     <PaymentFunctions xmlns="${COMMON_TYPES_NAMESPACE}">
       <PaymentMethodCriteria>

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useFlightSelectionStore } from '@/hooks/useFlightSelection';
 import { useDistributionContext, useSession } from '@/core/context/SessionStore';
 import { useXmlViewer } from '@/core/context/XmlViewerContext';
-import { processPayment, fetchAllCCFees, type CCFeeResult, type LongSellSegment, type LongSellJourney, type LongSellPassenger } from '@/lib/ndc-api';
+import { processPayment, fetchAllCCFees, type CCFeeResult, type LongSellSegment, type LongSellJourney, type LongSellPassenger, type LongSellBundle, type LongSellSSR, type LongSellSeat } from '@/lib/ndc-api';
 import { formatCurrency } from '@/lib/format';
 import { AppLayout } from '@/components/layout';
 
@@ -252,10 +252,103 @@ export function PaymentPage() {
         passengers.push({ paxId: 'ADT0', ptc: 'ADT' });
       }
 
-      console.log('[PaymentPage] Fetching CC fees with:', { segments, journeys, passengers });
+      // Build bundles from selection (e.g., P200 = STARTER PLUS)
+      const bundles: LongSellBundle[] = [];
+      const payingPaxIds = passengers.filter(p => p.ptc !== 'INF').map(p => p.paxId);
+
+      if (selection.outbound?.bundle?.code) {
+        bundles.push({
+          bundleCode: selection.outbound.bundle.code,
+          journeyIndex: 0,
+          paxIds: payingPaxIds,
+        });
+      }
+      if (selection.inbound?.bundle?.code) {
+        bundles.push({
+          bundleCode: selection.inbound.bundle.code,
+          journeyIndex: 1,
+          paxIds: payingPaxIds,
+        });
+      }
+
+      // Build SSRs and seats from selectedServices
+      const ssrs: LongSellSSR[] = [];
+      const seatSelections: LongSellSeat[] = [];
+
+      // Create segment index mapping (segment ID -> index)
+      const segmentIndexMap = new Map<string, number>();
+      segments.forEach((seg, idx) => {
+        segmentIndexMap.set(seg.segmentId, idx);
+      });
+
+      const selectedServices = flightStore.selectedServices || [];
+      selectedServices.forEach((service) => {
+        // Get segment index from service's segmentRefs
+        const serviceSegmentRef = service.segmentRefs?.[0];
+        let segmentIndex = -1;
+
+        if (serviceSegmentRef) {
+          // Try to match by segment ref ID
+          segmentIndex = segmentIndexMap.get(serviceSegmentRef) ?? -1;
+
+          // If not found, try to find by matching origin/destination
+          if (segmentIndex === -1) {
+            segments.forEach((seg, idx) => {
+              if (serviceSegmentRef.includes(seg.origin) || serviceSegmentRef.includes(seg.destination)) {
+                segmentIndex = idx;
+              }
+            });
+          }
+
+          // Fallback: use index based on segment count
+          if (segmentIndex === -1 && serviceSegmentRef) {
+            // Extract any number from the segment ref to use as index hint
+            const numMatch = serviceSegmentRef.match(/\d+/);
+            if (numMatch) {
+              segmentIndex = Math.min(parseInt(numMatch[0], 10), segments.length - 1);
+            }
+          }
+        }
+
+        // Default to 0 if still not found
+        if (segmentIndex === -1) segmentIndex = 0;
+
+        if (service.serviceType === 'ssr' && service.serviceCode) {
+          // Add SSR for each passenger
+          service.paxRefIds.forEach((paxId) => {
+            ssrs.push({
+              ssrCode: service.serviceCode,
+              segmentIndex,
+              paxId,
+            });
+          });
+        } else if (service.serviceType === 'seat' && service.seatRow && service.seatColumn) {
+          // Add seat selection
+          service.paxRefIds.forEach((paxId) => {
+            seatSelections.push({
+              segmentIndex,
+              paxId,
+              row: service.seatRow!,
+              column: service.seatColumn!,
+            });
+          });
+        }
+      });
+
+      console.log('[PaymentPage] Fetching CC fees with:', {
+        segments: segments.length,
+        journeys: journeys.length,
+        passengers: passengers.length,
+        bundles: bundles.length,
+        ssrs: ssrs.length,
+        seats: seatSelections.length,
+      });
+      console.log('[PaymentPage] Bundles:', bundles);
+      console.log('[PaymentPage] SSRs:', ssrs);
+      console.log('[PaymentPage] Seats:', seatSelections);
 
       const startTime = Date.now();
-      const fees = await fetchAllCCFees(segments, journeys, passengers, currency);
+      const fees = await fetchAllCCFees(segments, journeys, passengers, currency, bundles, ssrs, seatSelections);
       const duration = Date.now() - startTime;
       setCCFees(fees);
 
