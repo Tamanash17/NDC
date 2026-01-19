@@ -119,28 +119,60 @@ export function buildLongSellXml(input: LongSellRequest): string {
     seats = [],
   } = input;
 
-  // Generate dummy segment IDs mapping
+  // ========================================================================
+  // KEY FIX: Use ACTUAL segment/journey/passenger IDs from the order
+  // The working Postman test used real IDs like Mkt-seg963657718, not dummy IDs
+  // ========================================================================
+
+  // Helper to extract clean segment ID (without Mkt- prefix for PaxSegmentRefID)
+  const getCleanSegmentId = (segmentId: string): string => {
+    // If it already starts with 'seg', use as-is
+    if (segmentId.startsWith('seg')) return segmentId;
+    // If it starts with 'Mkt-seg', strip the Mkt- prefix
+    if (segmentId.startsWith('Mkt-seg')) return segmentId.replace('Mkt-', '');
+    // Otherwise, use as-is
+    return segmentId;
+  };
+
+  // Helper to get marketing segment ID format (with Mkt- prefix)
+  const getMarketingSegmentId = (segmentId: string): string => {
+    // If already has Mkt- prefix, use as-is
+    if (segmentId.startsWith('Mkt-')) return segmentId;
+    // If starts with 'seg', add Mkt- prefix
+    if (segmentId.startsWith('seg')) return `Mkt-${segmentId}`;
+    // Otherwise, use as-is
+    return segmentId;
+  };
+
+  // Helper to get operating segment ID format (with Opr- prefix)
+  const getOperatingSegmentId = (segmentId: string): string => {
+    const cleanId = getCleanSegmentId(segmentId);
+    return `Opr-${cleanId}`;
+  };
+
+  // Create segment index mapping using actual segment IDs
   const segmentIdMap = new Map<number, string>();
-  segments.forEach((_, idx) => {
-    segmentIdMap.set(idx, `seg${String(idx + 1).padStart(9, '0')}`);
+  segments.forEach((seg, idx) => {
+    segmentIdMap.set(idx, getCleanSegmentId(seg.segmentId));
   });
 
-  // Generate dummy journey IDs mapping
+  // Create journey ID mapping using actual journey IDs
   const journeyIdMap = new Map<number, string>();
-  journeys.forEach((_, idx) => {
-    journeyIdMap.set(idx, `fl${String(idx + 1).padStart(9, '0')}`);
+  journeys.forEach((journey, idx) => {
+    journeyIdMap.set(idx, journey.journeyId);
   });
 
-  // Build DatedMarketingSegmentList with proper ID format (dummy IDs)
-  const segmentList = segments.map((seg, idx) => {
-    const segNum = String(idx + 1).padStart(9, '0');
+  // Build DatedMarketingSegmentList using ACTUAL segment IDs from order
+  const segmentList = segments.map((seg) => {
+    const marketingId = getMarketingSegmentId(seg.segmentId);
+    const operatingId = getOperatingSegmentId(seg.segmentId);
     return `
         <DatedMarketingSegment>
           <Arrival>
             <IATA_LocationCode>${escapeXml(seg.destination)}</IATA_LocationCode>
           </Arrival>
-          <DatedMarketingSegmentId>Mkt-seg${segNum}</DatedMarketingSegmentId>
-          <DatedOperatingSegmentRefId>Opr-seg${segNum}</DatedOperatingSegmentRefId>
+          <DatedMarketingSegmentId>${marketingId}</DatedMarketingSegmentId>
+          <DatedOperatingSegmentRefId>${operatingId}</DatedOperatingSegmentRefId>
           <Dep>
             <AircraftScheduledDateTime>${escapeXml(seg.departureDateTime)}</AircraftScheduledDateTime>
             <IATA_LocationCode>${escapeXml(seg.origin)}</IATA_LocationCode>
@@ -150,45 +182,46 @@ export function buildLongSellXml(input: LongSellRequest): string {
         </DatedMarketingSegment>`;
   }).join("");
 
-  // Build OriginDestList
+  // Build OriginDestList using actual journey IDs
   const originDestList = journeys.map((journey, idx) => `
         <OriginDest>
           <OriginDestID>OriginDestID${idx + 1}</OriginDestID>
-          <PaxJourneyRefID>fl${String(idx + 1).padStart(9, '0')}</PaxJourneyRefID>
+          <PaxJourneyRefID>${escapeXml(journey.journeyId)}</PaxJourneyRefID>
           <OriginCode>${escapeXml(journey.origin)}</OriginCode>
           <DestCode>${escapeXml(journey.destination)}</DestCode>
         </OriginDest>`).join("");
 
-  // Build PaxJourneyList - map journey segment indices to global segment indices
-  let globalSegIdx = 0;
-  const paxJourneyList = journeys.map((journey, journeyIdx) => {
-    const segmentRefs = journey.segmentIds.map(() => {
-      globalSegIdx++;
-      return `<PaxSegmentRefID>seg${String(globalSegIdx).padStart(9, '0')}</PaxSegmentRefID>`;
+  // Build PaxJourneyList using actual IDs
+  const paxJourneyList = journeys.map((journey) => {
+    const segmentRefs = journey.segmentIds.map(segId => {
+      const cleanId = getCleanSegmentId(segId);
+      return `<PaxSegmentRefID>${cleanId}</PaxSegmentRefID>`;
     }).join("\n          ");
 
     return `
         <PaxJourney>
-          <PaxJourneyID>fl${String(journeyIdx + 1).padStart(9, '0')}</PaxJourneyID>
+          <PaxJourneyID>${escapeXml(journey.journeyId)}</PaxJourneyID>
           ${segmentRefs}</PaxJourney>`;
   }).join("");
 
-  // Build PaxList with PaxID format matching the example (PaxID1, PaxID2, etc.)
-  // Also create a mapping from frontend paxId (ADT0, CHD0) to Long Sell paxId (PaxID1, PaxID2)
+  // Build PaxList using ACTUAL passenger IDs from order (not dummy PaxID1, PaxID2)
+  // The paxId comes from the order (e.g., A438253293, C438253295, I438253293)
   const paxIdMapping = new Map<string, string>();
-  passengers.forEach((pax, idx) => {
-    paxIdMapping.set(pax.paxId, `PaxID${idx + 1}`);
+  passengers.forEach((pax) => {
+    // Map the paxId to itself - we use actual IDs now
+    paxIdMapping.set(pax.paxId, pax.paxId);
   });
 
-  const paxList = passengers.map((pax, idx) => `
+  const paxList = passengers.map((pax) => `
         <Pax>
-          <PaxID>PaxID${idx + 1}</PaxID>
+          <PaxID>${escapeXml(pax.paxId)}</PaxID>
           <PTC>${escapeXml(pax.ptc)}</PTC>
         </Pax>`).join("");
 
-  // Build ShoppingRequestPaxSegmentList
-  const paxSegmentList = segments.map((seg, idx) => {
-    const segNum = String(idx + 1).padStart(9, '0');
+  // Build ShoppingRequestPaxSegmentList using actual segment IDs
+  const paxSegmentList = segments.map((seg) => {
+    const marketingId = getMarketingSegmentId(seg.segmentId);
+    const cleanId = getCleanSegmentId(seg.segmentId);
     return `
         <PaxSegment>
           <CabinTypeAssociationChoice>
@@ -196,8 +229,8 @@ export function buildLongSellXml(input: LongSellRequest): string {
               <CabinTypeCode>${seg.cabinCode || '5'}</CabinTypeCode>
             </SegmentCabinType>
           </CabinTypeAssociationChoice>
-          <DatedMarketingSegmentRefId>Mkt-seg${segNum}</DatedMarketingSegmentRefId>
-          <PaxSegmentID>seg${segNum}</PaxSegmentID>
+          <DatedMarketingSegmentRefId>${marketingId}</DatedMarketingSegmentRefId>
+          <PaxSegmentID>${cleanId}</PaxSegmentID>
         </PaxSegment>`;
   }).join("");
 
@@ -261,9 +294,14 @@ export function buildLongSellXml(input: LongSellRequest): string {
   });
 
   // 4. Seat items - use DatedOperatingLegRefID (not PaxSegmentRefID)
+  // Use actual segment IDs to build the operating leg reference
   seats.forEach((seat) => {
-    const segNum = String(seat.segmentIndex + 1).padStart(9, '0');
-    const legRefId = `Opr-seg${segNum}`; // Operating leg reference
+    // Get the actual segment ID from the mapping
+    const segmentId = segmentIdMap.get(seat.segmentIndex);
+    // Build operating leg ref from the actual segment ID
+    // Format: seg{id}-leg0 (e.g., seg963657718-leg0)
+    const cleanSegId = segmentId ? getCleanSegmentId(segmentId) : `seg${String(seat.segmentIndex + 1).padStart(9, '0')}`;
+    const legRefId = `${cleanSegId}-leg0`; // Operating leg reference
     const mappedPaxId = mapPaxId(seat.paxId);
     orderItemXml += `
                 <CreateOrderItem>

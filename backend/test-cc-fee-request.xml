@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ================================================================ -->
+<!-- NDC OfferPrice Request - CC Surcharge Calculation -->
+<!-- Test Request for Order WNLSJW -->
+<!-- Card Brand: VI (Visa) -->
+<!--
+     This uses the same structure as the working OfferPrice but with
+     PaymentFunctions added for CC fee calculation.
+
+     Key difference from Long Sell: Uses actual segment/journey IDs from order
+-->
+<!-- ================================================================ -->
+<IATA_OfferPriceRQ Version="8.000" xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersMessage">
+  <DistributionChain>
+    <DistributionChainLink xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersCommonTypes">
+      <Ordinal>1</Ordinal>
+      <OrgRole>Seller</OrgRole>
+      <ParticipatingOrg>
+        <OrgID>55778878</OrgID>
+      </ParticipatingOrg>
+    </DistributionChainLink>
+  </DistributionChain>
+  <PayloadAttributes>
+    <VersionNumber xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersCommonTypes">21.3</VersionNumber>
+  </PayloadAttributes>
+  <Request>
+    <!-- DataLists with actual segment/journey data from order -->
+    <DataLists xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersCommonTypes">
+      <!-- Flight segment information from OrderRetrieve -->
+      <DatedMarketingSegmentList>
+        <!-- Segment 1: MEL to NTL -->
+        <DatedMarketingSegment>
+          <Arrival>
+            <AircraftScheduledDateTime>2026-08-30T08:00:00</AircraftScheduledDateTime>
+            <IATA_LocationCode>NTL</IATA_LocationCode>
+          </Arrival>
+          <DatedMarketingSegmentId>Mkt-seg963657718</DatedMarketingSegmentId>
+          <DatedOperatingSegmentRefId>Opr-seg963657718</DatedOperatingSegmentRefId>
+          <Dep>
+            <AircraftScheduledDateTime>2026-08-30T06:30:00</AircraftScheduledDateTime>
+            <IATA_LocationCode>MEL</IATA_LocationCode>
+          </Dep>
+          <CarrierDesigCode>JQ</CarrierDesigCode>
+          <MarketingCarrierFlightNumberText>472</MarketingCarrierFlightNumberText>
+        </DatedMarketingSegment>
+        <!-- Segment 2: NTL to DPS -->
+        <DatedMarketingSegment>
+          <Arrival>
+            <AircraftScheduledDateTime>2026-08-30T13:35:00</AircraftScheduledDateTime>
+            <IATA_LocationCode>DPS</IATA_LocationCode>
+          </Arrival>
+          <DatedMarketingSegmentId>Mkt-seg01814991320</DatedMarketingSegmentId>
+          <DatedOperatingSegmentRefId>Opr-seg01814991320</DatedOperatingSegmentRefId>
+          <Dep>
+            <AircraftScheduledDateTime>2026-08-30T09:00:00</AircraftScheduledDateTime>
+            <IATA_LocationCode>NTL</IATA_LocationCode>
+          </Dep>
+          <CarrierDesigCode>JQ</CarrierDesigCode>
+          <MarketingCarrierFlightNumberText>88</MarketingCarrierFlightNumberText>
+        </DatedMarketingSegment>
+        <!-- Segment 3: DPS to SIN -->
+        <DatedMarketingSegment>
+          <Arrival>
+            <AircraftScheduledDateTime>2026-08-30T18:00:00</AircraftScheduledDateTime>
+            <IATA_LocationCode>SIN</IATA_LocationCode>
+          </Arrival>
+          <DatedMarketingSegmentId>Mkt-seg0864671783</DatedMarketingSegmentId>
+          <DatedOperatingSegmentRefId>Opr-seg0864671783</DatedOperatingSegmentRefId>
+          <Dep>
+            <AircraftScheduledDateTime>2026-08-30T15:20:00</AircraftScheduledDateTime>
+            <IATA_LocationCode>DPS</IATA_LocationCode>
+          </Dep>
+          <CarrierDesigCode>JQ</CarrierDesigCode>
+          <MarketingCarrierFlightNumberText>43</MarketingCarrierFlightNumberText>
+        </DatedMarketingSegment>
+        <!-- Segment 4: SIN to MEL (via SYD) -->
+        <DatedMarketingSegment>
+          <Arrival>
+            <AircraftScheduledDateTime>2026-09-30T22:00:00</AircraftScheduledDateTime>
+            <IATA_LocationCode>MEL</IATA_LocationCode>
+          </Arrival>
+          <DatedMarketingSegmentId>Mkt-seg0686809041</DatedMarketingSegmentId>
+          <DatedOperatingSegmentRefId>Opr-seg0686809041</DatedOperatingSegmentRefId>
+          <Dep>
+            <AircraftScheduledDateTime>2026-09-30T10:00:00</AircraftScheduledDateTime>
+            <IATA_LocationCode>SIN</IATA_LocationCode>
+          </Dep>
+          <CarrierDesigCode>JQ</CarrierDesigCode>
+          <MarketingCarrierFlightNumberText>3</MarketingCarrierFlightNumberText>
+        </DatedMarketingSegment>
+      </DatedMarketingSegmentList>
+      <!-- Origin and destination list -->
+      <OriginDestList>
+        <OriginDest>
+          <OriginDestID>OriginDestID1</OriginDestID>
+          <PaxJourneyRefID>fl1629121671</PaxJourneyRefID>
+          <OriginCode>MEL</OriginCode>
+          <DestCode>SIN</DestCode>
+        </OriginDest>
+        <OriginDest>
+          <OriginDestID>OriginDestID2</OriginDestID>
+          <PaxJourneyRefID>fl0686809041</PaxJourneyRefID>
+          <OriginCode>SIN</OriginCode>
+          <DestCode>MEL</DestCode>
+        </OriginDest>
+      </OriginDestList>
+      <!-- Passenger journey list -->
+      <PaxJourneyList>
+        <PaxJourney>
+          <PaxJourneyID>fl1629121671</PaxJourneyID>
+          <PaxSegmentRefID>seg963657718</PaxSegmentRefID>
+          <PaxSegmentRefID>seg01814991320</PaxSegmentRefID>
+          <PaxSegmentRefID>seg0864671783</PaxSegmentRefID>
+        </PaxJourney>
+        <PaxJourney>
+          <PaxJourneyID>fl0686809041</PaxJourneyID>
+          <PaxSegmentRefID>seg0686809041</PaxSegmentRefID>
+        </PaxJourney>
+      </PaxJourneyList>
+      <!-- Passenger list (from order) -->
+      <PaxList>
+        <Pax>
+          <PaxID>A438253293</PaxID>
+          <PTC>ADT</PTC>
+        </Pax>
+        <Pax>
+          <PaxID>A438253294</PaxID>
+          <PTC>ADT</PTC>
+        </Pax>
+        <Pax>
+          <PaxID>C438253295</PaxID>
+          <PTC>CHD</PTC>
+        </Pax>
+        <Pax>
+          <PaxID>C438253296</PaxID>
+          <PTC>CHD</PTC>
+        </Pax>
+        <Pax>
+          <PaxID>I438253293</PaxID>
+          <PTC>INF</PTC>
+        </Pax>
+      </PaxList>
+      <!-- Passenger segment list -->
+      <ShoppingRequestPaxSegmentList>
+        <PaxSegment>
+          <CabinTypeAssociationChoice>
+            <SegmentCabinType>
+              <CabinTypeCode>5</CabinTypeCode>
+            </SegmentCabinType>
+          </CabinTypeAssociationChoice>
+          <DatedMarketingSegmentRefId>Mkt-seg963657718</DatedMarketingSegmentRefId>
+          <PaxSegmentID>seg963657718</PaxSegmentID>
+        </PaxSegment>
+        <PaxSegment>
+          <CabinTypeAssociationChoice>
+            <SegmentCabinType>
+              <CabinTypeCode>5</CabinTypeCode>
+            </SegmentCabinType>
+          </CabinTypeAssociationChoice>
+          <DatedMarketingSegmentRefId>Mkt-seg01814991320</DatedMarketingSegmentRefId>
+          <PaxSegmentID>seg01814991320</PaxSegmentID>
+        </PaxSegment>
+        <PaxSegment>
+          <CabinTypeAssociationChoice>
+            <SegmentCabinType>
+              <CabinTypeCode>5</CabinTypeCode>
+            </SegmentCabinType>
+          </CabinTypeAssociationChoice>
+          <DatedMarketingSegmentRefId>Mkt-seg0864671783</DatedMarketingSegmentRefId>
+          <PaxSegmentID>seg0864671783</PaxSegmentID>
+        </PaxSegment>
+        <PaxSegment>
+          <CabinTypeAssociationChoice>
+            <SegmentCabinType>
+              <CabinTypeCode>5</CabinTypeCode>
+            </SegmentCabinType>
+          </CabinTypeAssociationChoice>
+          <DatedMarketingSegmentRefId>Mkt-seg0686809041</DatedMarketingSegmentRefId>
+          <PaxSegmentID>seg0686809041</PaxSegmentID>
+        </PaxSegment>
+      </ShoppingRequestPaxSegmentList>
+    </DataLists>
+    <!-- Priced offer with AcceptOrderItemList -->
+    <PricedOffer xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersCommonTypes">
+      <AcceptOrderItemList>
+        <!-- Flight items for Journey 1 (Outbound: MEL-SIN) -->
+        <CreateOrderItem>
+          <OfferItemType>
+            <FlightItem>
+              <OriginDestRefID>OriginDestID1</OriginDestRefID>
+            </FlightItem>
+          </OfferItemType>
+          <OwnerCode>JQ</OwnerCode>
+        </CreateOrderItem>
+        <!-- Flight items for Journey 2 (Return: SIN-MEL) -->
+        <CreateOrderItem>
+          <OfferItemType>
+            <FlightItem>
+              <OriginDestRefID>OriginDestID2</OriginDestRefID>
+            </FlightItem>
+          </OfferItemType>
+          <OwnerCode>JQ</OwnerCode>
+        </CreateOrderItem>
+      </AcceptOrderItemList>
+    </PricedOffer>
+    <!-- Payment functions for CC surcharge calculation -->
+    <PaymentFunctions xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersCommonTypes">
+      <PaymentMethodCriteria>
+        <PaymentTypeCode>CC</PaymentTypeCode>
+        <PaymentBrandCode>VI</PaymentBrandCode>
+      </PaymentMethodCriteria>
+    </PaymentFunctions>
+    <!-- Response currency -->
+    <ResponseParameters xmlns="http://www.iata.org/IATA/2015/EASD/00/IATA_OffersAndOrdersCommonTypes">
+      <CurParameter>
+        <CurCode>AUD</CurCode>
+      </CurParameter>
+    </ResponseParameters>
+  </Request>
+</IATA_OfferPriceRQ>
