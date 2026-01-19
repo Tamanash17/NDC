@@ -58,12 +58,12 @@ const TEST_PASSENGERS = {
   ],
   infants: [
     {
-      title: 'MR', firstName: 'Baby', middleName: 'Lee', lastName: 'Smith', dateOfBirth: '', // Will be set dynamically
+      title: 'MR', firstName: 'Baby', middleName: 'Lee', lastName: 'Smith', dateOfBirth: '', gender: 'M' as const, // Will be set dynamically
       residenceCountry: 'AU',
       passport: { number: 'PI1234567', issuingCountry: 'AU', issueDate: '', expiryDate: '', citizenship: 'AU' },
     },
     {
-      title: 'MISS', firstName: 'Lily', middleName: 'Ann', lastName: 'Johnson', dateOfBirth: '', // Will be set dynamically
+      title: 'MISS', firstName: 'Lily', middleName: 'Ann', lastName: 'Johnson', dateOfBirth: '', gender: 'F' as const, // Will be set dynamically
       residenceCountry: 'AU',
       passport: { number: 'PI2345678', issuingCountry: 'AU', issueDate: '', expiryDate: '', citizenship: 'AU' },
     },
