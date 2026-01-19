@@ -225,7 +225,7 @@ export function buildLongSellXml(input: LongSellRequest): string {
                 </CreateOrderItem>`;
   });
 
-  // 2. Bundle items - one per bundle selection per paying passenger
+  // 2. Bundle items - use OtherItem (not SvcItem - that's invalid)
   // Note: Bundles apply to ADT and CHD, not INF
   bundles.forEach((bundle) => {
     const journeyId = journeyIdMap.get(bundle.journeyIndex) || `fl${String(bundle.journeyIndex + 1).padStart(9, '0')}`;
@@ -235,42 +235,41 @@ export function buildLongSellXml(input: LongSellRequest): string {
     orderItemXml += `
                 <CreateOrderItem>
                      <OfferItemType>
-                        <SvcItem>
-                            <SvcCode>${escapeXml(bundle.bundleCode)}</SvcCode>
-                            <PaxJourneyRefID>${journeyId}</PaxJourneyRefID>
-                        </SvcItem>
+                        <OtherItem>
+                            <OtherSvcCode>${escapeXml(bundle.bundleCode)}</OtherSvcCode>
+                        </OtherItem>
                      </OfferItemType>
                      ${paxRefs}
                      <OwnerCode>JQ</OwnerCode>
                 </CreateOrderItem>`;
   });
 
-  // 3. SSR items - one per SSR per passenger per segment
+  // 3. SSR items - use OtherItem (not SvcItem - that's invalid)
   ssrs.forEach((ssr) => {
     const segmentId = segmentIdMap.get(ssr.segmentIndex) || `seg${String(ssr.segmentIndex + 1).padStart(9, '0')}`;
     const mappedPaxId = mapPaxId(ssr.paxId);
     orderItemXml += `
                 <CreateOrderItem>
                      <OfferItemType>
-                        <SvcItem>
-                            <SvcCode>${escapeXml(ssr.ssrCode)}</SvcCode>
-                            <PaxSegmentRefID>${segmentId}</PaxSegmentRefID>
-                        </SvcItem>
+                        <OtherItem>
+                            <OtherSvcCode>${escapeXml(ssr.ssrCode)}</OtherSvcCode>
+                        </OtherItem>
                      </OfferItemType>
                      <PaxRefID>${escapeXml(mappedPaxId)}</PaxRefID>
                      <OwnerCode>JQ</OwnerCode>
                 </CreateOrderItem>`;
   });
 
-  // 4. Seat items - one per seat selection
+  // 4. Seat items - use DatedOperatingLegRefID (not PaxSegmentRefID)
   seats.forEach((seat) => {
-    const segmentId = segmentIdMap.get(seat.segmentIndex) || `seg${String(seat.segmentIndex + 1).padStart(9, '0')}`;
+    const segNum = String(seat.segmentIndex + 1).padStart(9, '0');
+    const legRefId = `Opr-seg${segNum}`; // Operating leg reference
     const mappedPaxId = mapPaxId(seat.paxId);
     orderItemXml += `
                 <CreateOrderItem>
                      <OfferItemType>
                         <SeatItem>
-                            <PaxSegmentRefID>${segmentId}</PaxSegmentRefID>
+                            <DatedOperatingLegRefID>${legRefId}</DatedOperatingLegRefID>
                             <SeatRowNumber>${escapeXml(seat.row)}</SeatRowNumber>
                             <ColumnID>${escapeXml(seat.column)}</ColumnID>
                         </SeatItem>
