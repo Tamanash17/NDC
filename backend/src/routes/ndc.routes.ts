@@ -1551,6 +1551,11 @@ router.post("/cc-fees", async (req: any, res: any) => {
           req.ndcEnvironment
         );
 
+        // Log the full response for debugging
+        console.log(`[NDC] Long Sell Response for ${cardBrand} (length: ${xmlResponse?.length || 0}):`);
+        console.log(`[NDC] Response type: ${typeof xmlResponse}`);
+        console.log(`[NDC] Full Response XML:\n`, xmlResponse);
+
         // Parse CC surcharge from response
         let ccSurcharge = 0;
         let surchargeType: 'fixed' | 'percentage' = 'fixed';
