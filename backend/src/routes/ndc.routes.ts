@@ -1126,13 +1126,29 @@ router.post("/process-payment", async (req: any, res: any) => {
       });
     }
 
+    // Parse the response using order parser (OrderChange returns OrderViewRS format)
+    const parsedOrder = orderParser.parse(xmlResponse);
+    console.log("[NDC] Parsed order from payment response:", {
+      orderId: parsedOrder?.orderId,
+      status: parsedOrder?.status,
+      paymentInfo: parsedOrder?.paymentInfo,
+    });
+
+    // Get payment info from parsed order
+    const paymentInfo = parsedOrder?.paymentInfo;
+    const paidAmount = paymentInfo?.amount?.value;
+    const paidCurrency = paymentInfo?.amount?.currency;
+    const surchargeAmount = paymentInfo?.surchargeAmount?.value;
+
+    console.log("[NDC] Payment amounts from parsed response:", { paidAmount, paidCurrency, surchargeAmount });
+
     // Parse success indicators
     const orderIdMatch = xmlResponse.match(/<OrderID[^>]*>([^<]+)<\/OrderID>/i);
     const pnrMatch = xmlResponse.match(/<AirlineOrderID[^>]*>([^<]+)<\/AirlineOrderID>/i);
 
     // Verify payment actually succeeded - look for successful payment status
     const paymentStatus = paymentStatusMatch ? paymentStatusMatch[1].toUpperCase() : 'UNKNOWN';
-    const isPaymentSuccess = paymentStatus === 'COMPLETED' || paymentStatus === 'CONFIRMED' || paymentStatus === 'SUCCESS';
+    const isPaymentSuccess = paymentStatus === 'COMPLETED' || paymentStatus === 'CONFIRMED' || paymentStatus === 'SUCCESS' || paymentStatus === 'SUCCESSFUL';
 
     // If we got here without errors/warnings but payment status is unknown, treat as success
     // (some responses may not include PaymentStatusCode explicitly)
@@ -1143,7 +1159,11 @@ router.post("/process-payment", async (req: any, res: any) => {
         orderId: orderIdMatch ? orderIdMatch[1] : orderId,
         pnr: pnrMatch ? pnrMatch[1] : null,
         status: isPaymentSuccess ? 'PAID' : 'PENDING',
-        paymentStatus: paymentStatus,
+        paymentStatus: paymentInfo?.status || paymentStatus,
+        // Include actual payment amounts from Jetstar response (parsed from XML)
+        paidAmount,
+        paidCurrency,
+        surchargeAmount,
       },
       requestXml: xmlRequest,
       responseXml: xmlResponse,

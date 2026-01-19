@@ -282,9 +282,11 @@ export function ServicePaymentPage() {
     const startTime = Date.now();
 
     try {
-      // Calculate payment amount - include CC fee for credit card payments
+      // IMPORTANT: Send ONLY the base order amount to Jetstar
+      // Jetstar automatically adds the CC surcharge when processing the payment
+      // If we add the surcharge here, it gets added TWICE causing "Order is overpaid" error
       const ccFee = selectedMethod === 'CC' ? (getCurrentCardFee()?.ccSurcharge || 0) : 0;
-      const paymentAmount = totalAmount + ccFee;
+      const paymentAmount = totalAmount; // Send base amount only, Jetstar adds CC fee
 
       let payment: any = {
         amount: {
@@ -334,7 +336,8 @@ export function ServicePaymentPage() {
         method: selectedMethod,
         baseAmount: totalAmount,
         ccFee: ccFee,
-        totalPaymentAmount: paymentAmount,
+        paymentAmountSent: paymentAmount, // Base amount only, Jetstar adds CC fee
+        displayTotal: totalAmount + ccFee, // What user sees
         currency,
       });
 
@@ -357,7 +360,16 @@ export function ServicePaymentPage() {
       });
 
       setPaymentResult(response.data);
-      setPaidAmount(paymentAmount); // Track amount paid including CC fee
+
+      // Use the ACTUAL paid amount from Jetstar's response (includes CC surcharge)
+      // This is the authoritative amount - Jetstar tells us what was actually charged
+      const actualPaidAmount = response.data?.paidAmount || (totalAmount + ccFee);
+      console.log('[ServicePaymentPage] Payment response amounts:', {
+        paidAmount: response.data?.paidAmount,
+        surchargeAmount: response.data?.surchargeAmount,
+        currency: response.data?.paidCurrency,
+      });
+      setPaidAmount(actualPaidAmount);
       setSuccess(true);
 
       console.log('[ServicePaymentPage] Payment successful:', response.data);

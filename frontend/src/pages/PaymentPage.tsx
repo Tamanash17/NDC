@@ -311,22 +311,27 @@ export function PaymentPage() {
     const startTime = Date.now();
 
     try {
-      // Calculate total payment amount including CC fee
-      let paymentTotal = totalAmount;
+      // IMPORTANT: Send ONLY the base order amount (TotalOrderPrice) to Jetstar
+      // Jetstar automatically adds the CC surcharge when processing the payment
+      // If we add the surcharge here, it gets added TWICE causing "Order is overpaid" error
+      const paymentTotal = totalAmount;
+
+      // Log the CC fee for display purposes only (not added to payment amount)
       if (selectedMethod === 'CC') {
         const currentFee = getCurrentCardFee();
         if (currentFee && currentFee.ccSurcharge > 0) {
-          paymentTotal = totalAmount + currentFee.ccSurcharge;
-          console.log('[PaymentPage] CC fee applied:', {
+          console.log('[PaymentPage] CC fee (display only, Jetstar adds automatically):', {
             baseAmount: totalAmount,
             ccFee: currentFee.ccSurcharge,
-            totalPayment: paymentTotal,
+            displayTotal: totalAmount + currentFee.ccSurcharge,
+            paymentAmountSent: totalAmount, // We send base amount only
             cardBrand: detectCardBrand(cardForm.cardNumber),
           });
         }
       }
 
-      // Build base payment request with total (including CC fee for card payments)
+      // Build base payment request - send base order amount only
+      // Jetstar will add CC surcharge automatically during payment processing
       let payment: any = {
         amount: {
           value: paymentTotal,
@@ -406,7 +411,16 @@ export function PaymentPage() {
       });
 
       setPaymentResult(response.data);
-      setPaidAmount(paymentTotal); // Store actual amount paid
+
+      // Use the ACTUAL paid amount from Jetstar's response (includes CC surcharge)
+      // This is the authoritative amount - Jetstar tells us what was actually charged
+      const actualPaidAmount = response.data?.paidAmount || paymentTotal;
+      console.log('[PaymentPage] Payment response amounts:', {
+        paidAmount: response.data?.paidAmount,
+        surchargeAmount: response.data?.surchargeAmount,
+        currency: response.data?.paidCurrency,
+      });
+      setPaidAmount(actualPaidAmount);
       setSuccess(true);
 
       console.log('[PaymentPage] Payment successful:', response.data);
