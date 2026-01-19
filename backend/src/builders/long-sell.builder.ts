@@ -27,6 +27,8 @@ export interface LongSellSegment {
   carrierCode: string;
   flightNumber: string;
   cabinCode?: string;
+  rbd?: string; // Booking class/RBD (e.g., 'M', 'Y', 'E') - CRITICAL for correct fare pricing
+  fareBasisCode?: string; // Fare basis code from original booking
 }
 
 export interface LongSellJourney {
@@ -163,6 +165,7 @@ export function buildLongSellXml(input: LongSellRequest): string {
   });
 
   // Build DatedMarketingSegmentList using ACTUAL segment IDs from order
+  // Note: RBD goes in PaxSegment (ShoppingRequestPaxSegmentList), not here
   const segmentList = segments.map((seg) => {
     const marketingId = getMarketingSegmentId(seg.segmentId);
     const operatingId = getOperatingSegmentId(seg.segmentId);
@@ -219,9 +222,14 @@ export function buildLongSellXml(input: LongSellRequest): string {
         </Pax>`).join("");
 
   // Build ShoppingRequestPaxSegmentList using actual segment IDs
+  // CRITICAL: Include MarketingCarrierRBD_Code to ensure correct fare class pricing
+  // Based on order-create.builder.ts, RBD goes inside PaxSegment element
   const paxSegmentList = segments.map((seg) => {
     const marketingId = getMarketingSegmentId(seg.segmentId);
     const cleanId = getCleanSegmentId(seg.segmentId);
+    // RBD element for booking class - critical for matching original fare
+    const rbdElement = seg.rbd ? `
+          <MarketingCarrierRBD_Code>${escapeXml(seg.rbd)}</MarketingCarrierRBD_Code>` : '';
     return `
         <PaxSegment>
           <CabinTypeAssociationChoice>
@@ -229,23 +237,20 @@ export function buildLongSellXml(input: LongSellRequest): string {
               <CabinTypeCode>${seg.cabinCode || '5'}</CabinTypeCode>
             </SegmentCabinType>
           </CabinTypeAssociationChoice>
-          <DatedMarketingSegmentRefId>${marketingId}</DatedMarketingSegmentRefId>
+          <DatedMarketingSegmentRefId>${marketingId}</DatedMarketingSegmentRefId>${rbdElement}
           <PaxSegmentID>${cleanId}</PaxSegmentID>
         </PaxSegment>`;
   }).join("");
 
   // ========================================================================
-  // BUILD ACCEPT ORDER ITEM LIST - Include ALL booking items
-  // Match the exact structure from OfferPrice example (no OfferItemID element)
+  // BUILD ACCEPT ORDER ITEM LIST - ONLY FLIGHT ITEMS for Long Sell CC Fee
+  // SSRs, Bundles, and Seats are NOT included as they cause schema validation
+  // errors (OtherItem requires DescText and Price). The Jetstar API calculates
+  // CC surcharge based on the full order total, so only flight items are needed.
   // ========================================================================
   let orderItemXml = '';
 
-  // Helper to map frontend paxId (ADT0, CHD0) to Long Sell paxId (PaxID1, PaxID2)
-  const mapPaxId = (frontendPaxId: string): string => {
-    return paxIdMapping.get(frontendPaxId) || frontendPaxId;
-  };
-
-  // 1. Flight items - one per journey (no OfferItemID, matches example structure)
+  // Flight items - one per journey (matches working test-cc-fee-request-with-rbd.xml)
   journeys.forEach((_, journeyIdx) => {
     orderItemXml += `
                 <CreateOrderItem>
@@ -258,64 +263,11 @@ export function buildLongSellXml(input: LongSellRequest): string {
                 </CreateOrderItem>`;
   });
 
-  // 2. Bundle items - use OtherItem (not SvcItem - that's invalid)
-  // Note: Bundles apply to ADT and CHD, not INF
-  bundles.forEach((bundle) => {
-    const journeyId = journeyIdMap.get(bundle.journeyIndex) || `fl${String(bundle.journeyIndex + 1).padStart(9, '0')}`;
-    // Map each paxId to the Long Sell format
-    const mappedPaxIds = bundle.paxIds.map(id => mapPaxId(id));
-    const paxRefs = mappedPaxIds.map(id => `<PaxRefID>${escapeXml(id)}</PaxRefID>`).join('');
-    orderItemXml += `
-                <CreateOrderItem>
-                     <OfferItemType>
-                        <OtherItem>
-                            <OtherSvcCode>${escapeXml(bundle.bundleCode)}</OtherSvcCode>
-                        </OtherItem>
-                     </OfferItemType>
-                     ${paxRefs}
-                     <OwnerCode>JQ</OwnerCode>
-                </CreateOrderItem>`;
-  });
-
-  // 3. SSR items - use OtherItem (not SvcItem - that's invalid)
-  ssrs.forEach((ssr) => {
-    const segmentId = segmentIdMap.get(ssr.segmentIndex) || `seg${String(ssr.segmentIndex + 1).padStart(9, '0')}`;
-    const mappedPaxId = mapPaxId(ssr.paxId);
-    orderItemXml += `
-                <CreateOrderItem>
-                     <OfferItemType>
-                        <OtherItem>
-                            <OtherSvcCode>${escapeXml(ssr.ssrCode)}</OtherSvcCode>
-                        </OtherItem>
-                     </OfferItemType>
-                     <PaxRefID>${escapeXml(mappedPaxId)}</PaxRefID>
-                     <OwnerCode>JQ</OwnerCode>
-                </CreateOrderItem>`;
-  });
-
-  // 4. Seat items - use DatedOperatingLegRefID (not PaxSegmentRefID)
-  // Use actual segment IDs to build the operating leg reference
-  seats.forEach((seat) => {
-    // Get the actual segment ID from the mapping
-    const segmentId = segmentIdMap.get(seat.segmentIndex);
-    // Build operating leg ref from the actual segment ID
-    // Format: seg{id}-leg0 (e.g., seg963657718-leg0)
-    const cleanSegId = segmentId ? getCleanSegmentId(segmentId) : `seg${String(seat.segmentIndex + 1).padStart(9, '0')}`;
-    const legRefId = `${cleanSegId}-leg0`; // Operating leg reference
-    const mappedPaxId = mapPaxId(seat.paxId);
-    orderItemXml += `
-                <CreateOrderItem>
-                     <OfferItemType>
-                        <SeatItem>
-                            <DatedOperatingLegRefID>${legRefId}</DatedOperatingLegRefID>
-                            <SeatRowNumber>${escapeXml(seat.row)}</SeatRowNumber>
-                            <ColumnID>${escapeXml(seat.column)}</ColumnID>
-                        </SeatItem>
-                     </OfferItemType>
-                     <PaxRefID>${escapeXml(mappedPaxId)}</PaxRefID>
-                     <OwnerCode>JQ</OwnerCode>
-                </CreateOrderItem>`;
-  });
+  // NOTE: Bundles, SSRs, and Seats are intentionally NOT included
+  // - OtherItem requires DescText and Price elements per NDC 21.3 schema
+  // - SeatItem would need proper DatedOperatingLegRefID
+  // - For CC fee calculation, Jetstar uses the order's total value
+  // - The flight items + RBD in PaxSegment are sufficient for correct pricing
 
   // Get current timestamp for request tracking
   const timestamp = new Date().toISOString();
