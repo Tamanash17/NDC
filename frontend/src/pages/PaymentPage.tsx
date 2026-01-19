@@ -831,14 +831,14 @@ export function PaymentPage() {
                       return ((fee / totalAmount) * 100).toFixed(2);
                     };
 
-                    // Determine if fees are percentage-based by checking if all 3 cards have DIFFERENT amounts
-                    // If all 3 amounts are different = percentage-based (each card has different % rate)
-                    // If all 3 amounts are same = fixed amount
+                    // Determine if fees are percentage-based by checking if ANY 2+ cards have different amounts
+                    // If any 2 amounts are different = percentage-based (cards have different % rates)
+                    // If all amounts are the same = fixed amount
                     const displayFees = ccFees.filter(f => ['VI', 'MC', 'AX'].includes(f.cardBrand));
-                    const validFees = displayFees.filter(f => !f.error && f.ccSurcharge > 0);
+                    const validFees = displayFees.filter(f => !f.error && f.ccSurcharge >= 0);
                     const uniqueAmounts = new Set(validFees.map(f => f.ccSurcharge));
-                    // If we have multiple valid fees and they're all different amounts, it's percentage-based
-                    const isPercentageBasedFees = validFees.length > 1 && uniqueAmounts.size === validFees.length;
+                    // If we have 2+ valid fees and at least 2 different amounts, it's percentage-based
+                    const isPercentageBasedFees = validFees.length >= 2 && uniqueAmounts.size >= 2;
 
                     // If user has entered a card number, show specific fee for that card
                     if (detectedBrand && currentFee && currentFee.ccSurcharge > 0) {
@@ -1151,24 +1151,50 @@ export function PaymentPage() {
                   <span className="font-semibold text-slate-900">{formatCurrency(totalAmount, currency)}</span>
                 </div>
 
-                {/* CC Fee - only show if card payment and fee detected */}
+                {/* CC Fee - always show when card payment selected */}
                 {selectedMethod === 'CC' && (() => {
                   const currentFee = getCurrentCardFee();
                   const detectedBrand = cardForm.cardNumber ? detectCardBrand(cardForm.cardNumber) : null;
                   const brandInfo = detectedBrand ? CARD_BRANDS.find(b => b.code === detectedBrand) : null;
 
-                  if (currentFee && currentFee.ccSurcharge > 0) {
+                  // Calculate if fees are percentage-based
+                  const displayFees = ccFees.filter(f => ['VI', 'MC', 'AX'].includes(f.cardBrand));
+                  const validFees = displayFees.filter(f => !f.error && f.ccSurcharge >= 0);
+                  const uniqueAmounts = new Set(validFees.map(f => f.ccSurcharge));
+                  const isPercentageBasedFees = validFees.length >= 2 && uniqueAmounts.size >= 2;
+
+                  // Calculate percentage from total
+                  const calculatePct = (fee: number) => {
+                    if (totalAmount <= 0) return '0.00';
+                    return ((fee / totalAmount) * 100).toFixed(2);
+                  };
+
+                  if (currentFee && detectedBrand) {
+                    // Card detected - show specific fee
+                    const feeAmount = currentFee.ccSurcharge || 0;
+                    const pct = calculatePct(feeAmount);
                     return (
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-slate-600 flex items-center gap-1">
-                          Card Fee
-                          <span className="text-xs text-slate-400">({brandInfo?.name || detectedBrand})</span>
+                          Card Surcharge
+                          <span className="text-xs text-slate-400">
+                            ({brandInfo?.name || detectedBrand}{isPercentageBasedFees ? ` ${pct}%` : ''})
+                          </span>
                         </span>
-                        <span className="font-semibold text-orange-600">+ {formatCurrency(currentFee.ccSurcharge, currency)}</span>
+                        <span className={`font-semibold ${feeAmount > 0 ? 'text-orange-600' : 'text-slate-500'}`}>
+                          {feeAmount > 0 ? `+ ${formatCurrency(feeAmount, currency)}` : formatCurrency(0, currency)}
+                        </span>
                       </div>
                     );
                   }
-                  return null;
+
+                  // No card detected yet - show $0.00
+                  return (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-600">Card Surcharge</span>
+                      <span className="font-semibold text-slate-500">{formatCurrency(0, currency)}</span>
+                    </div>
+                  );
                 })()}
 
                 {/* Total Due */}
