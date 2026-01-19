@@ -1556,6 +1556,22 @@ router.post("/cc-fees", async (req: any, res: any) => {
         // Log response summary (not full XML to avoid Railway rate limit)
         console.log(`[NDC] Long Sell Response for ${cardBrand}: length=${xmlResponse?.length || 0}, hasPaymentSurcharge=${xmlResponse?.includes('PaymentSurcharge')}`);
 
+        // Check for XML-level error in response (HTTP 200 but API error)
+        const errorMatch = xmlResponse.match(/<Error[^>]*>[\s\S]*?<DescText[^>]*>([^<]+)<\/DescText>/i);
+        if (errorMatch) {
+          const errorDesc = errorMatch[1];
+          console.log(`[NDC] Long Sell XML error for ${cardBrand}: ${errorDesc}`);
+          results.push({
+            cardBrand,
+            ccSurcharge: 0,
+            surchargeType: 'unknown',
+            error: errorDesc,
+            requestXml: xmlRequest,
+            responseXml: xmlResponse,
+          });
+          continue;
+        }
+
         // Parse CC surcharge from response
         let ccSurcharge = 0;
         let surchargeType: 'fixed' | 'percentage' = 'fixed';
