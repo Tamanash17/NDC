@@ -120,6 +120,7 @@ export function buildLongSellFromOrder(input: BuildLongSellFromOrderInput): Buil
 
 /**
  * Build segments from order data
+ * CRITICAL: Include RBD (classOfService) to ensure correct fare class pricing
  */
 function buildSegments(order: OrderExtended): LongSellSegment[] {
   const segments: LongSellSegment[] = [];
@@ -134,7 +135,8 @@ function buildSegments(order: OrderExtended): LongSellSegment[] {
         departureDateTime: seg.departureDateTime,
         carrierCode: seg.carrierCode,
         flightNumber: seg.flightNumber,
-        cabinCode: '5', // Default economy
+        cabinCode: seg.cabinCode || '5',
+        rbd: seg.classOfService, // RBD from order - critical for correct fare pricing
       });
     });
     return segments;
@@ -157,6 +159,7 @@ function buildSegments(order: OrderExtended): LongSellSegment[] {
         carrierCode: seg.marketingCarrier?.airlineCode || 'JQ',
         flightNumber: seg.marketingCarrier?.flightNumber || '',
         cabinCode: seg.cabinCode || '5',
+        rbd: seg.classOfService, // RBD from order - critical for correct fare pricing
       });
     });
     return segments;
