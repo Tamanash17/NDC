@@ -262,6 +262,78 @@ export async function fetchAllCCFees(
 }
 
 // ----------------------------------------------------------------------------
+// CC FEES FROM ORDER - New unified approach using OrderRetrieve
+// This is the recommended way to get CC fees - works for both prime booking and servicing
+// ----------------------------------------------------------------------------
+
+export interface CCFeesRequest {
+  orderId: string;
+  ownerCode?: string;
+  currency?: string;
+  distributionChain?: {
+    ownerCode: string;
+    links: Array<{
+      ordinal: number;
+      orgRole: string;
+      orgId: string;
+      orgName?: string;
+    }>;
+  };
+}
+
+export interface CCFeesResponse {
+  orderId: string;
+  currency: string;
+  fees: CCFeeResult[];
+}
+
+/**
+ * Fetch CC surcharge fees for an existing order
+ *
+ * This is the preferred method for getting CC fees because:
+ * 1. Works for both Prime Booking and Servicing flows
+ * 2. Uses real order data from OrderRetrieve
+ * 3. Backend handles all Long Sell calls sequentially
+ * 4. No need to reconstruct booking data on frontend
+ *
+ * @param request - Order ID and optional parameters
+ * @returns All CC fees for VI, MC, AX card brands
+ */
+export async function ccFees(request: CCFeesRequest): Promise<CCFeesResponse> {
+  console.log('[CCFees] ===== FETCHING CC FEES FOR ORDER =====');
+  console.log('[CCFees] Order ID:', request.orderId);
+
+  const response = await ndcClient.post('/ndc/cc-fees', request);
+
+  console.log('[CCFees] ===== RESPONSE =====');
+  console.log('[CCFees] Success:', response.data.success);
+  console.log('[CCFees] Duration:', response.data.duration, 'ms');
+
+  const data = response.data.data;
+  console.log('[CCFees] Fees:', data.fees?.map((f: any) => ({
+    cardBrand: f.cardBrand,
+    ccSurcharge: f.ccSurcharge,
+    error: f.error,
+  })));
+
+  // Transform to CCFeeResult format for compatibility
+  const fees: CCFeeResult[] = (data.fees || []).map((fee: any) => ({
+    cardBrand: fee.cardBrand,
+    ccSurcharge: fee.ccSurcharge || 0,
+    surchargeType: fee.surchargeType || 'unknown',
+    rawResponse: fee.responseXml,
+    requestXml: fee.requestXml,
+    error: fee.error,
+  }));
+
+  return {
+    orderId: data.orderId,
+    currency: data.currency,
+    fees,
+  };
+}
+
+// ----------------------------------------------------------------------------
 // ENVIRONMENT SWITCHING API
 // ----------------------------------------------------------------------------
 

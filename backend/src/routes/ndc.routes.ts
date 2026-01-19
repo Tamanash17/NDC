@@ -10,7 +10,9 @@ import { buildAirlineProfileXml } from "../builders/airline-profile.builder.js";
 import { buildSeatAvailabilityXml } from "../builders/seat-availability.builder.js";
 import { buildOrderCreateXml } from "../builders/order-create.builder.js";
 import { buildLongSellXml } from "../builders/long-sell.builder.js";
+import { buildOrderRetrieveXml } from "../builders/order-retrieve.builder.js";
 import { buildPaymentXml } from "../builders/payment.builder.js";
+import { buildLongSellFromOrder } from "../utils/long-sell-from-order.js";
 import { orderParser } from "../parsers/order.parser.js";
 import { airShoppingParser } from "../parsers/air-shopping.parser.js";
 import { offerPriceParser } from "../parsers/offer-price.parser.js";
@@ -1417,6 +1419,214 @@ router.post("/airline-profile", async (req: any, res: any) => {
       message: errorMessage,
       status: statusCode,
       responseXml: typeof error.response?.data === 'string' ? error.response.data : undefined,
+    });
+  }
+});
+
+// ============================================================================
+// CC FEES - Get credit card surcharges for an order
+// This endpoint does: OrderRetrieve -> Build Long Sell -> Call Long Sell for each card
+// Works for both Prime Booking and Servicing flows
+// ============================================================================
+router.post("/cc-fees", async (req: any, res: any) => {
+  const startTime = Date.now();
+  try {
+    console.log("[NDC] ===== CC FEES REQUEST =====");
+    console.log("[NDC] Request body:", JSON.stringify(req.body, null, 2));
+
+    const { orderId, ownerCode, currency, distributionChain } = req.body;
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required field: orderId",
+      });
+    }
+
+    // Step 1: OrderRetrieve to get order data
+    console.log("[NDC] Step 1: Fetching order via OrderRetrieve...");
+    const orderRetrieveXml = buildOrderRetrieveXml({
+      orderId,
+      ownerCode: ownerCode || 'JQ',
+      distributionChain,
+    });
+
+    console.log("[NDC] OrderRetrieve XML Request:\n", orderRetrieveXml);
+
+    const orderRetrieveResponse = await callNDC(
+      "OrderRetrieve",
+      config.ndc.endpoints.orderRetrieve || "/OrderRetrieve",
+      orderRetrieveXml,
+      req.token,
+      req.subscriptionKey,
+      req.ndcEnvironment
+    );
+
+    console.log("[NDC] OrderRetrieve response received, parsing...");
+
+    // Parse order data
+    const orderParseResult = await orderParser.parse(orderRetrieveResponse);
+
+    if (!orderParseResult.success || !orderParseResult.order) {
+      console.error("[NDC] Failed to parse OrderRetrieve response:", orderParseResult.errors);
+      return res.status(400).json({
+        success: false,
+        error: "Failed to parse order data",
+        details: orderParseResult.errors,
+      });
+    }
+
+    const order = orderParseResult.order;
+    console.log("[NDC] Order parsed successfully:", {
+      orderId: order.orderId,
+      status: order.status,
+      totalPrice: order.totalPrice,
+      passengersCount: order.passengers?.length || 0,
+      segmentsCount: order.marketingSegments?.length || order.segments?.length || 0,
+      journeysCount: order.journeys?.length || 0,
+      serviceItemsCount: order.serviceItems?.length || 0,
+      seatAssignmentsCount: order.seatAssignments?.length || 0,
+    });
+
+    // Step 2: Build Long Sell request from order
+    console.log("[NDC] Step 2: Building Long Sell request from order...");
+    const cardBrands = ['VI', 'MC', 'AX'];
+    const results: Array<{
+      cardBrand: string;
+      ccSurcharge: number;
+      surchargeType: 'fixed' | 'percentage' | 'unknown';
+      error?: string;
+      requestXml?: string;
+      responseXml?: string;
+    }> = [];
+
+    // Step 3: Call Long Sell for each card brand sequentially
+    console.log("[NDC] Step 3: Calling Long Sell for each card brand...");
+    for (const cardBrand of cardBrands) {
+      try {
+        const buildResult = buildLongSellFromOrder({
+          order,
+          cardBrand,
+          currency: currency || order.totalPrice?.currency || 'AUD',
+          distributionChain,
+        });
+
+        if (!buildResult.success || !buildResult.request) {
+          console.error(`[NDC] Failed to build Long Sell for ${cardBrand}:`, buildResult.error);
+          results.push({
+            cardBrand,
+            ccSurcharge: 0,
+            surchargeType: 'unknown',
+            error: buildResult.error || 'Failed to build Long Sell request',
+          });
+          continue;
+        }
+
+        console.log(`[NDC] Long Sell debug for ${cardBrand}:`, buildResult.debug);
+
+        // Build XML
+        const xmlRequest = buildLongSellXml(buildResult.request);
+        console.log(`[NDC] Long Sell XML for ${cardBrand}:\n`, xmlRequest.substring(0, 1000) + '...');
+
+        // Call Long Sell
+        const xmlResponse = await callNDC(
+          `LongSell_${cardBrand}`,
+          config.ndc.endpoints.offerPrice,
+          xmlRequest,
+          req.token,
+          req.subscriptionKey,
+          req.ndcEnvironment
+        );
+
+        // Parse CC surcharge from response
+        let ccSurcharge = 0;
+        let surchargeType: 'fixed' | 'percentage' = 'fixed';
+
+        // Pattern 1: <PaymentSurcharge><PreciseAmount>X.XX</PreciseAmount>
+        let match = xmlResponse.match(/<PaymentSurcharge[^>]*>[\s\S]*?<PreciseAmount[^>]*>(\d+\.?\d*)<\/PreciseAmount>/i);
+        if (match) {
+          ccSurcharge = parseFloat(match[1]);
+          console.log(`[NDC] Found PaymentSurcharge for ${cardBrand}:`, ccSurcharge);
+        }
+
+        // Pattern 2: <PaymentSurcharge><Amount> as fallback
+        if (ccSurcharge === 0) {
+          const amountMatch = xmlResponse.match(/<PaymentSurcharge[^>]*>[\s\S]*?<Amount[^>]*>(\d+\.?\d*)<\/Amount>/i);
+          if (amountMatch) {
+            ccSurcharge = parseFloat(amountMatch[1]);
+          }
+        }
+
+        results.push({
+          cardBrand,
+          ccSurcharge,
+          surchargeType,
+          requestXml: xmlRequest,
+          responseXml: xmlResponse,
+        });
+
+        // Small delay between requests to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+      } catch (error: any) {
+        console.error(`[NDC] Long Sell error for ${cardBrand}:`, error.message);
+        results.push({
+          cardBrand,
+          ccSurcharge: 0,
+          surchargeType: 'unknown',
+          error: error.message || 'Long Sell request failed',
+          responseXml: typeof error.response?.data === 'string' ? error.response.data : undefined,
+        });
+      }
+    }
+
+    const duration = Date.now() - startTime;
+    console.log("[NDC] CC Fees completed in", duration, "ms");
+    console.log("[NDC] Results:", results.map(r => ({ cardBrand: r.cardBrand, ccSurcharge: r.ccSurcharge, error: r.error })));
+
+    // Log Visa result to XML transaction logger
+    const visaResult = results.find(r => r.cardBrand === 'VI');
+    if (visaResult && visaResult.requestXml) {
+      await xmlTransactionLogger.logTransaction({
+        operation: 'CCFees',
+        requestXml: visaResult.requestXml,
+        responseXml: visaResult.responseXml || '',
+        success: !visaResult.error,
+        duration,
+        userAction: `CC fees fetched for order ${orderId}: Visa=${visaResult.ccSurcharge}`,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        orderId,
+        currency: currency || order.totalPrice?.currency || 'AUD',
+        fees: results,
+      },
+      duration,
+    });
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    console.error("[NDC] CC Fees Error:", error.message);
+    console.error("[NDC] CC Fees Error Stack:", error.stack);
+
+    let errorMessage = error.message || 'Unknown error';
+    let statusCode = error.response?.status || 500;
+
+    const headerErrorMsg = error.response?.headers?.['error-msg-0'];
+    const headerErrorCode = error.response?.headers?.['error-code-0'];
+
+    if (headerErrorMsg) {
+      errorMessage = headerErrorCode ? `${headerErrorCode}: ${headerErrorMsg}` : headerErrorMsg;
+    }
+
+    res.status(statusCode).json({
+      success: false,
+      error: errorMessage,
+      message: errorMessage,
+      status: statusCode,
+      duration,
     });
   }
 });

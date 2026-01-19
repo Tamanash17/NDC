@@ -3,48 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useFlightSelectionStore } from '@/hooks/useFlightSelection';
 import { useDistributionContext, useSession } from '@/core/context/SessionStore';
 import { useXmlViewer } from '@/core/context/XmlViewerContext';
-import { processPayment, fetchAllCCFees, type CCFeeResult, type LongSellSegment, type LongSellJourney, type LongSellPassenger, type LongSellBundle, type LongSellSSR, type LongSellSeat } from '@/lib/ndc-api';
+import { processPayment, ccFees as fetchCCFeesFromOrder, type CCFeeResult } from '@/lib/ndc-api';
 import { formatCurrency } from '@/lib/format';
 import { AppLayout } from '@/components/layout';
 
-// Helper to parse display date format to ISO format
-// Input formats: "Fri, 23 Jan", "2025-01-23", "23 Jan 2025", etc.
-function parseToISODate(dateStr: string, year?: number): string {
-  // If already in ISO format (YYYY-MM-DD), return as-is
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return dateStr;
-  }
-
-  // Try to parse various formats
-  const months: Record<string, string> = {
-    'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
-    'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-    'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
-  };
-
-  // Try format: "Fri, 23 Jan" or "23 Jan"
-  const match = dateStr.match(/(\d{1,2})\s+(\w{3})/);
-  if (match) {
-    const day = match[1].padStart(2, '0');
-    const month = months[match[2]] || '01';
-    const yearToUse = year || new Date().getFullYear();
-    return `${yearToUse}-${month}-${day}`;
-  }
-
-  // Fallback: try JavaScript Date parsing
-  try {
-    const parsed = new Date(dateStr);
-    if (!isNaN(parsed.getTime())) {
-      return parsed.toISOString().split('T')[0];
-    }
-  } catch {
-    // Ignore
-  }
-
-  // Last resort: return current date
-  console.warn(`[PaymentPage] Could not parse date: ${dateStr}`);
-  return new Date().toISOString().split('T')[0];
-}
 import {
   CreditCard,
   Building2,
@@ -155,14 +117,17 @@ export function PaymentPage() {
   const sellerInfo = distributionContext.seller;
   const distributorInfo = distributionContext.getPartyConfig()?.participants?.find(p => p.role === 'Distributor');
 
-  // Fetch CC fees using Long Sell from flight selection
+  // Fetch CC fees using OrderRetrieve + Long Sell
+  // This approach uses the created order to get accurate CC fees
   const fetchCCFeesNow = async () => {
-    const selection = flightStore.selection;
-    const searchCriteria = flightStore.searchCriteria;
+    // Get order ID from URL params or flight store
+    const orderIdFromUrl = searchParams.get('orderId');
+    const orderIdFromStore = flightStore.orderId;
+    const orderId = orderIdFromUrl || orderIdFromStore;
 
-    if (!selection.outbound) {
-      console.log('[PaymentPage] No flight selection, skipping CC fee fetch');
-      setCCFeesError('No flight selection available');
+    if (!orderId) {
+      console.log('[PaymentPage] No order ID available, skipping CC fee fetch');
+      setCCFeesError('No order ID available for CC fee calculation');
       return;
     }
 
@@ -170,212 +135,43 @@ export function PaymentPage() {
     setCCFeesError(null);
 
     try {
-      const segments: LongSellSegment[] = [];
-      const journeys: LongSellJourney[] = [];
-
-      // Build segments from flight selection
-      const outboundYear = searchCriteria?.departureDate ? new Date(searchCriteria.departureDate).getFullYear() : new Date().getFullYear();
-      const inboundYear = searchCriteria?.returnDate ? new Date(searchCriteria.returnDate).getFullYear() : outboundYear;
-
-      // Process outbound
-      if (selection.outbound?.journey) {
-        const outboundJourney = selection.outbound.journey;
-        const outboundSegmentIds: string[] = [];
-
-        outboundJourney.segments.forEach((seg, idx) => {
-          const segmentId = `seg-out-${idx}`;
-          outboundSegmentIds.push(segmentId);
-          const isoDate = parseToISODate(seg.departureDate, outboundYear);
-          segments.push({
-            segmentId,
-            origin: seg.origin,
-            destination: seg.destination,
-            departureDateTime: `${isoDate}T${seg.departureTime}:00`,
-            carrierCode: seg.marketingCarrier,
-            flightNumber: seg.flightNumber,
-            cabinCode: selection.outbound?.cabinType || '5',
-          });
-        });
-
-        journeys.push({
-          journeyId: 'journey-out',
-          origin: outboundJourney.segments[0]?.origin || '',
-          destination: outboundJourney.segments[outboundJourney.segments.length - 1]?.destination || '',
-          segmentIds: outboundSegmentIds,
-        });
-      }
-
-      // Process inbound
-      if (selection.inbound?.journey) {
-        const inboundJourney = selection.inbound.journey;
-        const inboundSegmentIds: string[] = [];
-
-        inboundJourney.segments.forEach((seg, idx) => {
-          const segmentId = `seg-in-${idx}`;
-          inboundSegmentIds.push(segmentId);
-          const isoDate = parseToISODate(seg.departureDate, inboundYear);
-          segments.push({
-            segmentId,
-            origin: seg.origin,
-            destination: seg.destination,
-            departureDateTime: `${isoDate}T${seg.departureTime}:00`,
-            carrierCode: seg.marketingCarrier,
-            flightNumber: seg.flightNumber,
-            cabinCode: selection.inbound?.cabinType || '5',
-          });
-        });
-
-        journeys.push({
-          journeyId: 'journey-in',
-          origin: inboundJourney.segments[0]?.origin || '',
-          destination: inboundJourney.segments[inboundJourney.segments.length - 1]?.destination || '',
-          segmentIds: inboundSegmentIds,
-        });
-      }
-
-      // Build passengers from search criteria (default to 1 adult)
-      const passengers: LongSellPassenger[] = [];
-      const pax = searchCriteria?.passengers || { adults: 1, children: 0, infants: 0 };
-
-      for (let i = 0; i < pax.adults; i++) {
-        passengers.push({ paxId: `ADT${i}`, ptc: 'ADT' });
-      }
-      for (let i = 0; i < pax.children; i++) {
-        passengers.push({ paxId: `CHD${i}`, ptc: 'CHD' });
-      }
-      for (let i = 0; i < pax.infants; i++) {
-        passengers.push({ paxId: `INF${i}`, ptc: 'INF' });
-      }
-
-      // Ensure at least 1 passenger
-      if (passengers.length === 0) {
-        passengers.push({ paxId: 'ADT0', ptc: 'ADT' });
-      }
-
-      // Build bundles from selection (e.g., P200 = STARTER PLUS)
-      const bundles: LongSellBundle[] = [];
-      const payingPaxIds = passengers.filter(p => p.ptc !== 'INF').map(p => p.paxId);
-
-      if (selection.outbound?.bundle?.code) {
-        bundles.push({
-          bundleCode: selection.outbound.bundle.code,
-          journeyIndex: 0,
-          paxIds: payingPaxIds,
-        });
-      }
-      if (selection.inbound?.bundle?.code) {
-        bundles.push({
-          bundleCode: selection.inbound.bundle.code,
-          journeyIndex: 1,
-          paxIds: payingPaxIds,
-        });
-      }
-
-      // Build SSRs and seats from selectedServices
-      const ssrs: LongSellSSR[] = [];
-      const seatSelections: LongSellSeat[] = [];
-
-      // Track already added items to avoid duplicates
-      const addedSSRs = new Set<string>();
-      const addedSeats = new Set<string>();
-
-      // Create segment index mapping (segment ID -> index)
-      const segmentIndexMap = new Map<string, number>();
-      segments.forEach((seg, idx) => {
-        segmentIndexMap.set(seg.segmentId, idx);
-      });
-
-      const selectedServices = flightStore.selectedServices || [];
-      selectedServices.forEach((service) => {
-        // Get segment index from service's segmentRefs
-        const serviceSegmentRef = service.segmentRefs?.[0];
-        let segmentIndex = -1;
-
-        if (serviceSegmentRef) {
-          // Try to match by segment ref ID
-          segmentIndex = segmentIndexMap.get(serviceSegmentRef) ?? -1;
-
-          // If not found, try to find by matching origin/destination
-          if (segmentIndex === -1) {
-            segments.forEach((seg, idx) => {
-              if (serviceSegmentRef.includes(seg.origin) || serviceSegmentRef.includes(seg.destination)) {
-                segmentIndex = idx;
-              }
-            });
-          }
-
-          // Fallback: use index based on segment count
-          if (segmentIndex === -1 && serviceSegmentRef) {
-            // Extract any number from the segment ref to use as index hint
-            const numMatch = serviceSegmentRef.match(/\d+/);
-            if (numMatch) {
-              segmentIndex = Math.min(parseInt(numMatch[0], 10), segments.length - 1);
-            }
-          }
-        }
-
-        // Default to 0 if still not found
-        if (segmentIndex === -1) segmentIndex = 0;
-
-        if (service.serviceType === 'ssr' && service.serviceCode) {
-          // Add SSR for each passenger (with deduplication)
-          service.paxRefIds.forEach((paxId) => {
-            const ssrKey = `${service.serviceCode}-${segmentIndex}-${paxId}`;
-            if (!addedSSRs.has(ssrKey)) {
-              addedSSRs.add(ssrKey);
-              ssrs.push({
-                ssrCode: service.serviceCode,
-                segmentIndex,
-                paxId,
-              });
-            }
-          });
-        } else if (service.serviceType === 'seat' && service.seatRow && service.seatColumn) {
-          // Add seat selection (with deduplication)
-          service.paxRefIds.forEach((paxId) => {
-            const seatKey = `${segmentIndex}-${paxId}`;
-            if (!addedSeats.has(seatKey)) {
-              addedSeats.add(seatKey);
-              seatSelections.push({
-                segmentIndex,
-                paxId,
-                row: service.seatRow!,
-                column: service.seatColumn!,
-              });
-            }
-          });
-        }
-      });
-
-      console.log('[PaymentPage] Fetching CC fees with:', {
-        segments: segments.length,
-        journeys: journeys.length,
-        passengers: passengers.length,
-        bundles: bundles.length,
-        ssrs: ssrs.length,
-        seats: seatSelections.length,
-      });
-      console.log('[PaymentPage] Bundles:', bundles);
-      console.log('[PaymentPage] SSRs:', ssrs);
-      console.log('[PaymentPage] Seats:', seatSelections);
+      console.log('[PaymentPage] Fetching CC fees for order:', orderId);
 
       const startTime = Date.now();
-      const fees = await fetchAllCCFees(segments, journeys, passengers, currency, bundles, ssrs, seatSelections);
+
+      // Build distribution chain for the request
+      const distributionChain = distributionContext.isValid ? {
+        ownerCode: 'JQ',
+        links: distributionContext.getPartyConfig()?.participants?.map((p, idx) => ({
+          ordinal: idx + 1,
+          orgRole: p.role === 'Seller' ? 'Seller' : 'Distributor',
+          orgId: p.orgCode || '',
+          orgName: p.orgName || '',
+        })) || [],
+      } : undefined;
+
+      const response = await fetchCCFeesFromOrder({
+        orderId,
+        ownerCode: 'JQ',
+        currency,
+        distributionChain,
+      });
+
       const duration = Date.now() - startTime;
-      setCCFees(fees);
+      setCCFees(response.fees);
 
-      console.log('[PaymentPage] CC fees fetched:', fees);
+      console.log('[PaymentPage] CC fees fetched:', response.fees);
 
-      // Add Long Sell calls to XML Logs panel (only log Visa to avoid duplicates)
-      const visaFee = fees.find(f => f.cardBrand === 'VI');
+      // Add to XML Logs panel
+      const visaFee = response.fees.find(f => f.cardBrand === 'VI');
       if (visaFee && visaFee.requestXml) {
         addCapture({
-          operation: 'LongSell (CC Surcharge)',
+          operation: 'CCFees (OrderRetrieve + LongSell)',
           request: visaFee.requestXml || '',
           response: visaFee.rawResponse || '',
           duration,
           status: visaFee.error ? 'error' : 'success',
-          userAction: `Fetched CC surcharge for Visa: ${visaFee.ccSurcharge > 0 ? `$${visaFee.ccSurcharge.toFixed(2)}` : 'No fee'}`,
+          userAction: `Fetched CC fees for order ${orderId}: Visa=${visaFee.ccSurcharge > 0 ? `$${visaFee.ccSurcharge.toFixed(2)}` : 'No fee'}`,
         });
       }
     } catch (err: any) {
@@ -386,10 +182,16 @@ export function PaymentPage() {
     }
   };
 
-  // Auto-fetch CC fees on page load
+  // Auto-fetch CC fees when order ID is available
   useEffect(() => {
-    fetchCCFeesNow();
-  }, [flightStore.selection, flightStore.searchCriteria, currency]);
+    const orderIdFromUrl = searchParams.get('orderId');
+    const orderIdFromStore = flightStore.orderId;
+    const orderId = orderIdFromUrl || orderIdFromStore;
+
+    if (orderId) {
+      fetchCCFeesNow();
+    }
+  }, [searchParams, flightStore.orderId, currency]);
 
   // Get CC fee for currently detected card brand
   const getCurrentCardFee = (): CCFeeResult | null => {
