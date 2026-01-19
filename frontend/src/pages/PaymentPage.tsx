@@ -1129,18 +1129,12 @@ export function PaymentPage() {
                 <p className="text-xl font-bold text-slate-900 font-mono">{pnr || 'Pending'}</p>
               </div>
 
-              {/* Order Details */}
-              <div className="space-y-3 mb-6">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">Order ID</span>
-                  <span className="font-mono text-slate-900">{orderId?.slice(0, 20)}...</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">Status</span>
-                  <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">
-                    Awaiting Payment
-                  </span>
-                </div>
+              {/* Order Status */}
+              <div className="flex justify-between text-sm mb-6">
+                <span className="text-slate-600">Status</span>
+                <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">
+                  Awaiting Payment
+                </span>
               </div>
 
               {/* Total with CC Fee breakdown */}
@@ -1258,11 +1252,6 @@ export function PaymentPage() {
                 )}
               </button>
 
-              {/* Security Badge */}
-              <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-500">
-                <Shield className="w-4 h-4" />
-                <span>Secure Payment Gateway</span>
-              </div>
             </div>
           </div>
         </div>
