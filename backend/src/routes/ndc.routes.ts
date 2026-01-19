@@ -1488,6 +1488,14 @@ router.post("/cc-fees", async (req: any, res: any) => {
       seatAssignmentsCount: order.seatAssignments?.length || 0,
     });
 
+    // Detailed logging for debugging Long Sell extraction
+    console.log("[NDC] Order detail - Passengers:", JSON.stringify(order.passengers, null, 2));
+    console.log("[NDC] Order detail - marketingSegments:", JSON.stringify(order.marketingSegments, null, 2));
+    console.log("[NDC] Order detail - segments:", JSON.stringify(order.segments, null, 2));
+    console.log("[NDC] Order detail - journeys:", JSON.stringify(order.journeys, null, 2));
+    console.log("[NDC] Order detail - DataLists?.PaxJourneyList:", JSON.stringify(order.DataLists?.PaxJourneyList, null, 2));
+    console.log("[NDC] Order detail - DataLists?.DatedMarketingSegmentList:", JSON.stringify(order.DataLists?.DatedMarketingSegmentList, null, 2));
+
     // Step 2: Build Long Sell request from order
     console.log("[NDC] Step 2: Building Long Sell request from order...");
     const cardBrands = ['VI', 'MC', 'AX'];
@@ -1503,6 +1511,9 @@ router.post("/cc-fees", async (req: any, res: any) => {
     // Step 3: Call Long Sell for each card brand sequentially
     console.log("[NDC] Step 3: Calling Long Sell for each card brand...");
     for (const cardBrand of cardBrands) {
+      // Declare xmlRequest outside try-catch so it's available in catch block
+      let xmlRequest: string = '';
+
       try {
         const buildResult = buildLongSellFromOrder({
           order,
@@ -1526,8 +1537,8 @@ router.post("/cc-fees", async (req: any, res: any) => {
 
         console.log(`[NDC] Long Sell debug for ${cardBrand}:`, buildResult.debug);
 
-        // Build XML
-        const xmlRequest = buildLongSellXml(buildResult.request);
+        // Build XML - assign to outer variable so it's available in catch
+        xmlRequest = buildLongSellXml(buildResult.request);
         console.log(`[NDC] Long Sell XML for ${cardBrand}:\n`, xmlRequest.substring(0, 1000) + '...');
 
         // Call Long Sell
@@ -1573,12 +1584,13 @@ router.post("/cc-fees", async (req: any, res: any) => {
       } catch (error: any) {
         console.error(`[NDC] Long Sell error for ${cardBrand}:`, error.message);
         console.error(`[NDC] Long Sell error details:`, error.response?.data);
+        // Use xmlRequest if it was built, otherwise show error
         results.push({
           cardBrand,
           ccSurcharge: 0,
           surchargeType: 'unknown',
           error: error.message || 'Long Sell request failed',
-          requestXml: '<Error - request not available>',
+          requestXml: xmlRequest || `<!-- Request not built - ${error.message} -->`,
           responseXml: typeof error.response?.data === 'string' ? error.response.data : `<Error>${error.message}</Error>`,
         });
       }

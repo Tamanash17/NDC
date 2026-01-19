@@ -732,8 +732,9 @@ export class OrderParser extends BaseXmlParser {
       }
 
       segments.push({
-        segmentId: this.getAttribute(segEl, "DatedMarketingSegmentId") ||
-                  this.getText(segEl, "DatedMarketingSegmentID") || "",
+        segmentId: this.getText(segEl, "DatedMarketingSegmentId") ||
+                   this.getText(segEl, "DatedMarketingSegmentID") ||
+                   this.getAttribute(segEl, "DatedMarketingSegmentId") || "",
         origin: this.getText(depEl, "IATA_LocationCode") || "",
         destination: this.getText(arrEl, "IATA_LocationCode") || "",
         departureDateTime: this.getText(depEl, "AircraftScheduledDateTime") ||
