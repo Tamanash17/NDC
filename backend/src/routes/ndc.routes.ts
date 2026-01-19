@@ -1599,8 +1599,9 @@ router.post("/cc-fees", async (req: any, res: any) => {
           responseXml: xmlResponse,
         });
 
-        // Small delay between requests to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Delay between requests - Jetstar may need time between OfferPrice calls
+        // 1 second should be enough for API to reset availability state
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
       } catch (error: any) {
         console.error(`[NDC] Long Sell error for ${cardBrand}:`, error.message);
