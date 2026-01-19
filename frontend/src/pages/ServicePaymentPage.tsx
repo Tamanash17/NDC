@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDistributionContext, useSession } from '@/core/context/SessionStore';
 import { useXmlViewer } from '@/core/context/XmlViewerContext';
-import { processPayment } from '@/lib/ndc-api';
+import { processPayment, ccFees as fetchCCFeesFromOrder, type CCFeeResult } from '@/lib/ndc-api';
 import { formatCurrency } from '@/lib/format';
 import { AppLayout } from '@/components/layout';
 import {
@@ -87,6 +87,12 @@ export function ServicePaymentPage() {
   const [errorWarnings, setErrorWarnings] = useState<string[]>([]); // Separate warnings for detailed display
   const [success, setSuccess] = useState(false);
   const [paymentResult, setPaymentResult] = useState<any>(null);
+  const [paidAmount, setPaidAmount] = useState<number>(0); // Track actual amount paid (including CC fee)
+
+  // CC fees state - same as PaymentPage for credit card surcharge calculation
+  const [ccFees, setCCFees] = useState<CCFeeResult[]>([]);
+  const [isLoadingCCFees, setIsLoadingCCFees] = useState(false);
+  const [ccFeesError, setCCFeesError] = useState<string | null>(null);
 
   // Form states
   const [cardForm, setCardForm] = useState<CardPaymentForm>({
@@ -118,6 +124,95 @@ export function ServicePaymentPage() {
       }
     }
     return 'VI';
+  };
+
+  // Fetch CC fees using OrderRetrieve + Long Sell (same approach as PaymentPage)
+  const fetchCCFeesNow = async () => {
+    if (!orderId) {
+      console.log('[ServicePaymentPage] No order ID available, skipping CC fee fetch');
+      setCCFeesError('No order ID available for CC fee calculation');
+      return;
+    }
+
+    setIsLoadingCCFees(true);
+    setCCFeesError(null);
+
+    try {
+      console.log('[ServicePaymentPage] Fetching CC fees for order:', orderId);
+
+      const startTime = Date.now();
+
+      // Build distribution chain for the request
+      const distributionChain = distributionContext.isValid ? {
+        ownerCode: 'JQ',
+        links: distributionContext.getPartyConfig()?.participants?.map((p, idx) => ({
+          ordinal: idx + 1,
+          orgRole: p.role === 'Seller' ? 'Seller' : 'Distributor',
+          orgId: p.orgCode || '',
+          orgName: p.orgName || '',
+        })) || [],
+      } : undefined;
+
+      const response = await fetchCCFeesFromOrder({
+        orderId,
+        ownerCode: 'JQ',
+        currency,
+        distributionChain,
+      });
+
+      const duration = Date.now() - startTime;
+      setCCFees(response.fees);
+
+      console.log('[ServicePaymentPage] CC fees fetched successfully');
+      // Log XML response for each card brand
+      response.fees.forEach((fee) => {
+        console.log(`[ServicePaymentPage] ${fee.cardBrand} surcharge: ${fee.ccSurcharge}`);
+        if (fee.requestXml) {
+          console.log(`[ServicePaymentPage] ${fee.cardBrand} Request XML:\n`, fee.requestXml);
+        }
+        if (fee.rawResponse) {
+          console.log(`[ServicePaymentPage] ${fee.cardBrand} Response XML:\n`, fee.rawResponse);
+        }
+      });
+
+      // Add to XML Logs panel
+      const visaFee = response.fees.find(f => f.cardBrand === 'VI');
+      if (visaFee && visaFee.requestXml) {
+        addCapture({
+          operation: 'CCFees (Service - OrderRetrieve + LongSell)',
+          request: visaFee.requestXml || '',
+          response: visaFee.rawResponse || '',
+          duration,
+          status: visaFee.error ? 'error' : 'success',
+          userAction: `Fetched CC fees for order ${orderId}: Visa=${visaFee.ccSurcharge > 0 ? `$${visaFee.ccSurcharge.toFixed(2)}` : 'No fee'}`,
+        });
+      }
+    } catch (err: any) {
+      console.error('[ServicePaymentPage] Error fetching CC fees:', err);
+      setCCFeesError(err.message || 'Failed to fetch CC fees');
+    } finally {
+      setIsLoadingCCFees(false);
+    }
+  };
+
+  // Auto-fetch CC fees when order ID is available
+  useEffect(() => {
+    if (orderId) {
+      fetchCCFeesNow();
+    }
+  }, [orderId, currency]);
+
+  // Get CC fee for currently detected card brand
+  const getCurrentCardFee = (): CCFeeResult | null => {
+    if (ccFees.length === 0 || !cardForm.cardNumber) return null;
+    const brand = detectCardBrand(cardForm.cardNumber);
+    return ccFees.find(f => f.cardBrand === brand) || null;
+  };
+
+  // Calculate total with CC fee
+  const getCurrentCardTotal = (): number => {
+    const fee = getCurrentCardFee();
+    return totalAmount + (fee?.ccSurcharge || 0);
   };
 
   // Format card number with spaces
@@ -187,9 +282,13 @@ export function ServicePaymentPage() {
     const startTime = Date.now();
 
     try {
+      // Calculate payment amount - include CC fee for credit card payments
+      const ccFee = selectedMethod === 'CC' ? (getCurrentCardFee()?.ccSurcharge || 0) : 0;
+      const paymentAmount = totalAmount + ccFee;
+
       let payment: any = {
         amount: {
-          value: totalAmount,
+          value: paymentAmount,
           currency,
         },
       };
@@ -233,7 +332,9 @@ export function ServicePaymentPage() {
       console.log('[ServicePaymentPage] Submitting payment:', {
         orderId,
         method: selectedMethod,
-        amount: totalAmount,
+        baseAmount: totalAmount,
+        ccFee: ccFee,
+        totalPaymentAmount: paymentAmount,
         currency,
       });
 
@@ -256,6 +357,7 @@ export function ServicePaymentPage() {
       });
 
       setPaymentResult(response.data);
+      setPaidAmount(paymentAmount); // Track amount paid including CC fee
       setSuccess(true);
 
       console.log('[ServicePaymentPage] Payment successful:', response.data);
@@ -345,7 +447,7 @@ export function ServicePaymentPage() {
               <div className="flex justify-between items-center py-3">
                 <span className="text-slate-600">Amount Paid</span>
                 <span className="text-2xl font-bold text-emerald-600">
-                  {formatCurrency(totalAmount, currency)}
+                  {formatCurrency(paidAmount || totalAmount, currency)}
                 </span>
               </div>
             </div>
@@ -684,12 +786,52 @@ export function ServicePaymentPage() {
                     </div>
                   </div>
 
-                  {/* No CC fees for servicing - show info message */}
+                  {/* CC Fee Display */}
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
-                      <Info className="w-4 h-4" />
-                      <span>Card surcharges will be calculated at payment time</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-slate-600">Card Surcharge</span>
+                      {isLoadingCCFees ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                          <span className="text-sm text-slate-500">Calculating...</span>
+                        </div>
+                      ) : ccFeesError ? (
+                        <span className="text-sm text-amber-600">Unable to calculate</span>
+                      ) : getCurrentCardFee() ? (
+                        <span className="font-semibold text-slate-900">
+                          {getCurrentCardFee()!.ccSurcharge > 0
+                            ? formatCurrency(getCurrentCardFee()!.ccSurcharge, currency)
+                            : 'No surcharge'}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-slate-500">Enter card number</span>
+                      )}
                     </div>
+                    {/* Show all card fees for reference */}
+                    {ccFees.length > 0 && !isLoadingCCFees && (
+                      <div className="mt-3 pt-3 border-t border-slate-200">
+                        <p className="text-xs text-slate-500 mb-2">Surcharges by card type:</p>
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          {ccFees.map((fee) => (
+                            <div
+                              key={fee.cardBrand}
+                              className={`p-2 rounded ${
+                                cardForm.cardNumber && detectCardBrand(cardForm.cardNumber) === fee.cardBrand
+                                  ? 'bg-orange-100 border border-orange-300'
+                                  : 'bg-white border border-slate-200'
+                              }`}
+                            >
+                              <span className="font-medium text-slate-700">
+                                {fee.cardBrand === 'VI' ? 'Visa' : fee.cardBrand === 'MC' ? 'MC' : 'Amex'}:
+                              </span>{' '}
+                              <span className={fee.error ? 'text-red-500' : 'text-slate-900'}>
+                                {fee.error ? 'Error' : fee.ccSurcharge > 0 ? formatCurrency(fee.ccSurcharge, currency) : '$0'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -868,11 +1010,36 @@ export function ServicePaymentPage() {
                 </div>
               </div>
 
-              <div className="border-t border-slate-200 pt-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600">{isAddMode ? 'Amount to Add' : 'Total Due'}</span>
-                  <span className="text-2xl font-bold text-orange-600">
+              <div className="border-t border-slate-200 pt-4 space-y-3">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">{isAddMode ? 'Amount to Add' : 'Base Amount'}</span>
+                  <span className="font-medium text-slate-900">
                     {totalAmount > 0 ? formatCurrency(totalAmount, currency) : `${currency} 0.00`}
+                  </span>
+                </div>
+
+                {/* Show CC fee if credit card selected and fee available */}
+                {selectedMethod === 'CC' && (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-600">Card Surcharge</span>
+                    {isLoadingCCFees ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                    ) : (
+                      <span className="font-medium text-slate-900">
+                        {getCurrentCardFee()?.ccSurcharge
+                          ? formatCurrency(getCurrentCardFee()!.ccSurcharge, currency)
+                          : '$0.00'}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                  <span className="font-semibold text-slate-900">Total to Pay</span>
+                  <span className="text-2xl font-bold text-orange-600">
+                    {selectedMethod === 'CC'
+                      ? formatCurrency(getCurrentCardTotal(), currency)
+                      : formatCurrency(totalAmount, currency)}
                   </span>
                 </div>
               </div>
@@ -904,7 +1071,9 @@ export function ServicePaymentPage() {
                 ) : (
                   <>
                     <Lock className="w-5 h-5" />
-                    {isAddMode ? 'Add Payment' : 'Pay'} {totalAmount > 0 ? formatCurrency(totalAmount, currency) : ''}
+                    {isAddMode ? 'Add Payment' : 'Pay'} {selectedMethod === 'CC'
+                      ? formatCurrency(getCurrentCardTotal(), currency)
+                      : formatCurrency(totalAmount, currency)}
                   </>
                 )}
               </button>
