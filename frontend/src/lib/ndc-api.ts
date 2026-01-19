@@ -310,11 +310,24 @@ export async function ccFees(request: CCFeesRequest): Promise<CCFeesResponse> {
   console.log('[CCFees] Duration:', response.data.duration, 'ms');
 
   const data = response.data.data;
-  console.log('[CCFees] Fees:', data.fees?.map((f: any) => ({
+  console.log('[CCFees] Fees summary:', data.fees?.map((f: any) => ({
     cardBrand: f.cardBrand,
     ccSurcharge: f.ccSurcharge,
     error: f.error,
+    hasRequestXml: !!f.requestXml,
+    hasResponseXml: !!f.responseXml,
   })));
+
+  // Log XML for each card brand
+  data.fees?.forEach((f: any) => {
+    console.log(`[CCFees] ${f.cardBrand} surcharge: ${f.ccSurcharge}`);
+    if (f.requestXml) {
+      console.log(`[CCFees] ${f.cardBrand} Request XML:\n`, f.requestXml);
+    }
+    if (f.responseXml) {
+      console.log(`[CCFees] ${f.cardBrand} Response XML:\n`, f.responseXml);
+    }
+  });
 
   // Transform to CCFeeResult format for compatibility
   const fees: CCFeeResult[] = (data.fees || []).map((fee: any) => ({

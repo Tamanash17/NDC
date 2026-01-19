@@ -160,18 +160,38 @@ export function PaymentPage() {
       const duration = Date.now() - startTime;
       setCCFees(response.fees);
 
-      console.log('[PaymentPage] CC fees fetched:', response.fees);
+      // Log XML response for each card brand (same as ServicePaymentPage)
+      console.log('[PaymentPage] CC fees fetched successfully');
+      response.fees.forEach((fee) => {
+        console.log(`[PaymentPage] ${fee.cardBrand} surcharge: ${fee.ccSurcharge}`);
+        if (fee.requestXml) {
+          console.log(`[PaymentPage] ${fee.cardBrand} Request XML:\n`, fee.requestXml);
+        }
+        if (fee.rawResponse) {
+          console.log(`[PaymentPage] ${fee.cardBrand} Response XML:\n`, fee.rawResponse);
+        }
+      });
 
-      // Add to XML Logs panel
+      // Add to XML Logs panel - always log if we got a response
       const visaFee = response.fees.find(f => f.cardBrand === 'VI');
-      if (visaFee && visaFee.requestXml) {
+      if (visaFee) {
         addCapture({
-          operation: 'CCFees (OrderRetrieve + LongSell)',
-          request: visaFee.requestXml || '',
-          response: visaFee.rawResponse || '',
+          operation: 'CCFees (Prime - OrderRetrieve + LongSell)',
+          request: visaFee.requestXml || '<Request XML not available>',
+          response: visaFee.rawResponse || '<Response XML not available>',
           duration,
           status: visaFee.error ? 'error' : 'success',
-          userAction: `Fetched CC fees for order ${orderId}: Visa=${visaFee.ccSurcharge > 0 ? `$${visaFee.ccSurcharge.toFixed(2)}` : 'No fee'}`,
+          userAction: `Fetched CC fees for order ${orderId}: Visa=${visaFee.ccSurcharge > 0 ? `$${visaFee.ccSurcharge.toFixed(2)}` : (visaFee.error || 'No fee')}`,
+        });
+      } else {
+        // Log even if no Visa fee found
+        addCapture({
+          operation: 'CCFees (Prime - OrderRetrieve + LongSell)',
+          request: '<No request - fees not returned>',
+          response: JSON.stringify(response, null, 2),
+          duration,
+          status: 'error',
+          userAction: `CC fees fetch returned no Visa data for order ${orderId}`,
         });
       }
     } catch (err: any) {

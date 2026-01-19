@@ -1518,6 +1518,8 @@ router.post("/cc-fees", async (req: any, res: any) => {
             ccSurcharge: 0,
             surchargeType: 'unknown',
             error: buildResult.error || 'Failed to build Long Sell request',
+            requestXml: `<!-- Build failed: ${buildResult.error} -->`,
+            responseXml: `<!-- No response - build failed -->`,
           });
           continue;
         }
@@ -1570,12 +1572,14 @@ router.post("/cc-fees", async (req: any, res: any) => {
 
       } catch (error: any) {
         console.error(`[NDC] Long Sell error for ${cardBrand}:`, error.message);
+        console.error(`[NDC] Long Sell error details:`, error.response?.data);
         results.push({
           cardBrand,
           ccSurcharge: 0,
           surchargeType: 'unknown',
           error: error.message || 'Long Sell request failed',
-          responseXml: typeof error.response?.data === 'string' ? error.response.data : undefined,
+          requestXml: '<Error - request not available>',
+          responseXml: typeof error.response?.data === 'string' ? error.response.data : `<Error>${error.message}</Error>`,
         });
       }
     }
