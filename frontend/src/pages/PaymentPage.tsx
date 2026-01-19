@@ -275,6 +275,10 @@ export function PaymentPage() {
       const ssrs: LongSellSSR[] = [];
       const seatSelections: LongSellSeat[] = [];
 
+      // Track already added items to avoid duplicates
+      const addedSSRs = new Set<string>();
+      const addedSeats = new Set<string>();
+
       // Create segment index mapping (segment ID -> index)
       const segmentIndexMap = new Map<string, number>();
       segments.forEach((seg, idx) => {
@@ -314,23 +318,31 @@ export function PaymentPage() {
         if (segmentIndex === -1) segmentIndex = 0;
 
         if (service.serviceType === 'ssr' && service.serviceCode) {
-          // Add SSR for each passenger
+          // Add SSR for each passenger (with deduplication)
           service.paxRefIds.forEach((paxId) => {
-            ssrs.push({
-              ssrCode: service.serviceCode,
-              segmentIndex,
-              paxId,
-            });
+            const ssrKey = `${service.serviceCode}-${segmentIndex}-${paxId}`;
+            if (!addedSSRs.has(ssrKey)) {
+              addedSSRs.add(ssrKey);
+              ssrs.push({
+                ssrCode: service.serviceCode,
+                segmentIndex,
+                paxId,
+              });
+            }
           });
         } else if (service.serviceType === 'seat' && service.seatRow && service.seatColumn) {
-          // Add seat selection
+          // Add seat selection (with deduplication)
           service.paxRefIds.forEach((paxId) => {
-            seatSelections.push({
-              segmentIndex,
-              paxId,
-              row: service.seatRow!,
-              column: service.seatColumn!,
-            });
+            const seatKey = `${segmentIndex}-${paxId}`;
+            if (!addedSeats.has(seatKey)) {
+              addedSeats.add(seatKey);
+              seatSelections.push({
+                segmentIndex,
+                paxId,
+                row: service.seatRow!,
+                column: service.seatColumn!,
+              });
+            }
           });
         }
       });
