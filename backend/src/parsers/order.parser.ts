@@ -710,10 +710,56 @@ export class OrderParser extends BaseXmlParser {
 
   /**
    * Parse DatedMarketingSegmentList for detailed flight info
+   * Extracts RBD from multiple sources in priority order:
+   * 1. FareComponent/RBD/RBD_Code (Jetstar OrderRetrieve response)
+   * 2. PaxSegment/MarketingCarrierRBD_Code (shopping responses)
+   * 3. Direct segment element
    */
   private parseMarketingSegments(doc: Document): DatedMarketingSegmentParsed[] {
     const segments: DatedMarketingSegmentParsed[] = [];
     const segmentElements = this.getElements(doc, "DatedMarketingSegment");
+
+    // Build a map of segment ID -> RBD from multiple sources
+    // Key format varies: "seg89013749" (PaxSegmentRefID) or "Mkt-seg89013749" (DatedMarketingSegmentId)
+    const rbdMap = new Map<string, string>();
+
+    // Source 1: FareComponent in OrderItem (Jetstar OrderRetrieve stores RBD here)
+    // Structure: OrderItem/FareDetail/FareComponent/RBD/RBD_Code with PaxSegmentRefID
+    const fareComponentElements = this.getElements(doc, "FareComponent");
+    for (const fareCompEl of fareComponentElements) {
+      // Get RBD from FareComponent - can be nested as RBD/RBD_Code
+      const rbdEl = this.getElement(fareCompEl, "RBD");
+      const rbd = rbdEl ? (this.getText(rbdEl, "RBD_Code") || "") : "";
+
+      if (rbd) {
+        // Get all PaxSegmentRefID elements (there can be multiple segments per FareComponent)
+        const segRefIds = this.getElements(fareCompEl, "PaxSegmentRefID")
+          .map(el => el.textContent?.trim() || "")
+          .filter(id => id.length > 0);
+
+        // Map each segment ref to this RBD
+        for (const segRefId of segRefIds) {
+          // Store with original format (e.g., "seg89013749")
+          rbdMap.set(segRefId, rbd);
+          // Also store with Mkt- prefix for DatedMarketingSegmentId lookup
+          rbdMap.set(`Mkt-${segRefId}`, rbd);
+        }
+      }
+    }
+
+    // Source 2: PaxSegment/MarketingCarrierRBD_Code (shopping responses may have this)
+    const paxSegmentElements = this.getElements(doc, "PaxSegment");
+    for (const paxSegEl of paxSegmentElements) {
+      const mktSegRefId = this.getText(paxSegEl, "DatedMarketingSegmentRefId") || "";
+      const rbd = this.getText(paxSegEl, "MarketingCarrierRBD_Code") || "";
+      if (mktSegRefId && rbd && !rbdMap.has(mktSegRefId)) {
+        rbdMap.set(mktSegRefId, rbd);
+        // Also store without Mkt- prefix
+        if (mktSegRefId.startsWith("Mkt-")) {
+          rbdMap.set(mktSegRefId.replace("Mkt-", ""), rbd);
+        }
+      }
+    }
 
     for (const segEl of segmentElements) {
       const depEl = this.getElement(segEl, "Dep");
@@ -731,10 +777,39 @@ export class OrderParser extends BaseXmlParser {
         }
       }
 
+      const segmentId = this.getText(segEl, "DatedMarketingSegmentId") ||
+                        this.getText(segEl, "DatedMarketingSegmentID") ||
+                        this.getAttribute(segEl, "DatedMarketingSegmentId") || "";
+
+      // Look up RBD from rbdMap with multiple key formats
+      // DatedMarketingSegmentId is like "Mkt-seg89013749" but FareComponent uses "seg89013749"
+      let classOfService: string | undefined;
+
+      // Try direct lookup with segmentId (e.g., "Mkt-seg89013749")
+      classOfService = rbdMap.get(segmentId);
+
+      // Try without "Mkt-" prefix (e.g., "seg89013749")
+      if (!classOfService && segmentId.startsWith("Mkt-")) {
+        classOfService = rbdMap.get(segmentId.replace("Mkt-", ""));
+      }
+
+      // Try extracting just the numeric part (e.g., lookup "seg89013749" from "Mkt-seg89013749")
+      if (!classOfService) {
+        const numMatch = segmentId.match(/seg(\d+)/i);
+        if (numMatch) {
+          classOfService = rbdMap.get(`seg${numMatch[1]}`);
+        }
+      }
+
+      // Fall back to checking the segment element directly
+      if (!classOfService) {
+        classOfService = this.getText(segEl, "ClassOfService") ||
+                        this.getText(segEl, "RBD") ||
+                        this.getText(segEl, "MarketingCarrierRBD_Code") || undefined;
+      }
+
       segments.push({
-        segmentId: this.getText(segEl, "DatedMarketingSegmentId") ||
-                   this.getText(segEl, "DatedMarketingSegmentID") ||
-                   this.getAttribute(segEl, "DatedMarketingSegmentId") || "",
+        segmentId,
         origin: this.getText(depEl, "IATA_LocationCode") || "",
         destination: this.getText(arrEl, "IATA_LocationCode") || "",
         departureDateTime: this.getText(depEl, "AircraftScheduledDateTime") ||
@@ -746,8 +821,7 @@ export class OrderParser extends BaseXmlParser {
         duration: this.getText(segEl, "Duration") || undefined,
         equipment,
         cabinCode: this.getText(segEl, "CabinTypeCode") || undefined,
-        classOfService: this.getText(segEl, "ClassOfService") ||
-                       this.getText(segEl, "RBD") || undefined,
+        classOfService,
       });
     }
 
