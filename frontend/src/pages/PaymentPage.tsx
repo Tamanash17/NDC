@@ -868,6 +868,9 @@ export function PaymentPage() {
                     }
 
                     // No card entered yet - show summary of all card surcharges
+                    // Only show fees that don't have errors
+                    const feesToShow = displayFees.filter(f => !f.error);
+
                     return (
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                         <div className="flex items-center gap-3">
@@ -875,11 +878,11 @@ export function PaymentPage() {
                           <div className="flex-1">
                             <div className="flex items-center justify-between">
                               <span className="font-semibold text-amber-900">Card Surcharges</span>
-                              {validFees.length > 0 ? (
+                              {feesToShow.length > 0 ? (
                                 <span className="text-sm text-amber-800">
                                   {isPercentageBasedFees ? (
                                     // Percentage-based: show percentages
-                                    displayFees.map((fee, idx) => {
+                                    feesToShow.map((fee, idx) => {
                                       const brandName = fee.cardBrand === 'VI' ? 'Visa' :
                                                        fee.cardBrand === 'MC' ? 'MC' :
                                                        fee.cardBrand === 'AX' ? 'Amex' : fee.cardBrand;
@@ -894,7 +897,7 @@ export function PaymentPage() {
                                     })
                                   ) : (
                                     // Fixed amount: show actual dollar amounts
-                                    displayFees.map((fee, idx) => {
+                                    feesToShow.map((fee, idx) => {
                                       const brandName = fee.cardBrand === 'VI' ? 'Visa' :
                                                        fee.cardBrand === 'MC' ? 'MC' :
                                                        fee.cardBrand === 'AX' ? 'Amex' : fee.cardBrand;
