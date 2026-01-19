@@ -825,18 +825,25 @@ export function PaymentPage() {
                       return `${currency} ${amount.toFixed(2)}`;
                     };
 
-                    // Calculate percentage for display (only used for informational purposes)
+                    // Calculate percentage for display
                     const calculatePercentage = (fee: number) => {
                       if (totalAmount <= 0) return '0.00';
                       return ((fee / totalAmount) * 100).toFixed(2);
                     };
 
-                    // Check if surcharge is percentage-based (surchargeType from API)
-                    const isPercentageBased = (fee: CCFeeResult) => fee.surchargeType === 'percentage';
+                    // Determine if fees are percentage-based by checking if all 3 cards have DIFFERENT amounts
+                    // If all 3 amounts are different = percentage-based (each card has different % rate)
+                    // If all 3 amounts are same = fixed amount
+                    const displayFees = ccFees.filter(f => ['VI', 'MC', 'AX'].includes(f.cardBrand));
+                    const validFees = displayFees.filter(f => !f.error && f.ccSurcharge > 0);
+                    const uniqueAmounts = new Set(validFees.map(f => f.ccSurcharge));
+                    // If we have multiple valid fees and they're all different amounts, it's percentage-based
+                    const isPercentageBasedFees = validFees.length > 1 && uniqueAmounts.size === validFees.length;
 
                     // If user has entered a card number, show specific fee for that card
                     if (detectedBrand && currentFee && currentFee.ccSurcharge > 0) {
                       const brandName = CARD_BRANDS.find(b => b.code === detectedBrand)?.name || detectedBrand;
+                      const pct = calculatePercentage(currentFee.ccSurcharge);
 
                       return (
                         <div className="bg-orange-50 border border-orange-300 rounded-xl p-4">
@@ -850,9 +857,9 @@ export function PaymentPage() {
                                 </span>
                               </div>
                               <div className="text-sm text-orange-600">
-                                {isPercentageBased(currentFee)
-                                  ? `${currentFee.ccSurcharge}% surcharge rate`
-                                  : `Fixed surcharge (${calculatePercentage(currentFee.ccSurcharge)}% of total)`}
+                                {isPercentageBasedFees
+                                  ? `${pct}% surcharge rate`
+                                  : `Fixed surcharge`}
                               </div>
                             </div>
                           </div>
@@ -860,10 +867,7 @@ export function PaymentPage() {
                       );
                     }
 
-                    // No card entered yet - show summary of all card surcharges with ACTUAL AMOUNTS
-                    const displayFees = ccFees.filter(f => ['VI', 'MC', 'AX'].includes(f.cardBrand));
-                    const validFees = displayFees.filter(f => !f.error && f.ccSurcharge > 0);
-
+                    // No card entered yet - show summary of all card surcharges
                     return (
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                         <div className="flex items-center gap-3">
@@ -873,22 +877,38 @@ export function PaymentPage() {
                               <span className="font-semibold text-amber-900">Card Surcharges</span>
                               {validFees.length > 0 ? (
                                 <span className="text-sm text-amber-800">
-                                  {displayFees.map((fee, idx) => {
-                                    const brandName = fee.cardBrand === 'VI' ? 'Visa' :
-                                                     fee.cardBrand === 'MC' ? 'MC' :
-                                                     fee.cardBrand === 'AX' ? 'Amex' : fee.cardBrand;
-                                    // Show % for percentage-based, actual amount for fixed
-                                    const displayValue = isPercentageBased(fee)
-                                      ? `${fee.ccSurcharge}%`
-                                      : formatSurchargeAmount(fee.ccSurcharge);
-                                    return (
-                                      <span key={fee.cardBrand}>
-                                        {idx > 0 && <span className="mx-1 text-amber-400">|</span>}
-                                        <span className="text-amber-700">{brandName}</span>
-                                        <span className="font-mono font-semibold ml-1">{displayValue}</span>
-                                      </span>
-                                    );
-                                  })}
+                                  {isPercentageBasedFees ? (
+                                    // Percentage-based: show percentages
+                                    displayFees.map((fee, idx) => {
+                                      const brandName = fee.cardBrand === 'VI' ? 'Visa' :
+                                                       fee.cardBrand === 'MC' ? 'MC' :
+                                                       fee.cardBrand === 'AX' ? 'Amex' : fee.cardBrand;
+                                      const pct = fee.ccSurcharge > 0 ? calculatePercentage(fee.ccSurcharge) : '0.00';
+                                      return (
+                                        <span key={fee.cardBrand}>
+                                          {idx > 0 && <span className="mx-1 text-amber-400">|</span>}
+                                          <span className="text-amber-700">{brandName}</span>
+                                          <span className="font-mono font-semibold ml-1">{pct}%</span>
+                                        </span>
+                                      );
+                                    })
+                                  ) : (
+                                    // Fixed amount: show actual dollar amounts
+                                    displayFees.map((fee, idx) => {
+                                      const brandName = fee.cardBrand === 'VI' ? 'Visa' :
+                                                       fee.cardBrand === 'MC' ? 'MC' :
+                                                       fee.cardBrand === 'AX' ? 'Amex' : fee.cardBrand;
+                                      return (
+                                        <span key={fee.cardBrand}>
+                                          {idx > 0 && <span className="mx-1 text-amber-400">|</span>}
+                                          <span className="text-amber-700">{brandName}</span>
+                                          <span className="font-mono font-semibold ml-1">
+                                            {fee.ccSurcharge > 0 ? formatSurchargeAmount(fee.ccSurcharge) : '$0'}
+                                          </span>
+                                        </span>
+                                      );
+                                    })
+                                  )}
                                 </span>
                               ) : (
                                 <span className="text-sm text-emerald-700">No surcharge</span>
